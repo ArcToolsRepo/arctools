@@ -121,6 +121,18 @@
    "_comment": "arguspad.io: Uniswap V4 pool with Argus hook 0xa368005a\u2026; PoolKey taken from Initialize in the launch tx."
   },
   {
+   "name": "Arguspad V3",
+   "enabled": true,
+   "type": "instant_pool",
+   "factory": "0x80b42aed46d73f47119dc444bea28a9e68f32bf4",
+   "event_topic": "0x8f8815afd174b9556e4ef54fbb59bb79d5c567fa89760ac9409682fb9459bfad",
+   "token_arg_index": 0,
+   "router": "0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77",
+   "router_kind": "univ3",
+   "fee_tier": 10000,
+   "_comment": "arguspad.io direct-V3 mode (dyor-api factory): TokenCreated(token idx1, deployer idx2, v3factory idx3); canonical V3 pool fee 10000, LP position locked. API: arc-api-production-ef9c.up.railway.app/api/tokens"
+  },
+  {
    "name": "act.fun",
    "enabled": true,
    "type": "instant_pool",

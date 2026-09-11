@@ -35,7 +35,7 @@ export const Route = createFileRoute("/feed")({
   component: FeedPage,
 });
 
-const TABS = ["Top", "All launches", "ArcToolsPad", "Tolly", "RadarDex", "ArcPad", "Warp", "Archemist", "Uniswap V4", "New pools"] as const;
+const TABS = ["Top", "All launches", "ArcToolsPad", "Tolly", "RadarDex", "ArcPad", "Warp", "Archemist", "Arguspad", "Uniswap V4", "New pools"] as const;
 const STAGE_BY_PAD: Record<string, string> = {
   RadarDex: "pool · locked LP", Tolly: "pool · locked LP", ArcPad: "pool · locked LP", Archemist: "pool · locked LP",
   UniswapV3: "V3 pool", UniswapV4: "V4 pool", Arguspad: "V4 pool", "act.fun": "V4 pool", "UBI.fun": "V4 pool", Warp: "curve",
@@ -392,17 +392,18 @@ function FeedPage() {
           website: p.website,
         });
         if (tab === "Top") {
-          const [radar, arcpad, tolly, pad, arch] = await Promise.all([
+          const [radar, arcpad, tolly, pad, arch, argus] = await Promise.all([
             listTokens({ data: { pad: "RadarDex" } }),
             listTokens({ data: { pad: "ArcPad" } }),
             listTokens({ data: { pad: "Tolly" } }).catch(() => [] as PadToken[]),
             padList().catch(() => []),
             listTokens({ data: { pad: "Archemist" } }).catch(() => [] as PadToken[]),
+            listTokens({ data: { pad: "Arguspad" } }).catch(() => [] as PadToken[]),
           ]);
-          res = [...pad.map(padToPadToken), ...tolly, ...radar, ...arcpad, ...arch];
+          res = [...pad.map(padToPadToken), ...tolly, ...radar, ...arcpad, ...arch, ...argus];
         } else if (tab === "New pools" || tab === "All launches") {
           // fresh launches across EVERY launchpad, mixed
-          const [radar, arcpad, warp, tolly, uni, pad, arch, v4] = await Promise.all([
+          const [radar, arcpad, warp, tolly, uni, pad, arch, v4, argus] = await Promise.all([
             listTokens({ data: { pad: "RadarDex" } }).catch(() => [] as PadToken[]),
             listTokens({ data: { pad: "ArcPad" } }).catch(() => [] as PadToken[]),
             listTokens({ data: { pad: "Warp" } }).catch(() => [] as PadToken[]),
@@ -411,9 +412,10 @@ function FeedPage() {
             padList().catch(() => []),
             listTokens({ data: { pad: "Archemist" } }).catch(() => [] as PadToken[]),
             listTokens({ data: { pad: "UniswapV4" } }).catch(() => [] as PadToken[]),
+            listTokens({ data: { pad: "Arguspad" } }).catch(() => [] as PadToken[]),
           ]);
           const seen = new Set<string>();
-          res = [...pad.map(padToPadToken), ...radar, ...arcpad, ...warp, ...tolly, ...arch, ...v4, ...uni].filter((t) => {
+          res = [...pad.map(padToPadToken), ...radar, ...arcpad, ...warp, ...tolly, ...arch, ...argus, ...v4, ...uni].filter((t) => {
             const k = t.token.toLowerCase();
             if (seen.has(k)) return false;
             seen.add(k);

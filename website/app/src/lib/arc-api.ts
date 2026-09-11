@@ -1288,6 +1288,35 @@ async function listTokensImpl(pad: string): Promise<PadToken[]> {
         }));
     }
 
+    if (pad === "Arguspad") {
+      // arguspad.io (dyor-api): direct Uniswap V3 launches, locked LP; USDC amounts are reported as 6-dec "wei"
+      const res = (await fetch("https://arc-api-production-ef9c.up.railway.app/api/tokens", { headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" } })
+        .then((r) => r.json())
+        .catch(() => [])) as {
+        token?: string; name?: string; symbol?: string; image?: string; website?: string; x?: string; telegram?: string; created_at?: number;
+        pool?: string; marketCapEth?: string; volume24hWei?: string; progressBps?: number; graduated?: boolean; pair_token?: string;
+      }[];
+      return (Array.isArray(res) ? res : [])
+        .filter((t) => t.token && (t.pair_token ?? "").toLowerCase() === USDC)
+        .map((t) => ({
+          createdAt: t.created_at ? new Date(Number(t.created_at)).toISOString() : null,
+          logo: t.image ?? null,
+          mcapUsd: t.marketCapEth ? Number(t.marketCapEth) / 1e6 : null,
+          name: t.name ?? "?",
+          pad: "Arguspad",
+          stage: t.graduated ? "graduated" : "pool · locked LP",
+          pool: t.pool ?? null,
+          priceUsd: null,
+          symbol: t.symbol ?? "?",
+          telegram: t.telegram || null,
+          token: t.token!,
+          twitter: t.x || null,
+          venueUrl: `/token/${t.token}`,
+          volUsd: t.volume24hWei ? Number(t.volume24hWei) / 1e6 : null,
+          website: t.website || null,
+        }));
+    }
+
     if (pad === "UniswapV4") {
       // every USDC-paired Uniswap V4 pool on Arc from the Arc Insider index (act.fun, Arguspad, UBI.fun, ArcadeSwap...)
       const res = (await fetch(`${INSIDER_API}/api/v4launches?limit=100`, { headers: { Accept: "application/json" } })
