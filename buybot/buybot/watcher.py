@@ -8,7 +8,8 @@ from eth_utils import to_checksum_address
 from aiogram.exceptions import TelegramNetworkError, TelegramServerError, TelegramRetryAfter
 from .config import CFG
 from .chain import CHAIN
-from .venues import (ARCPAD_TRADE_TOPIC, V3_SWAP_TOPIC, V2_SWAP_TOPIC, decode_swap, price_1m,
+from .venues import (ARCPAD_TRADE_TOPIC, V3_SWAP_TOPIC, V2_SWAP_TOPIC, V4_SWAP_TOPIC, V4_POOL_MANAGER,
+                     decode_swap, decode_v4_swap, price_1m,
                      token_socials, token_symbol, symbol_missing)
 from . import db
 
@@ -214,9 +215,17 @@ async def watcher_loop():
 
             # pool -> [(track, kind)]
             pool_map: dict[str, list[tuple[dict, str]]] = {}
+            v4_map: dict[str, list[tuple[dict, bool]]] = {}   # pool id -> [(track, token_is_0)]
+
+            def _add(track, v):
+                if v.get("kind") == "v4" and v.get("pool_id"):
+                    v4_map.setdefault(v["pool_id"].lower(), []).append((track, (bool(v.get("is0")), int(v.get("usdc_dec") or 18))))
+                else:
+                    pool_map.setdefault(v["address"].lower(), []).append((track, v["kind"]))
+
             for t in rows:
                 for v in json.loads(t["venues"] or "[]"):
-                    pool_map.setdefault(v["address"].lower(), []).append((t, v["kind"]))
+                    _add(t, v)
             # trending fillers: big-mcap untracked tokens, watched channel-only
             from . import trending
             for f in trending.fillers():
@@ -227,29 +236,42 @@ async def watcher_loop():
                     "twitter": None, "website": None,
                 }
                 for v in f.get("venues", []):
-                    pool_map.setdefault(v["address"].lower(), []).append((pseudo, v["kind"]))
-            if not pool_map:
+                    _add(pseudo, v)
+            if not pool_map and not v4_map:
                 last = to
                 await asyncio.sleep(CFG.poll_interval)
                 continue
 
             addresses = [to_checksum_address(a) for a in pool_map]
-            for topic in (V3_SWAP_TOPIC, V2_SWAP_TOPIC, ARCPAD_TRADE_TOPIC):
+            plan = [(t, addresses) for t in (V3_SWAP_TOPIC, V2_SWAP_TOPIC, ARCPAD_TRADE_TOPIC) if addresses]
+            if v4_map:
+                plan.append((V4_SWAP_TOPIC, [to_checksum_address(V4_POOL_MANAGER)]))
+            for topic, addrs in plan:
                 try:
                     logs = await CHAIN.get_logs({
-                        "address": addresses, "topics": [topic],
+                        "address": addrs, "topics": [topic],
                         "fromBlock": frm, "toBlock": to})
                 except Exception as e:  # noqa
                     log.warning("get_logs: %s", e)
                     continue
                 for lg in logs:
                     pool = lg["address"].lower()
-                    for track, kind in pool_map.get(pool, []):
-                        want = ("v3" if topic == V3_SWAP_TOPIC
-                                else "v2" if topic == V2_SWAP_TOPIC else "arcpad")
-                        if kind != want:
-                            continue
-                        buy = decode_swap(kind, track["token"], lg)
+                    if topic == V4_SWAP_TOPIC:
+                        pid = lg["topics"][1]
+                        pid = (pid.hex() if hasattr(pid, "hex") else str(pid)).lower()
+                        pid = pid if pid.startswith("0x") else "0x" + pid
+                        targets = [(track, ("v4",) + meta) for track, meta in v4_map.get(pid, [])]
+                    else:
+                        targets = pool_map.get(pool, [])
+                    for track, kind in targets:
+                        if topic == V4_SWAP_TOPIC:
+                            buy = decode_v4_swap(kind[1], lg, kind[2])
+                        else:
+                            want = ("v3" if topic == V3_SWAP_TOPIC
+                                    else "v2" if topic == V2_SWAP_TOPIC else "arcpad")
+                            if kind != want:
+                                continue
+                            buy = decode_swap(kind, track["token"], lg)
                         if not buy:
                             continue
                         if buy["usdc"] < (track["min_buy"] or 0):

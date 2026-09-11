@@ -49,6 +49,9 @@ async def preapprove_wallet(acct):
     """Approve USDC facade -> SwapRouter02 z gory, zeby snipe byl 1 tx."""
     try:
         await ensure_allowance(acct, CFG.wrapped_usdc, CFG.univ3_router, MAX_UINT // 2)
+        # Uniswap V4 facade pools via our ArcV4Router
+        from .pads import ARC_V4_ROUTER
+        await ensure_allowance(acct, CFG.wrapped_usdc, ARC_V4_ROUTER, MAX_UINT // 2)
     except Exception as e:  # noqa
         log.warning("preapprove: %s", e)
 
@@ -72,6 +75,16 @@ async def execute_buy(tg_id: int, token: str, pad: Pad, amount_usdc: float,
                       curve: str | None = None) -> list[dict]:
     fee = amount_usdc * CFG.trade_fee_bps / 10_000
     net_amount = amount_usdc - fee
+
+    import json as _json
+    if pad.router_kind == "univ4":
+        if isinstance(curve, str) and curve.startswith("{"):
+            curve = _json.loads(curve)
+        if not isinstance(curve, dict):
+            from .pads import resolve_v4_key
+            curve = await resolve_v4_key(token)
+        if not curve:
+            return [{"ok": False, "err": "no Uniswap V4 pool found for this token"}]
 
     async def _one(wid: int):
         w = await wallets.get_wallet(wid)
@@ -108,7 +121,8 @@ async def execute_buy(tg_id: int, token: str, pad: Pad, amount_usdc: float,
                     pass
                 await db.execute(insert(db.positions).values(
                     tg_id=tg_id, wallet=acct.address, token=token, symbol=sym,
-                    pad=pad.name, curve=curve or "", amount_tokens=float(got),
+                    pad=pad.name, curve=(_json.dumps(curve) if isinstance(curve, dict) else (curve or "")),
+                    amount_tokens=float(got),
                     cost_usdc=amount_usdc, created_at=int(time.time())))
                 await db.execute(insert(db.trades).values(
                     tg_id=tg_id, token=token, side="buy", usdc=amount_usdc,
@@ -135,8 +149,15 @@ async def execute_sell(tg_id: int, pos: dict, pct: int, gas_mode: str = "turbo")
         amount = bal * pct // 100
         if amount <= 0:
             return {"ok": False, "err": "balans 0"}
+        curve = pos.get("curve") or None
+        if pad.router_kind == "univ4":
+            import json as _json
+            from .pads import resolve_v4_key
+            curve = _json.loads(curve) if (isinstance(curve, str) and curve.startswith("{")) else await resolve_v4_key(token)
+            if not curve:
+                return {"ok": False, "err": "no Uniswap V4 pool for this token"}
         to, data, approve_spender = pad.sell_calldata(token, acct.address, amount,
-                                                      min_out=0, curve=pos.get("curve") or None)
+                                                      min_out=0, curve=curve)
         await ensure_allowance(acct, token, approve_spender, amount, gas_mode)
         pre = await token_balance(CFG.wrapped_usdc, acct.address)
         tx = await CHAIN.build_tx(acct, to, data, gas_mode=gas_mode)
@@ -242,6 +263,8 @@ async def watcher_loop():
                         if key in seen:
                             continue
                         seen.add(key)
+                        if pad.router_kind == "univ4":
+                            info["curve"] = await _v4_key_from_launch(lg, info["token"])
                         log.info("[%s] %s %s", pad.name, kind, info)
                         asyncio.create_task(_fire_armed_snipes(info, pad, kind))
                         if feed_publish and kind == "created" and pad.name != "UniswapV3":
@@ -254,6 +277,23 @@ async def watcher_loop():
             log.warning("watcher err: %s", e)
             await asyncio.sleep(2)
         await asyncio.sleep(CFG.poll_interval)
+
+
+async def _v4_key_from_launch(lg, token: str):
+    """Launch tx of a V4 pad contains PoolManager.Initialize — take the PoolKey straight from the receipt (zero extra
+    latency at snipe time); fallback to the resolver."""
+    import json as _json
+    from .pads import poolkey_from_init_log, resolve_v4_key
+    try:
+        rcpt = await CHAIN.call_any(lambda w3: w3.eth.get_transaction_receipt(lg["transactionHash"]))
+        for x in rcpt["logs"]:
+            k = poolkey_from_init_log(x, token)
+            if k:
+                return _json.dumps(k)
+    except Exception as e:  # noqa
+        log.warning("v4 key from launch: %s", e)
+    k = await resolve_v4_key(token)
+    return _json.dumps(k) if k else None
 
 
 async def _publish_if_unknown(token: str):

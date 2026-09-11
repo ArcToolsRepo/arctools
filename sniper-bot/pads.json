@@ -97,6 +97,47 @@
    "router_kind": "univ3",
    "fee_tier": 10000,
    "_note": "catch-all: kazdy nowy pool na kanonicznym V3 (w tym launche Tolly)"
+  },
+  {
+   "name": "Archemist",
+   "enabled": true,
+   "type": "instant_pool",
+   "factory": "0x297cebc4de347347205cd08667b56ee951dd8810",
+   "event_topic": "0x8e83c293b82cf6e864a90c1ccffea5e0f1ec23b271eff78e78f1dbd5e32a9c7d",
+   "token_arg_index": 0,
+   "router": "0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77",
+   "router_kind": "univ3",
+   "fee_tier": 10000,
+   "_comment": "archemist.fun v2-usdc: direct Uniswap V3 launch (fee 10000), LP locked in PositionLocker. Event: token idx1, creator idx2, pool idx3."
+  },
+  {
+   "name": "Arguspad",
+   "enabled": true,
+   "type": "instant_pool",
+   "factory": "0xa5628a11c412596e1f63b75a2c0284f843c549d6",
+   "event_topic": "0x1d8917231579f8ce39407f0d616f36f357b07329b0ce5164d0754ac15145ce0a",
+   "token_arg_index": 0,
+   "router_kind": "univ4",
+   "_comment": "arguspad.io: Uniswap V4 pool with Argus hook 0xa368005a\u2026; PoolKey taken from Initialize in the launch tx."
+  },
+  {
+   "name": "act.fun",
+   "enabled": true,
+   "type": "instant_pool",
+   "factory": "0x465af15c85ac291d5cffb8d02d8c8e23102fe6e3",
+   "event_topic": "0xf8e444c42a5a7ea760a42d30d8fa8ccd8915208c2fb7dfe353501d7322d2e132",
+   "token_arg_index": 0,
+   "router_kind": "univ4",
+   "_comment": "actfun.pro: TokenRegistered(token idx1, creator idx2, fee) on the act.fun fee manager; trading on Uniswap V4 (PoolKey via resolver)."
+  },
+  {
+   "name": "UniswapV4",
+   "enabled": true,
+   "type": "instant_pool",
+   "factory": "",
+   "event_topic": "",
+   "router_kind": "univ4",
+   "_comment": "generic Uniswap V4 venue for manual buys (auto_pad) \u2014 no launch watching (PoolManager Initialize is chain-wide; the Insider index covers it)."
   }
  ]
 }

@@ -35,7 +35,7 @@ export const Route = createFileRoute("/feed")({
   component: FeedPage,
 });
 
-const TABS = ["Top", "ArcToolsPad", "Tolly", "RadarDex", "ArcPad", "Warp", "New pools"] as const;
+const TABS = ["Top", "ArcToolsPad", "Tolly", "RadarDex", "ArcPad", "Warp", "Archemist", "Uniswap V4", "New pools"] as const;
 type Tab = (typeof TABS)[number];
 
 function fmtUsd(n: number | null): string {
@@ -381,25 +381,28 @@ function FeedPage() {
           website: p.website,
         });
         if (tab === "Top") {
-          const [radar, arcpad, tolly, pad] = await Promise.all([
+          const [radar, arcpad, tolly, pad, arch] = await Promise.all([
             listTokens({ data: { pad: "RadarDex" } }),
             listTokens({ data: { pad: "ArcPad" } }),
             listTokens({ data: { pad: "Tolly" } }).catch(() => [] as PadToken[]),
             padList().catch(() => []),
+            listTokens({ data: { pad: "Archemist" } }).catch(() => [] as PadToken[]),
           ]);
-          res = [...pad.map(padToPadToken), ...tolly, ...radar, ...arcpad];
+          res = [...pad.map(padToPadToken), ...tolly, ...radar, ...arcpad, ...arch];
         } else if (tab === "New pools") {
           // fresh launches across EVERY launchpad, mixed
-          const [radar, arcpad, warp, tolly, uni, pad] = await Promise.all([
+          const [radar, arcpad, warp, tolly, uni, pad, arch, v4] = await Promise.all([
             listTokens({ data: { pad: "RadarDex" } }).catch(() => [] as PadToken[]),
             listTokens({ data: { pad: "ArcPad" } }).catch(() => [] as PadToken[]),
             listTokens({ data: { pad: "Warp" } }).catch(() => [] as PadToken[]),
             listTokens({ data: { pad: "Tolly" } }).catch(() => [] as PadToken[]),
             listTokens({ data: { pad: "UniswapV3" } }).catch(() => [] as PadToken[]),
             padList().catch(() => []),
+            listTokens({ data: { pad: "Archemist" } }).catch(() => [] as PadToken[]),
+            listTokens({ data: { pad: "UniswapV4" } }).catch(() => [] as PadToken[]),
           ]);
           const seen = new Set<string>();
-          res = [...pad.map(padToPadToken), ...radar, ...arcpad, ...warp, ...tolly, ...uni].filter((t) => {
+          res = [...pad.map(padToPadToken), ...radar, ...arcpad, ...warp, ...tolly, ...arch, ...v4, ...uni].filter((t) => {
             const k = t.token.toLowerCase();
             if (seen.has(k)) return false;
             seen.add(k);
@@ -409,7 +412,7 @@ function FeedPage() {
           const pad = await padList();
           res = pad.map(padToPadToken);
         } else {
-          res = await listTokens({ data: { pad: tab } });
+          res = await listTokens({ data: { pad: tab === "Uniswap V4" ? "UniswapV4" : tab } });
         }
         if (!alive) return;
         if (notify && known.current.size > 0 && typeof Notification !== "undefined") {

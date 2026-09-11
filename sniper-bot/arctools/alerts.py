@@ -154,10 +154,11 @@ async def _copy_buy(c: dict, src_tx):
         w = await W.active_wallet(c["tg_id"])
         if not w:
             return
-        from .pads import default_pad
+        from .pads import auto_pad
         amount = c["amount_usdc"] or u["buy_usdc"]
-        res = await sniper.execute_buy(c["tg_id"], token, default_pad(), amount,
-                                       u["slippage"], u["gas_mode"], [w["id"]])
+        pad, key = await auto_pad(token)
+        res = await sniper.execute_buy(c["tg_id"], token, pad, amount,
+                                       u["slippage"], u["gas_mode"], [w["id"]], curve=key)
         if notify:
             ok = any(r.get("ok") for r in res)
             await notify(c["tg_id"],

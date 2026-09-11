@@ -1,0 +1,200 @@
+{
+ "router": "0x05a0158EF87E8E7bFE4E0242e11dda75f83954e1",
+ "abi": [
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "_poolManager",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "_treasury",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "nonpayable",
+   "type": "constructor"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "sender",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "tokenIn",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "tokenOut",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "amountIn",
+     "type": "uint256"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "amountOut",
+     "type": "uint256"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "fee",
+     "type": "uint256"
+    }
+   ],
+   "name": "Swapped",
+   "type": "event"
+  },
+  {
+   "inputs": [],
+   "name": "USDC_FACADE",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "poolManager",
+   "outputs": [
+    {
+     "internalType": "contract IPoolManager",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "components": [
+      {
+       "internalType": "address",
+       "name": "currency0",
+       "type": "address"
+      },
+      {
+       "internalType": "address",
+       "name": "currency1",
+       "type": "address"
+      },
+      {
+       "internalType": "uint24",
+       "name": "fee",
+       "type": "uint24"
+      },
+      {
+       "internalType": "int24",
+       "name": "tickSpacing",
+       "type": "int24"
+      },
+      {
+       "internalType": "address",
+       "name": "hooks",
+       "type": "address"
+      }
+     ],
+     "internalType": "struct IPoolManager.PoolKey",
+     "name": "key",
+     "type": "tuple"
+    },
+    {
+     "internalType": "bool",
+     "name": "zeroForOne",
+     "type": "bool"
+    },
+    {
+     "internalType": "uint256",
+     "name": "amountIn",
+     "type": "uint256"
+    },
+    {
+     "internalType": "uint256",
+     "name": "minOut",
+     "type": "uint256"
+    },
+    {
+     "internalType": "address",
+     "name": "recipient",
+     "type": "address"
+    },
+    {
+     "internalType": "uint16",
+     "name": "feeBps",
+     "type": "uint16"
+    }
+   ],
+   "name": "swapExactIn",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "amountOut",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "treasury",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "bytes",
+     "name": "raw",
+     "type": "bytes"
+    }
+   ],
+   "name": "unlockCallback",
+   "outputs": [
+    {
+     "internalType": "bytes",
+     "name": "",
+     "type": "bytes"
+    }
+   ],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "stateMutability": "payable",
+   "type": "receive"
+  }
+ ],
+ "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+ "treasury": "0xb35c471b31D636B96f95b84E7A27D69B63235C0D",
+ "deployedAt": 1789153832
+}

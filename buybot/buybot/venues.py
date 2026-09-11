@@ -6,6 +6,8 @@ import logging
 from eth_abi import encode as abi_encode
 from eth_utils import function_signature_to_4byte_selector as sel, to_checksum_address
 from .config import CFG
+from . import db
+from sqlalchemy import text
 from .chain import CHAIN
 
 log = logging.getLogger("venues")
@@ -57,6 +59,15 @@ async def discover_venues(token: str) -> list[dict]:
                 out.append({"address": pair, "kind": "v2", "venue": venue})
         except Exception:  # noqa
             pass
+    # Uniswap V4 (act.fun, Arguspad, UBI.fun, ArcadeSwap...): pool ids from the Arc Insider index
+    try:
+        rows = await db.fetchall(text(
+            "SELECT id, is0, hooks, usdc_dec FROM v4_pools WHERE token = :t AND fee IS NOT NULL").bindparams(t=token.lower()))
+        for r in rows:
+            out.append({"address": V4_POOL_MANAGER, "kind": "v4", "venue": v4_venue_name(r["hooks"]),
+                        "pool_id": r["id"], "is0": bool(r["is0"]), "usdc_dec": int(r["usdc_dec"] or 18)})
+    except Exception:  # noqa
+        pass
     # ArcPad (nasz launchpad): trading na kontrakcie launchpada
     try:
         res = await CHAIN.eth_call(ARCPAD, CURVE_SEL + _pad(token))
@@ -71,6 +82,34 @@ async def discover_venues(token: str) -> list[dict]:
     except Exception:  # noqa
         pass
     return out
+
+
+V4_POOL_MANAGER = "0x8366a39cc670b4001a1121b8f6a443a643e40951"
+V4_SWAP_TOPIC = "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f"
+# known V4 hook addresses -> launchpad names (extend as pads appear)
+V4_HOOKS = {
+    "0xa368005ad249fbebcd5baa7396c9e3b3e44e6044": "Arguspad",
+    "0x465af15c85ac291d5cffb8d02d8c8e23102fe6e3": "act.fun",
+    "0x20eead6db6b3d0a4491e9073119dd0ebff166acc": "UBI.fun",
+}
+
+
+def v4_venue_name(hooks: str | None) -> str:
+    return V4_HOOKS.get((hooks or "").lower(), "UniswapV4")
+
+
+def decode_v4_swap(token_is_0: bool, lg, usdc_dec: int = 18) -> dict | None:
+    """V4 Swap(id, sender, amount0, amount1, ...) — amounts from the swapper's view: negative = paid."""
+    try:
+        body = (lg["data"].hex() if hasattr(lg["data"], "hex") else str(lg["data"])).replace("0x", "")
+        a0 = int.from_bytes(bytes.fromhex(body[0:64]), "big", signed=True)
+        a1 = int.from_bytes(bytes.fromhex(body[64:128]), "big", signed=True)
+        usdc_amt, tok_amt = (a1, a0) if token_is_0 else (a0, a1)
+        if usdc_amt < 0 and tok_amt > 0:
+            return {"usdc": -usdc_amt / (10 ** usdc_dec), "tokens": tok_amt / 1e18}
+        return None
+    except Exception:  # noqa
+        return None
 
 
 def decode_swap(kind: str, token: str, lg) -> dict | None:
@@ -133,7 +172,15 @@ async def price_1m(token: str) -> float | None:
                             [to_checksum_address(token), 10 ** 18 * 1_000_000])
         res = await CHAIN.eth_call(ARCPAD, QUOTE_SELL_SEL + params.hex())
         v = int.from_bytes(res[:32], "big")
-        return v / 1e18 if v > 0 else None
+        if v > 0:
+            return v / 1e18
+    except Exception:  # noqa
+        pass
+    try:  # V4 / other venues: last indexed trade price (Arc Insider index)
+        r = await db.fetchone(text(
+            "SELECT price1m FROM swaps WHERE token = :t AND price1m > 0 AND usdc >= 0.5 ORDER BY ts DESC LIMIT 1"
+        ).bindparams(t=token.lower()))
+        return float(r["price1m"]) if r else None
     except Exception:  # noqa
         return None
 

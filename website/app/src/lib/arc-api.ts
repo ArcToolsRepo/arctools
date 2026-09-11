@@ -360,6 +360,14 @@ export type ScanReport = {
 // ---------------- unified token page (/token/$ca) ----------------
 
 export const SWAP_FEE_ROUTER = "0xA4E79c06eeC23c4caAa63aA37aCC6Fb7f0370a12";
+/** Our ownerless Uniswap V4 router (native + facade USDC, fee bps on the USDC side -> treasury). */
+export const ARC_V4_ROUTER = "0x05a0158EF87E8E7bFE4E0242e11dda75f83954e1";
+export type V4Key = { id: string; currency0: string; currency1: string; fee: number; tick_spacing: number; hooks: string; usdc_dec: number; venueName: string };
+const V4_HOOK_NAMES: Record<string, string> = {
+  "0xa368005ad249fbebcd5baa7396c9e3b3e44e6044": "Arguspad",
+  "0x465af15c85ac291d5cffb8d02d8c8e23102fe6e3": "act.fun",
+  "0x20eead6db6b3d0a4491e9073119dd0ebff166acc": "UBI.fun",
+};
 const ARCPAD_LAUNCHPAD = "0x1EaAD48260eECC7624666F1dFec202b2D75257fE";
 const ARCPAD_V3 = "0x2726AeC64D8a9BC41B9940dDA5D21c889458B348";
 const SEL_CURVE = "0x06d8d7db";
@@ -372,7 +380,8 @@ export type TokenPageInfo = {
   decimals: number;
   supply: number;
   /** pad = ArcToolsPad bonding curve · v3 = canonical Uniswap V3 (fee router) · external = other pad's own factory */
-  venue: "pad" | "v3" | "external";
+  venue: "pad" | "v3" | "v4" | "external";
+  v4Key: V4Key | null;
   pool: string | null;
   poolFee: number | null;
   liquidityUsdc: number | null;
@@ -576,6 +585,30 @@ export const tokenPage = createServerFn({ method: "POST" })
         liquidityUsdc = null;
       }
       if (liquidityUsdc === null && typeof meta.liquidityUsdc === "number") liquidityUsdc = Number(meta.liquidityUsdc);
+      // Uniswap V4 (act.fun, Arguspad, UBI.fun, ArcadeSwap...): PoolKey from the Arc Insider index -> tradeable via ArcV4Router
+      let v4Key: V4Key | null = null;
+      if (venue === "external") {
+        try {
+          const v4 = (await memo(`v4pool:${lc}`, 60_000, async () => {
+            const r = await fetch(`https://bot-production-4200.up.railway.app/api/v4pool?token=${lc}`, { headers: { Accept: "application/json" } });
+            return r.ok ? r.json() : null;
+          })) as { pools?: { id: string; currency0: string; currency1: string; fee: number; tick_spacing: number; hooks: string; usdc_dec: number | null; swaps: number }[] } | null;
+          const best = (v4?.pools ?? []).sort((a, b) => (b.swaps ?? 0) - (a.swaps ?? 0))[0];
+          if (best) {
+            v4Key = { ...best, usdc_dec: best.usdc_dec ?? 18, venueName: V4_HOOK_NAMES[(best.hooks ?? "").toLowerCase()] ?? "Uniswap V4" };
+            venue = "v4";
+            pool = best.id;
+            poolFee = best.fee;
+            const st = (await memo(`tokstats:${lc}`, 30_000, async () => {
+              const r = await fetch(`https://bot-production-4200.up.railway.app/api/token-stats?token=${lc}`);
+              return r.ok ? r.json() : null;
+            })) as { price1m?: number | null } | null;
+            if (st?.price1m && st.price1m > 0) price1m = st.price1m;
+          }
+        } catch {
+          /* index down */
+        }
+      }
       if (venue === "v3") price1m = await quoteToUsdc(token, BigInt(10) ** BigInt(decimals) * 1_000_000n);
       if (price1m !== null && !(price1m > 0)) price1m = null;
       if (price1m === null && typeof meta.price === "number") price1m = Number(meta.price) * 1e6;
@@ -601,7 +634,7 @@ export const tokenPage = createServerFn({ method: "POST" })
         quoteUsd,
         targetQuote,
         holders: typeof meta.holderCount === "number" ? Number(meta.holderCount) : null,
-        launchpad: padAddress ? "ArcToolsPad" : lp,
+        launchpad: padAddress ? "ArcToolsPad" : (v4Key ? v4Key.venueName : lp),
         liquidityUsdc,
         logo: padLogo ?? ipfsToHttp(String(meta.icon ?? "")),
         mcapUsd,
@@ -614,6 +647,7 @@ export const tokenPage = createServerFn({ method: "POST" })
         telegram: normSocial("tg", padSocial.telegram || (meta.telegram as string) || null),
         token: lc,
         twitter: normSocial("x", padSocial.twitter || (meta.twitter as string) || null),
+        v4Key,
         venue,
         venueUrl,
         website: normSocial("web", padSocial.website || (meta.website as string) || null),
@@ -1183,7 +1217,76 @@ async function withLogos(list: PadToken[]): Promise<PadToken[]> {
   return list.map((t) => (t.logo ? t : { ...t, logo: ipfsToHttp(icons.get((t.token || "").toLowerCase()) ?? "") }));
 }
 
+let _headBlock = 0;
+export function noteHeadBlock(b: number) { _headBlock = Math.max(_headBlock, b); }
+function headBlockGuess(): number { return _headBlock || 20_340_000 + Math.floor((Date.now() / 1000 - 1_789_000_000) / 0.63); }
+const INSIDER_API = "https://bot-production-4200.up.railway.app";
+const V4_HOOK_PADS: Record<string, string> = {
+  "0xa368005ad249fbebcd5baa7396c9e3b3e44e6044": "Arguspad",
+  "0x465af15c85ac291d5cffb8d02d8c8e23102fe6e3": "act.fun",
+  "0x20eead6db6b3d0a4491e9073119dd0ebff166acc": "UBI.fun",
+};
+
 async function listTokensImpl(pad: string): Promise<PadToken[]> {
+
+    if (pad === "Archemist") {
+      // archemist.fun: direct Uniswap V3 launches (fee 10000), LP locked; 80% of trading fees to the creator
+      const res = (await fetch("https://api.archemist.fun/api/tokens", { headers: { Accept: "application/json" } })
+        .then((r) => r.json())
+        .catch(() => ({}))) as {
+        tokens?: {
+          token_address?: string; name?: string; symbol?: string; image_url?: string; twitter?: string; telegram?: string;
+          website?: string; created_at?: string; pool_address?: string; network?: string;
+          live?: { price?: number; marketCap?: number; volume_24h?: number } | null;
+        }[];
+      };
+      return (res.tokens ?? [])
+        .filter((t) => t.token_address && (t.network ?? "mainnet") === "mainnet")
+        .map((t) => ({
+          createdAt: t.created_at ?? null,
+          logo: ipfsToHttp(t.image_url ?? ""),
+          mcapUsd: typeof t.live?.marketCap === "number" ? t.live.marketCap : null,
+          name: t.name ?? "?",
+          pad: "Archemist",
+          pool: t.pool_address ?? null,
+          priceUsd: typeof t.live?.price === "number" ? t.live.price : null,
+          symbol: t.symbol ?? "?",
+          telegram: t.telegram || null,
+          token: t.token_address!,
+          twitter: t.twitter || null,
+          venueUrl: `/token/${t.token_address}`,
+          volUsd: typeof t.live?.volume_24h === "number" ? t.live.volume_24h : null,
+          website: t.website || null,
+        }));
+    }
+
+    if (pad === "UniswapV4") {
+      // every USDC-paired Uniswap V4 pool on Arc from the Arc Insider index (act.fun, Arguspad, UBI.fun, ArcadeSwap...)
+      const res = (await fetch(`${INSIDER_API}/api/v4launches?limit=100`, { headers: { Accept: "application/json" } })
+        .then((r) => r.json())
+        .catch(() => ({}))) as {
+        pools?: { token: string; hooks: string | null; symbol: string | null; block: number | null; swaps: number; vol24: number; price1m: number | null; last_ts: number }[];
+      };
+      const seen = new Set<string>();
+      return (res.pools ?? [])
+        .filter((p) => p.token && !seen.has(p.token) && seen.add(p.token))
+        .map((p) => ({
+          createdAt: p.block ? new Date(Date.now() - Math.max(0, (headBlockGuess() - p.block)) * 630).toISOString() : null,
+          logo: null,
+          mcapUsd: null,
+          name: p.symbol ?? p.token.slice(0, 8),
+          pad: V4_HOOK_PADS[(p.hooks ?? "").toLowerCase()] ?? "UniswapV4",
+          pool: null,
+          priceUsd: p.price1m ? p.price1m / 1e6 : null,
+          symbol: p.symbol ?? "?",
+          telegram: null,
+          token: p.token,
+          twitter: null,
+          venueUrl: `/token/${p.token}`,
+          volUsd: p.vol24 || null,
+          website: null,
+        }));
+    }
 
     if (pad === "RadarDex") {
       const [launchesRes, listRes] = await Promise.all([

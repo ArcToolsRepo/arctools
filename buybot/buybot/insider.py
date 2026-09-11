@@ -147,6 +147,13 @@ async def init_tables():
     # migracje kolumn (bezpieczne przy restarcie)
     for alter in [
         "ALTER TABLE wallet_stats ADD COLUMN IF NOT EXISTS open_positions INTEGER DEFAULT 0",
+        "ALTER TABLE v4_pools ADD COLUMN IF NOT EXISTS currency0 VARCHAR(64)",
+        "ALTER TABLE v4_pools ADD COLUMN IF NOT EXISTS currency1 VARCHAR(64)",
+        "ALTER TABLE v4_pools ADD COLUMN IF NOT EXISTS fee INTEGER",
+        "ALTER TABLE v4_pools ADD COLUMN IF NOT EXISTS tick_spacing INTEGER",
+        "ALTER TABLE v4_pools ADD COLUMN IF NOT EXISTS hooks VARCHAR(64)",
+        "ALTER TABLE v4_pools ADD COLUMN IF NOT EXISTS block BIGINT",
+        "ALTER TABLE v4_pools ADD COLUMN IF NOT EXISTS usdc_dec INTEGER",
     ]:
         try:
             await db.execute(text(alter))
@@ -257,18 +264,31 @@ async def _v4_register_init(lg):
         token, is0 = c1, True
     elif c1 in (NATIVE, USDC):
         token, is0 = c0, False
+    # data: fee uint24, tickSpacing int24, hooks address, sqrtPriceX96, tick  -> full PoolKey for routers/snipers
+    body = (lg["data"].hex() if hasattr(lg["data"], "hex") else str(lg["data"])).replace("0x", "")
+    fee = int(body[0:64], 16) if len(body) >= 64 else None
+    ts = int.from_bytes(bytes.fromhex(body[64:128]), "big", signed=True) if len(body) >= 128 else None
+    hooks = ("0x" + body[128:192][-40:]).lower() if len(body) >= 192 else None
+    blk = lg.get("blockNumber")
+    blk = int(blk, 16) if isinstance(blk, str) else (int(blk) if blk is not None else None)
     await db.execute(text(
-        "INSERT INTO v4_pools (id, token, is0) VALUES (:i, :t, :z) ON CONFLICT (id) DO NOTHING"
-    ).bindparams(i=pid, t=token, z=1 if is0 else 0))
-    _v4_cache[pid] = {"is0": is0, "token": token} if token else None
+        "INSERT INTO v4_pools (id, token, is0, currency0, currency1, fee, tick_spacing, hooks, block) "
+        "VALUES (:i, :t, :z, :c0, :c1, :f, :ts, :h, :b) ON CONFLICT (id) DO UPDATE SET "
+        "currency0 = EXCLUDED.currency0, currency1 = EXCLUDED.currency1, fee = EXCLUDED.fee, "
+        "tick_spacing = EXCLUDED.tick_spacing, hooks = EXCLUDED.hooks, block = COALESCE(v4_pools.block, EXCLUDED.block)"
+    ).bindparams(i=pid, t=token, z=1 if is0 else 0, c0=c0, c1=c1, f=fee, ts=ts, h=hooks, b=blk))
+    usdc_dec = 6 if (c0 == USDC or c1 == USDC) else 18      # facade ERC-20 = 6 dec, native = 18
+    await db.execute(text("UPDATE v4_pools SET usdc_dec = :d WHERE id = :i").bindparams(d=usdc_dec, i=pid))
+    _v4_cache[pid] = {"is0": is0, "token": token, "usdc_dec": usdc_dec} if token else None
 
 
 async def _v4_pool(pid: str) -> dict | None:
     pid = pid.lower()
     if pid in _v4_cache:
         return _v4_cache[pid]
-    row = await db.fetchone(text("SELECT token, is0 FROM v4_pools WHERE id = :i").bindparams(i=pid))
-    info = ({"is0": bool(row["is0"]), "token": row["token"]} if row and row["token"] else None)
+    row = await db.fetchone(text("SELECT token, is0, usdc_dec FROM v4_pools WHERE id = :i").bindparams(i=pid))
+    info = ({"is0": bool(row["is0"]), "token": row["token"], "usdc_dec": int(row["usdc_dec"] or 18)}
+            if row and row["token"] else None)
     if row:
         _v4_cache[pid] = info
     return info
@@ -285,16 +305,22 @@ def _decode_v4(lg, info: dict | None) -> dict | None:
     except Exception:  # noqa
         return None
     usdc_amt, tok_amt = (a0, a1) if info["is0"] else (a1, a0)
+    scale = 10 ** int(info.get("usdc_dec") or 18)
     if usdc_amt < 0 and tok_amt > 0:      # zaplacil USDC, dostal token
-        return {"side": "buy", "token": info["token"], "tokens": tok_amt / 1e18, "usdc": -usdc_amt / 1e18}
+        return {"side": "buy", "token": info["token"], "tokens": tok_amt / 1e18, "usdc": -usdc_amt / scale}
     if usdc_amt > 0 and tok_amt < 0:
-        return {"side": "sell", "token": info["token"], "tokens": -tok_amt / 1e18, "usdc": usdc_amt / 1e18}
+        return {"side": "sell", "token": info["token"], "tokens": -tok_amt / 1e18, "usdc": usdc_amt / scale}
     return None
 
 
 async def v4_bootstrap():
     """Jednorazowo: tabela, mapowanie wszystkich puli V4 z 30 dni, backfill swapow V4 (filtr po adresie)."""
     await db.execute(text("CREATE TABLE IF NOT EXISTS v4_pools (id VARCHAR(70) PRIMARY KEY, token VARCHAR(64), is0 INTEGER)"))
+    for col, typ in (("currency0", "VARCHAR(64)"), ("currency1", "VARCHAR(64)"), ("fee", "INTEGER"),
+                     ("tick_spacing", "INTEGER"), ("hooks", "VARCHAR(64)"), ("block", "BIGINT"), ("usdc_dec", "INTEGER")):
+        await db.execute(text(f"ALTER TABLE v4_pools ADD COLUMN IF NOT EXISTS {col} {typ}"))
+    _v4_cache.clear()
+    asyncio.create_task(v4_keys_backfill(), name="v4-keys-backfill")
     if await db.kv_get("v4_bootstrapped"):
         return
     head = await CHAIN._bn()
@@ -345,6 +371,76 @@ async def v4_bootstrap():
         await asyncio.sleep(0.05)
     await db.kv_set("v4_bootstrapped", "1")
     log.info("v4 bootstrap: +%s swaps indexed", total)
+
+
+async def v4_keys_backfill():
+    """Pools registered before PoolKey columns existed: re-read Initialize logs (topic + pool id) in 10k windows."""
+    await asyncio.sleep(60)
+    try:
+        if await db.kv_get("v4_keys_backfilled"):
+            return
+        head = await CHAIN._bn()
+        pm = Web3.to_checksum_address(V4_POOL_MANAGER)
+        n = 0
+        for a in range(max(0, head - BACKFILL_BLOCKS), head, 10_000):
+            try:
+                logs = await CHAIN.get_logs({"address": pm, "topics": [V4_INIT_TOPIC], "fromBlock": a, "toBlock": min(head, a + 9_999)})
+            except Exception as e:  # noqa
+                log.warning("v4 keys backfill %s: %s", a, e)
+                await asyncio.sleep(2)
+                continue
+            for lg in logs:
+                await _v4_register_init(lg)
+                n += 1
+            await asyncio.sleep(0.2)
+        await db.kv_set("v4_keys_backfilled", "1")
+        log.info("v4 keys backfill done: %s pools", n)
+        if not await db.kv_get("v4_facade_fixed"):
+            # historical V4 swaps on facade-USDC pools were scaled by 1e18 instead of 1e6 -> 1e12x too small
+            r = await db.execute(text(
+                "UPDATE swaps SET usdc = usdc * 1e12, price1m = price1m * 1e12 WHERE venue = 'v4' AND usdc < 0.0001 "
+                "AND token IN (SELECT token FROM v4_pools WHERE usdc_dec = 6)"))
+            await db.kv_set("v4_facade_fixed", "1")
+            log.info("v4 facade swaps rescaled")
+    except Exception as e:  # noqa
+        log.warning("v4 keys backfill: %s", e)
+
+
+async def api_v4pool(request: web.Request) -> web.Response:
+    """PoolKey(s) for a token on Uniswap V4 (USDC-paired) — used by the sniper to route buys."""
+    token = _tok(request)
+    if not token:
+        return web.json_response({"error": "bad token"}, status=400, headers=API_CORS)
+    rows = await db.fetchall(text(
+        "SELECT id, currency0, currency1, fee, tick_spacing, hooks, is0, block, usdc_dec FROM v4_pools "
+        "WHERE token = :t AND fee IS NOT NULL ORDER BY block DESC NULLS LAST").bindparams(t=token))
+    pools = []
+    for r in rows:
+        d = dict(r)
+        sw = await db.fetchone(text("SELECT COUNT(*) AS n, MAX(ts) AS last FROM swaps WHERE token = :t AND venue = 'v4'").bindparams(t=token))
+        d["swaps"] = int(sw["n"] or 0) if sw else 0
+        pools.append(d)
+    return web.json_response({"token": token, "pools": pools}, headers=API_CORS)
+
+
+async def api_v4launches(request: web.Request) -> web.Response:
+    """Latest USDC-paired Uniswap V4 pools (any launchpad) with symbol + basic stats — feeds the site's V4 tab."""
+    limit = min(100, int(request.query.get("limit", "50")))
+    rows = await db.fetchall(text(
+        "SELECT p.id, p.token, p.hooks, p.fee, p.block, s.symbol FROM v4_pools p LEFT JOIN token_symbols s ON s.token = p.token "
+        "WHERE p.token IS NOT NULL AND p.fee IS NOT NULL ORDER BY p.block DESC NULLS LAST LIMIT :l").bindparams(l=limit))
+    out = []
+    now = int(time.time())
+    for r in rows:
+        d = dict(r)
+        st = await db.fetchone(text(
+            "SELECT COUNT(*) AS n, SUM(CASE WHEN ts > :d THEN usdc ELSE 0 END) AS vol24, MAX(ts) AS last, "
+            "(SELECT price1m FROM swaps WHERE token = :t AND price1m > 0 ORDER BY ts DESC LIMIT 1) AS price1m "
+            "FROM swaps WHERE token = :t").bindparams(t=d["token"], d=now - 86400))
+        d.update({"swaps": int(st["n"] or 0), "vol24": float(st["vol24"] or 0), "last_ts": int(st["last"] or 0),
+                  "price1m": float(st["price1m"]) if st and st["price1m"] else None})
+        out.append(d)
+    return web.json_response({"pools": out}, headers=API_CORS)
 
 
 async def repair_pools_once() -> list[str]:
@@ -959,6 +1055,8 @@ async def start_api():
     app.router.add_get("/api/ohlc", api_ohlc)
     app.router.add_get("/api/trades", api_trades)
     app.router.add_get("/api/token-stats", api_token_stats)
+    app.router.add_get("/api/v4pool", api_v4pool)
+    app.router.add_get("/api/v4launches", api_v4launches)
     from .bridge_watch import api_bridge
     app.router.add_get("/api/bridge", api_bridge)
     app.router.add_get("/health", api_health)

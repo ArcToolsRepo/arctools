@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArcNav } from "@/components/arc-nav";
 import { SocialCheck } from "@/components/social-check";
 import { TvChart, type Candle } from "@/components/tv-chart";
-import { SWAP_FEE_ROUTER, tokenPage, venueData, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
+import { ARC_V4_ROUTER, SWAP_FEE_ROUTER, tokenPage, venueData, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
 import { padHolders } from "@/lib/arcpad";
 import {
   FN, FN3, PAD, connectWallet, ethCall, fmt, nativeBalance, onWalletChange, p32, pnum, sendTx, tokenBalance, waitReceipt,
@@ -39,6 +39,7 @@ const SEL = {
   quoteExactInputSingle: "0xc6a5026a",
   routerBuy: "0xa0328eb2",
   routerSell: "0x7dfcb0d3",
+  v4SwapExactIn: "0xa71e60ec",
 };
 const TFS = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
 const TF_SEC: Record<string, number> = { "1d": 86400, "1h": 3600, "1m": 60, "4h": 14400, "5m": 300, "15m": 900 };
@@ -121,7 +122,7 @@ function TokenPage() {
   const quoteTok = info?.quoteToken ?? null;         // null = native USDC
   const qSym = info?.quoteSymbol ?? "USDC";
   const qUsd = info?.quoteUsd ?? 1;
-  const canTrade = info?.venue === "pad" || (info?.venue === "v3" && info.poolFee !== null);
+  const canTrade = info?.venue === "pad" || (info?.venue === "v3" && info.poolFee !== null) || (info?.venue === "v4" && !!info.v4Key);
   // graduowany token v3 w parze z innym tokenem (np. BTOLLY/TOLLY): pula jest token/quote, nie token/USDC
   const v3Quote = info?.venue === "v3" && !!info.quoteToken;
 
@@ -197,6 +198,13 @@ function TokenPage() {
         } else {
           // V3: 1% service fee is taken from USDC before the swap (buy) / after (sell)
           const fee = BigInt(info.poolFee ?? 10000);
+          if (info.venue === "v4") {
+            // V4: no on-chain quoter — estimate from the last indexed price (1% router fee on the USDC side)
+            const px = (info.price1m ?? 0) / 1e6;
+            if (!(px > 0)) { setQuote(null); return; }
+            setQuote(side === "buy" ? (n * 0.99) / px : n * px * 0.99);
+            return;
+          }
           if (v3Quote && info.quoteToken) {
             // para token/quote (18 dec po obu stronach), bez fee routera
             const amountIn = BigInt(Math.round(n * 1e6)) * 10n ** 12n;
@@ -259,6 +267,44 @@ function TokenPage() {
           }
         } else {
           hash = await sendTx({ data: FN.sell + p32(ca) + pnum(amt) + pnum(minOut), from, to: padAddr });
+        }
+      } else if (info.venue === "v4" && info.v4Key) {
+        // ArcV4Router.swapExactIn(PoolKey, zeroForOne, amountIn, minOut, recipient, feeBps=100)
+        const k = info.v4Key;
+        const usdcSide = k.currency0.toLowerCase() === ca.toLowerCase() ? k.currency1 : k.currency0;
+        const native = /^0x0{40}$/.test(usdcSide);
+        const uDec = native ? 18 : 6;
+        const key = p32(k.currency0) + p32(k.currency1) + pnum(BigInt(k.fee)) + pnum(BigInt.asUintN(256, BigInt(k.tick_spacing))) + p32(k.hooks);
+        if (side === "buy") {
+          const amountIn = BigInt(Math.round(n * 1e6)) * 10n ** BigInt(uDec - 6);
+          const minOut = BigInt(Math.round(quote * (1 - slippage / 100) * 1e6)) * BigInt(10) ** BigInt(Math.max(0, dec - 6));
+          const zeroForOne = k.currency0.toLowerCase() !== ca.toLowerCase();
+          if (!native) {
+            const al = await ethCall(USDC, SEL.allowance + p32(from) + p32(ARC_V4_ROUTER));
+            if (!al || BigInt(al) < amountIn) {
+              setBusy("Approve USDC...");
+              await waitReceipt(await sendTx({ data: SEL.approve + p32(ARC_V4_ROUTER) + "f".repeat(64), from, to: USDC }));
+              setBusy("Confirm in wallet...");
+            }
+          }
+          hash = await sendTx({
+            data: SEL.v4SwapExactIn + key + pnum(zeroForOne ? 1n : 0n) + pnum(amountIn) + pnum(minOut) + p32(from) + pnum(100n),
+            from, to: ARC_V4_ROUTER, ...(native ? { value: amountIn } : {}),
+          });
+        } else {
+          const tokIn = BigInt(Math.round(n * 1e6)) * BigInt(10) ** BigInt(Math.max(0, dec - 6));
+          const minOut = BigInt(Math.round(quote * (1 - slippage / 100) * 1e6)) * 10n ** BigInt(uDec - 6);
+          const zeroForOne = k.currency0.toLowerCase() === ca.toLowerCase();
+          const al = await ethCall(ca, SEL.allowance + p32(from) + p32(ARC_V4_ROUTER));
+          if (!al || BigInt(al) < tokIn) {
+            setBusy(`Approve ${info.symbol}...`);
+            await waitReceipt(await sendTx({ data: SEL.approve + p32(ARC_V4_ROUTER) + "f".repeat(64), from, to: ca }));
+            setBusy("Confirm in wallet...");
+          }
+          hash = await sendTx({
+            data: SEL.v4SwapExactIn + key + pnum(zeroForOne ? 1n : 0n) + pnum(tokIn) + pnum(minOut) + p32(from) + pnum(100n),
+            from, to: ARC_V4_ROUTER,
+          });
         }
       } else if (v3Quote && info.quoteToken) {
         // SwapRouter02 exactInputSingle: quote -> token (buy) lub token -> quote (sell), 18 dec
@@ -434,7 +480,7 @@ function TokenPage() {
               ))}
             </div>
             <div className="arc-mono" style={{ borderBottom: "1px solid var(--arc-line)", color: "var(--arc-muted)", fontSize: 11, padding: "6px 10px" }}>
-              {info.symbol}/USDC · {mode === "mcap" ? "Market Cap" : "Price"} · {tf} · {info.venue === "pad" ? `ArcToolsPad curve (${qSym} pair)` : info.venue === "v3" ? `Uniswap V3 ${((info.poolFee ?? 0) / 10000).toFixed(2)}%${info.graduated ? " · graduated from ArcToolsPad" : ""}` : (info.launchpad ?? "external pool")}
+              {info.symbol}/USDC · {mode === "mcap" ? "Market Cap" : "Price"} · {tf} · {info.venue === "pad" ? `ArcToolsPad curve (${qSym} pair)` : info.venue === "v3" ? `Uniswap V3 ${((info.poolFee ?? 0) / 10000).toFixed(2)}%${info.graduated ? " · graduated from ArcToolsPad" : ""}` : info.venue === "v4" ? `Uniswap V4${info.launchpad && info.launchpad !== "Uniswap V4" ? ` · ${info.launchpad}` : " · hookless pool"}` : (info.launchpad ?? "external pool")}
               {candles.length < 5 && effCandles.length > 0 && <span style={{ marginLeft: 10, opacity: 0.7 }}>· venue data (own index syncing)</span>}
             </div>
             <TvChart candles={effCandles} mode={mode} scale={scale} />
@@ -587,7 +633,7 @@ function TokenPage() {
             <div className="arc-mono" style={{ display: "grid", fontSize: 12, gap: 8, gridTemplateColumns: "160px 1fr", padding: 14 }}>
               <span style={{ color: "var(--arc-muted)" }}>contract</span><span>{ca}</span>
               <span style={{ color: "var(--arc-muted)" }}>pool</span><span>{info.pool ?? "—"}</span>
-              <span style={{ color: "var(--arc-muted)" }}>venue</span><span>{info.venue === "pad" ? "ArcToolsPad bonding curve" : info.venue === "v3" ? `Uniswap V3, fee tier ${((info.poolFee ?? 0) / 10000).toFixed(2)}%` : `${info.launchpad ?? "external"} pool`}</span>
+              <span style={{ color: "var(--arc-muted)" }}>venue</span><span>{info.venue === "pad" ? "ArcToolsPad bonding curve" : info.venue === "v3" ? `Uniswap V3, fee tier ${((info.poolFee ?? 0) / 10000).toFixed(2)}%` : info.venue === "v4" ? `Uniswap V4 (${info.launchpad && info.launchpad !== "Uniswap V4" ? info.launchpad : "no hook"}), ${info.v4Key?.usdc_dec === 6 ? "USDC facade" : "native USDC"} pair` : `${info.launchpad ?? "external"} pool`}</span>
               <span style={{ color: "var(--arc-muted)" }}>supply</span><span>{fmt(info.supply, 0)} {info.symbol}</span>
               <span style={{ color: "var(--arc-muted)" }}>decimals</span><span>{info.decimals}</span>
               <span style={{ color: "var(--arc-muted)" }}>all-time volume</span><span>{money(eff.volAll, 0)} over {stats?.txns_all ?? "—"} indexed trades</span>

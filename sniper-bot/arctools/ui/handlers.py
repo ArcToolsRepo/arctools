@@ -13,7 +13,7 @@ from eth_utils import is_address, to_checksum_address
 
 from ..config import CFG
 from ..chain import CHAIN
-from ..pads import PADS, pad_by_name, default_pad, token_overview, quote_usdc_to_token
+from ..pads import PADS, pad_by_name, default_pad, auto_pad, token_overview, quote_usdc_to_token
 from .. import db, wallets, sniper, portfolio, feed, bridge
 from .keyboards import (kb, main_menu, back, snipe_card, position_card,
                         AMOUNTS, SLIPPAGES, GAS_MODES, MODES)
@@ -365,10 +365,14 @@ async def sn_arm(cb: CallbackQuery):
     if not s:
         return await cb.answer("Panel expired", show_alert=True)
     if s["mode"] == "instant" and s["token"]:
-        pad = pad_by_name(s["pad"]) if s["pad"] != "auto" else default_pad()
+        key = None
+        if s["pad"] != "auto":
+            pad = pad_by_name(s["pad"])
+        else:
+            pad, key = await auto_pad(s["token"])   # canonical V3 -> V3; else Uniswap V4 PoolKey
         await edit(cb, "⚡ Buying…")
         res = await sniper.execute_buy(cb.from_user.id, s["token"], pad, s["amount_usdc"],
-                                       s["slippage"], s["gas_mode"], s["wallet_ids"])
+                                       s["slippage"], s["gas_mode"], s["wallet_ids"], curve=key)
         lines = []
         for r in res:
             if r.get("ok"):
