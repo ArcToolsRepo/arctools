@@ -380,8 +380,9 @@ export type TokenPageInfo = {
   decimals: number;
   supply: number;
   /** pad = ArcToolsPad bonding curve · v3 = canonical Uniswap V3 (fee router) · external = other pad's own factory */
-  venue: "pad" | "v3" | "v4" | "external";
+  venue: "pad" | "v3" | "v4" | "curve" | "external";
   v4Key: V4Key | null;
+  curveAddress: string | null;
   pool: string | null;
   poolFee: number | null;
   liquidityUsdc: number | null;
@@ -609,6 +610,29 @@ export const tokenPage = createServerFn({ method: "POST" })
           /* index down */
         }
       }
+      // Warp-style bonding curve: token.curve() -> curve contract (buy/sell/quote there until graduated)
+      let curveAddress: string | null = null;
+      if (venue === "external") {
+        try {
+          const wc = (await rpc("eth_call", [{ data: "0x7165485d", to: token }, "latest"]).catch(() => null)) as string | null;
+          if (wc && wc.length >= 66 && !/^0x0+$/.test(wc)) {
+            const c = "0x" + wc.slice(26, 66);
+            const [code, grad, q] = await Promise.all([
+              rpc("eth_getCode", [c, "latest"]).catch(() => "0x"),
+              rpc("eth_call", [{ data: "0xe7c2b772", to: c }, "latest"]).catch(() => null),
+              rpc("eth_call", [{ data: "0xa64190c4" + padNum(10n ** 24n), to: c }, "latest"]).catch(() => null),
+            ]);
+            if (typeof code === "string" && code.length > 2 && !(grad && BigInt(grad as string) !== 0n)) {
+              curveAddress = c;
+              venue = "curve";
+              pool = c;
+              if (q && (q as string) !== "0x") price1m = Number(BigInt(q as string)) / 1e18;
+            }
+          }
+        } catch {
+          /* not a warp token */
+        }
+      }
       if (venue === "v3") price1m = await quoteToUsdc(token, BigInt(10) ** BigInt(decimals) * 1_000_000n);
       if (price1m !== null && !(price1m > 0)) price1m = null;
       if (price1m === null && typeof meta.price === "number") price1m = Number(meta.price) * 1e6;
@@ -634,7 +658,7 @@ export const tokenPage = createServerFn({ method: "POST" })
         quoteUsd,
         targetQuote,
         holders: typeof meta.holderCount === "number" ? Number(meta.holderCount) : null,
-        launchpad: padAddress ? "ArcToolsPad" : (v4Key ? v4Key.venueName : lp),
+        launchpad: padAddress ? "ArcToolsPad" : (v4Key ? v4Key.venueName : curveAddress ? "Warp" : lp),
         liquidityUsdc,
         logo: padLogo ?? ipfsToHttp(String(meta.icon ?? "")),
         mcapUsd,
@@ -647,6 +671,7 @@ export const tokenPage = createServerFn({ method: "POST" })
         telegram: normSocial("tg", padSocial.telegram || (meta.telegram as string) || null),
         token: lc,
         twitter: normSocial("x", padSocial.twitter || (meta.twitter as string) || null),
+        curveAddress,
         v4Key,
         venue,
         venueUrl,
@@ -994,6 +1019,8 @@ export const getPrice1m = createServerFn({ method: "POST" })
 // ---------------- token explorer: lists per venue ----------------
 
 export type PadToken = {
+  /** normalized launch stage across pads: "curve 42%" | "graduated" | "pool" | "instant" */
+  stage?: string | null;
   createdAt: string | null;
   logo: string | null;
   mcapUsd: number | null;
@@ -1248,6 +1275,7 @@ async function listTokensImpl(pad: string): Promise<PadToken[]> {
           mcapUsd: typeof t.live?.marketCap === "number" ? t.live.marketCap : null,
           name: t.name ?? "?",
           pad: "Archemist",
+          stage: "pool · locked LP",
           pool: t.pool_address ?? null,
           priceUsd: typeof t.live?.price === "number" ? t.live.price : null,
           symbol: t.symbol ?? "?",
@@ -1276,6 +1304,7 @@ async function listTokensImpl(pad: string): Promise<PadToken[]> {
           mcapUsd: null,
           name: p.symbol ?? p.token.slice(0, 8),
           pad: V4_HOOK_PADS[(p.hooks ?? "").toLowerCase()] ?? "UniswapV4",
+          stage: "V4 pool",
           pool: null,
           priceUsd: p.price1m ? p.price1m / 1e6 : null,
           symbol: p.symbol ?? "?",

@@ -267,3 +267,20 @@ export async function fileToSmallDataUrl(file: File, maxPx = 256): Promise<strin
     URL.revokeObjectURL(url);
   }
 }
+
+// ---------------- ArcAggregator (one swap for V3 / V4 / ArcToolsPad curves, split routing) ----------------
+export const ARC_AGGREGATOR = "0xff9A8F35F683C810f6C1507f7409Bf0637093707";
+const AGG_SEL = { buy: "0x9125f3db", sell: "0xe95e170b" };
+export type AggLeg = { venue: number; target: string; fee: number; key: { currency0: string; currency1: string; fee: number; tick_spacing: number; hooks: string } | null; amount: string };
+
+/** buy(address token, Leg[] legs, uint256 minOut, address to, uint16 feeBps) / sell(...) — Leg is a static 9-word tuple. */
+export function encodeAggregatorSwap(side: "buy" | "sell", token: string, legs: AggLeg[], minOut: bigint, to: string, feeBps: number): string {
+  const ZERO = "0x0000000000000000000000000000000000000000";
+  const legWords = legs.map((l) => {
+    const k = l.key ?? { currency0: ZERO, currency1: ZERO, fee: 0, tick_spacing: 0, hooks: ZERO };
+    return pnum(BigInt(l.venue)) + p32(l.target) + pnum(BigInt(l.fee)) + p32(k.currency0) + p32(k.currency1) + pnum(BigInt(k.fee)) +
+      pnum(BigInt.asUintN(256, BigInt(k.tick_spacing))) + p32(k.hooks) + pnum(BigInt(l.amount));
+  }).join("");
+  const head = p32(token) + pnum(0xa0n) + pnum(minOut) + p32(to) + pnum(BigInt(feeBps));
+  return (side === "buy" ? AGG_SEL.buy : AGG_SEL.sell) + head + pnum(BigInt(legs.length)) + legWords;
+}

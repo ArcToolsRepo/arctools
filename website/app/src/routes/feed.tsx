@@ -35,7 +35,12 @@ export const Route = createFileRoute("/feed")({
   component: FeedPage,
 });
 
-const TABS = ["Top", "ArcToolsPad", "Tolly", "RadarDex", "ArcPad", "Warp", "Archemist", "Uniswap V4", "New pools"] as const;
+const TABS = ["Top", "All launches", "ArcToolsPad", "Tolly", "RadarDex", "ArcPad", "Warp", "Archemist", "Uniswap V4", "New pools"] as const;
+const STAGE_BY_PAD: Record<string, string> = {
+  RadarDex: "pool · locked LP", Tolly: "pool · locked LP", ArcPad: "pool · locked LP", Archemist: "pool · locked LP",
+  UniswapV3: "V3 pool", UniswapV4: "V4 pool", Arguspad: "V4 pool", "act.fun": "V4 pool", "UBI.fun": "V4 pool", Warp: "curve",
+};
+const stageOf = (t: PadToken) => t.stage ?? STAGE_BY_PAD[t.pad] ?? "pool";
 type Tab = (typeof TABS)[number];
 
 function fmtUsd(n: number | null): string {
@@ -239,6 +244,9 @@ function TokenRow({ t }: { t: PadToken }) {
         <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, minWidth: 66 }}>
           {t.pad}
         </span>
+        <span className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 3, color: stageOf(t).startsWith("curve") ? "var(--arc-amber, #e8a838)" : "var(--arc-muted)", fontSize: 10, minWidth: 92, padding: "1px 6px", textAlign: "center" }}>
+          {stageOf(t)}
+        </span>
         <span className="arc-mono" style={{ fontSize: 12, minWidth: 86, textAlign: "right" }}>
           {t.mcapUsd !== null ? `MC ${fmtUsd(t.mcapUsd)}` : ""}
         </span>
@@ -349,6 +357,8 @@ function FeedPage() {
   const [minMc, setMinMc] = useState("");
   const [maxMc, setMaxMc] = useState("");
   const [minVol, setMinVol] = useState("");
+  const [padFilter, setPadFilter] = useState<Set<string>>(new Set());
+  const [maxAge, setMaxAge] = useState<number>(0); // hours, 0 = any
   const [sort, setSort] = useState<SortKey>("newest");
 
   // price watch
@@ -370,6 +380,7 @@ function FeedPage() {
           mcapUsd: p.pricePer1M > 0 ? p.pricePer1M * 1000 : null,
           name: p.name,
           pad: "ArcToolsPad",
+          stage: (p as { graduated?: boolean }).graduated ? "graduated · V3" : (p as { mode?: string }).mode === "instant" ? "instant · V3" : `curve ${Math.min(100, Math.round(((p as { progress?: number }).progress ?? 0) * 100))}%`,
           pool: null,
           priceUsd: null,
           symbol: p.symbol,
@@ -389,7 +400,7 @@ function FeedPage() {
             listTokens({ data: { pad: "Archemist" } }).catch(() => [] as PadToken[]),
           ]);
           res = [...pad.map(padToPadToken), ...tolly, ...radar, ...arcpad, ...arch];
-        } else if (tab === "New pools") {
+        } else if (tab === "New pools" || tab === "All launches") {
           // fresh launches across EVERY launchpad, mixed
           const [radar, arcpad, warp, tolly, uni, pad, arch, v4] = await Promise.all([
             listTokens({ data: { pad: "RadarDex" } }).catch(() => [] as PadToken[]),
@@ -498,8 +509,11 @@ function FeedPage() {
     const lo = parseFloat(minMc) || 0;
     const hi = parseFloat(maxMc) || Infinity;
     const vmin = parseFloat(minVol) || 0;
+    const ageCut = maxAge > 0 ? Date.now() - maxAge * 3_600_000 : 0;
     let out = withMc.filter((i) => {
       if (qq && !(`${i.name} ${i.symbol} ${i.token}`.toLowerCase().includes(qq))) return false;
+      if (padFilter.size > 0 && !padFilter.has(i.pad)) return false;
+      if (ageCut && (!i.createdAt || new Date(i.createdAt).getTime() < ageCut)) return false;
       if ((lo > 0 || hi < Infinity) && (i.mcapUsd === null || i.mcapUsd < lo || i.mcapUsd > hi)) return false;
       if (vmin > 0 && (i.volUsd === null || i.volUsd < vmin)) return false;
       return true;
@@ -520,7 +534,7 @@ function FeedPage() {
       out = fresh.length > 0 ? fresh : out.slice(0, 25);
     }
     return out;
-  }, [items, mcaps, q, minMc, maxMc, minVol, sort, tab]);
+  }, [items, mcaps, q, minMc, maxMc, minVol, sort, tab, padFilter, maxAge]);
 
   const shown = view.slice(0, 150);
 
@@ -614,7 +628,41 @@ function FeedPage() {
             <option value="mcap">Market cap</option>
             <option value="volume">Volume</option>
           </select>
+          {(tab === "All launches" || tab === "New pools") && (
+            <select
+              className="arc-mono"
+              onChange={(e) => setMaxAge(Number(e.target.value))}
+              style={{ background: "var(--arc-paper)", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 13, padding: "9px 12px" }}
+              value={maxAge}
+            >
+              <option value={0}>Any age</option>
+              <option value={1}>Last 1h</option>
+              <option value={6}>Last 6h</option>
+              <option value={24}>Last 24h</option>
+              <option value={168}>Last 7d</option>
+            </select>
+          )}
         </div>
+        {tab === "All launches" && (
+          <div className="arc-mono" style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "-6px 0 14px" }}>
+            {Array.from(new Set(items.map((i) => i.pad))).sort().map((p) => {
+              const on = padFilter.has(p);
+              return (
+                <button
+                  key={p}
+                  onClick={() => setPadFilter((s) => { const n = new Set(s); if (n.has(p)) n.delete(p); else n.add(p); return n; })}
+                  style={{ background: on ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (on ? "var(--arc-cobalt)" : "var(--arc-line)"), borderRadius: 999, color: on ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "3px 10px" }}
+                  type="button"
+                >
+                  {p} <span style={{ opacity: 0.6 }}>{items.filter((i) => i.pad === p).length}</span>
+                </button>
+              );
+            })}
+            {padFilter.size > 0 && (
+              <button className="arc-mono" onClick={() => setPadFilter(new Set())} style={{ background: "transparent", border: "none", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 11 }} type="button">clear</button>
+            )}
+          </div>
+        )}
 
         {loading ? (
           <p className="arc-mono" style={{ fontSize: 14, padding: "20px 0" }}>

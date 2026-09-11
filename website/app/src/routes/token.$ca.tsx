@@ -5,6 +5,8 @@ import { ArcNav } from "@/components/arc-nav";
 import { SocialCheck } from "@/components/social-check";
 import { TvChart, type Candle } from "@/components/tv-chart";
 import { ARC_V4_ROUTER, SWAP_FEE_ROUTER, tokenPage, venueData, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
+import { routeSwap, type RouteResult } from "@/lib/arc-route";
+import { ARC_AGGREGATOR, encodeAggregatorSwap } from "@/lib/arc-wallet";
 import { padHolders } from "@/lib/arcpad";
 import {
   FN, FN3, PAD, connectWallet, ethCall, fmt, nativeBalance, onWalletChange, p32, pnum, sendTx, tokenBalance, waitReceipt,
@@ -122,7 +124,10 @@ function TokenPage() {
   const quoteTok = info?.quoteToken ?? null;         // null = native USDC
   const qSym = info?.quoteSymbol ?? "USDC";
   const qUsd = info?.quoteUsd ?? 1;
-  const canTrade = info?.venue === "pad" || (info?.venue === "v3" && info.poolFee !== null) || (info?.venue === "v4" && !!info.v4Key);
+  const canTrade = info?.venue === "pad" || (info?.venue === "v3" && info.poolFee !== null) || (info?.venue === "v4" && !!info.v4Key) || (info?.venue === "curve" && !!info.curveAddress);
+  // aggregator handles every USDC-paired venue (V3 tiers, V4 pools, ArcToolsPad USDC curves) with best-price + split routing
+  const useAgg = !!info && ((info.venue === "v3" && !info.quoteToken) || info.venue === "v4" || info.venue === "curve" || (info.venue === "pad" && !info.quoteToken));
+  const [route, setRoute] = useState<RouteResult | null>(null);
   // graduowany token v3 w parze z innym tokenem (np. BTOLLY/TOLLY): pula jest token/quote, nie token/USDC
   const v3Quote = info?.venue === "v3" && !!info.quoteToken;
 
@@ -191,6 +196,20 @@ function TokenPage() {
     if (!info || !n || n <= 0 || !canTrade) { setQuote(null); return; }
     const id = setTimeout(async () => {
       try {
+        if (useAgg) {
+          // buy: msg.value = spend + 1% fee  -> spend = n / 1.01 ; sell: fee on output
+          const wei = BigInt(Math.round(n * 1e6)) * 10n ** 12n;
+          const spend = side === "buy" ? (wei * 100n) / 101n : BigInt(Math.round(n * 1e6)) * BigInt(10) ** BigInt(Math.max(0, dec - 6));
+          const r = await routeSwap({ data: { token: ca, side, amount: spend.toString() } });
+          setRoute(r);
+          if (r.error || r.legs.length === 0) { setQuote(null); return; }
+          const out = BigInt(r.out);
+          setQuote(side === "buy"
+            ? Number(out / BigInt(10) ** BigInt(Math.max(0, dec - 6))) / 1e6
+            : (Number(out / 10n ** 12n) / 1e6) * 0.99);
+          return;
+        }
+        setRoute(null);
         if (info.venue === "pad") {
           const wei = BigInt(Math.round(n * 1e6)) * 10n ** 12n;
           const r = await ethCall(padAddr, (side === "buy" ? FN.quoteBuy : FN.quoteSell) + p32(ca) + pnum(wei));
@@ -229,7 +248,7 @@ function TokenPage() {
       } catch { setQuote(null); }
     }, 350);
     return () => clearTimeout(id);
-  }, [amount, side, ca, info, canTrade, dec, padAddr, v3Quote]);
+  }, [amount, side, ca, info, canTrade, dec, padAddr, v3Quote, useAgg]);
 
   const setPctAmount = (p: number) => {
     const bal = side === "buy" ? balUsdc : balTok;
@@ -249,7 +268,25 @@ function TokenPage() {
       if (quote === null) throw new Error("No quote yet.");
       setBusy("Confirm in wallet...");
       let hash: string;
-      if (info.venue === "pad") {
+      if (useAgg && route && route.legs.length > 0) {
+        const legs = route.legs.map((l) => ({ venue: l.venue, target: l.target, fee: l.fee, key: l.key, amount: l.amount }));
+        if (side === "buy") {
+          const spend = legs.reduce((s, l) => s + BigInt(l.amount), 0n);
+          const value = spend + spend / 100n;
+          const minOut = BigInt(Math.round(quote * (1 - slippage / 100) * 1e6)) * BigInt(10) ** BigInt(Math.max(0, dec - 6));
+          hash = await sendTx({ data: encodeAggregatorSwap("buy", ca, legs, minOut, from, 100), from, to: ARC_AGGREGATOR, value });
+        } else {
+          const tokIn = legs.reduce((s, l) => s + BigInt(l.amount), 0n);
+          const minOut = BigInt(Math.round(quote * (1 - slippage / 100) * 1e6)) * 10n ** 12n;   // post-fee native USDC
+          const al = await ethCall(ca, SEL.allowance + p32(from) + p32(ARC_AGGREGATOR));
+          if (!al || BigInt(al) < tokIn) {
+            setBusy(`Approve ${info.symbol}...`);
+            await waitReceipt(await sendTx({ data: SEL.approve + p32(ARC_AGGREGATOR) + "f".repeat(64), from, to: ca }));
+            setBusy("Confirm in wallet...");
+          }
+          hash = await sendTx({ data: encodeAggregatorSwap("sell", ca, legs, minOut, from, 100), from, to: ARC_AGGREGATOR });
+        }
+      } else if (info.venue === "pad") {
         const minOut = BigInt(Math.round(quote * (1 - slippage / 100) * 1e6)) * 10n ** 12n;
         const amt = BigInt(Math.round(n * 1e6)) * 10n ** 12n;
         if (side === "buy") {
@@ -480,7 +517,7 @@ function TokenPage() {
               ))}
             </div>
             <div className="arc-mono" style={{ borderBottom: "1px solid var(--arc-line)", color: "var(--arc-muted)", fontSize: 11, padding: "6px 10px" }}>
-              {info.symbol}/USDC · {mode === "mcap" ? "Market Cap" : "Price"} · {tf} · {info.venue === "pad" ? `ArcToolsPad curve (${qSym} pair)` : info.venue === "v3" ? `Uniswap V3 ${((info.poolFee ?? 0) / 10000).toFixed(2)}%${info.graduated ? " · graduated from ArcToolsPad" : ""}` : info.venue === "v4" ? `Uniswap V4${info.launchpad && info.launchpad !== "Uniswap V4" ? ` · ${info.launchpad}` : " · hookless pool"}` : (info.launchpad ?? "external pool")}
+              {info.symbol}/USDC · {mode === "mcap" ? "Market Cap" : "Price"} · {tf} · {info.venue === "pad" ? `ArcToolsPad curve (${qSym} pair)` : info.venue === "v3" ? `Uniswap V3 ${((info.poolFee ?? 0) / 10000).toFixed(2)}%${info.graduated ? " · graduated from ArcToolsPad" : ""}` : info.venue === "v4" ? `Uniswap V4${info.launchpad && info.launchpad !== "Uniswap V4" ? ` · ${info.launchpad}` : " · hookless pool"}` : info.venue === "curve" ? "Warp bonding curve" : (info.launchpad ?? "external pool")}
               {candles.length < 5 && effCandles.length > 0 && <span style={{ marginLeft: 10, opacity: 0.7 }}>· venue data (own index syncing)</span>}
             </div>
             <TvChart candles={effCandles} mode={mode} scale={scale} />
@@ -552,6 +589,26 @@ function TokenPage() {
                   <span className="arc-mono" style={{ flex: 1, fontSize: 20 }}>{quote !== null ? fmt(quote, side === "buy" ? 2 : 4) : "0.0"}</span>
                   <span className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 14, fontSize: 12, marginRight: 4, padding: "3px 10px" }}>{side === "buy" ? info.symbol : (info.venue === "pad" || v3Quote ? qSym : "USDC")}</span>
                 </div>
+                {useAgg && route && route.legs.length > 0 && (
+                  <div className="arc-mono" style={{ border: "1px solid var(--arc-line)", fontSize: 10, margin: "6px 0 0", padding: "6px 8px" }}>
+                    <div style={{ color: "var(--arc-up)", marginBottom: 3 }}>
+                      {route.split ? "SPLIT ROUTE · best price across venues" : `ROUTE · ${route.legs[0].label}`}
+                    </div>
+                    {route.legs.length > 1 && route.legs.map((l, i) => {
+                      const total = route.legs.reduce((s, x) => s + Number(x.amount), 0);
+                      return <div key={i} style={{ color: "var(--arc-muted)" }}>{Math.round((Number(l.amount) / total) * 100)}% via {l.label}</div>;
+                    })}
+                    {route.single.length > 1 && (
+                      <div style={{ color: "var(--arc-muted)", marginTop: 3 }}>
+                        {route.single.slice(0, 3).map((s, i) => {
+                          const best = Number(route.single[0].out);
+                          const d = best > 0 ? ((Number(s.out) - best) / best) * 100 : 0;
+                          return <span key={i} style={{ marginRight: 10 }}>{s.label}{i > 0 ? ` ${d.toFixed(1)}%` : " ✓"}</span>;
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="arc-mono" style={{ alignItems: "center", color: "var(--arc-muted)", display: "flex", fontSize: 11, justifyContent: "space-between", margin: "8px 0" }}>
                   <span>slippage</span>
                   <span>
@@ -566,7 +623,7 @@ function TokenPage() {
                   {busy ?? (wallet ? `${side === "buy" ? "Buy" : "Sell"} ${info.symbol}` : "Connect & trade")}
                 </button>
                 <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, marginTop: 8 }}>
-                  {info.venue === "pad" ? `1% platform fee, 10% of it to ARCT stakers.${info.padMode === "curve" && info.targetQuote ? ` Graduates to Uniswap at ${fmt(info.targetQuote)} ${qSym} real reserve.` : ""}` : v3Quote ? `Uniswap V3 pool ${info.symbol}/${qSym}, swapped directly (pool fee 1%, no service fee).` : "1% service fee, routed via Uniswap V3."} Need TP/SL or limit orders? Use the sniper bot.
+                  {info.venue === "pad" ? `1% platform fee, 10% of it to ARCT stakers.${info.padMode === "curve" && info.targetQuote ? ` Graduates to Uniswap at ${fmt(info.targetQuote)} ${qSym} real reserve.` : ""}` : v3Quote ? `Uniswap V3 pool ${info.symbol}/${qSym}, swapped directly (pool fee 1%, no service fee).` : "1% service fee, best price across every venue (V3, V4, curves)."} Need TP/SL or limit orders? Use the sniper bot.
                 </p>
               </>
             ) : (
