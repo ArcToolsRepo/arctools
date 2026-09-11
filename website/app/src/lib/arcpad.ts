@@ -6,9 +6,14 @@ import { createServerFn } from "@tanstack/react-start";
 
 import { decodeString, memo, multicall, pad32, padNum, rpc, toNum, topicAddr } from "./arc-api";
 import { bindings } from "./bindings.server";
+import { ipfsToHttp, normSocial, screenerIcons } from "@/lib/arc-api";
 
-export const PAD = "0x1EaAD48260eECC7624666F1dFec202b2D75257fE";
-export const VAULT = "0x7D49f880c7BdAE4FD44D52c3dBfB43534E83dABd";
+export const PAD = "0x1EaAD48260eECC7624666F1dFec202b2D75257fE";        // v2 (USDC-only, no graduation)
+export const PAD_V3 = "0x2726AeC64D8a9BC41B9940dDA5D21c889458B348";     // v3 (quote tokens, modes, graduation)
+const SEL_LAUNCH = "0x214013ca";
+const USDC_FACADE = "0x3600000000000000000000000000000000000000";
+export const VAULT = "0x48aDA931C2C220B074c39449B7e70860A3B4C277";     // v3 (pad v3 fees + drops)
+export const VAULT_V2 = "0x7D49f880c7BdAE4FD44D52c3dBfB43534E83dABd";  // legacy: v2 fees + old drops, withdraw/claim only
 export const ARCT = "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52";
 
 // keccak selectors (computed from the deployed ABI)
@@ -57,6 +62,8 @@ export type PadListItem = {
 };
 
 const VIRTUAL = 3000;
+// tokeny testowe z deployu v3.1 (INST0/INST1) — istnieja on-chain, ale nie pokazujemy ich w listach
+const HIDDEN_TOKENS = new Set(["0x15ec9b3df7d76f82029ea88034164b2ee74d5794", "0x49a8aca95c27550fc9f1e1b00ab4dcaa9fb095b5"]);
 
 async function ensureTable() {
   const db = bindings().DB;
@@ -67,14 +74,20 @@ async function ensureTable() {
   return db;
 }
 
-async function metaRows(tokens: string[]): Promise<Map<string, Record<string, unknown>>> {
+async function metaRows(tokens: string[], lightImage = false): Promise<Map<string, Record<string, unknown>>> {
   const out = new Map<string, Record<string, unknown>>();
   try {
     const db = await ensureTable();
     if (!db || tokens.length === 0) return out;
     const qs = tokens.map(() => "?").join(",");
+    // W listach nie ciagniemy calego data-URI (24 KB/token!) — tylko flage,
+    // a obraz serwuje /api/pad-logo/<token> (cache w przegladarce).
+    const cols = lightImage
+      ? "token, name, symbol, website, twitter, telegram, creator, created_at, " +
+        "CASE WHEN image IS NOT NULL AND image != '' THEN 1 ELSE 0 END AS has_image"
+      : "*";
     const res = await db
-      .prepare(`SELECT * FROM pad_meta WHERE token IN (${qs})`)
+      .prepare(`SELECT ${cols} FROM pad_meta WHERE token IN (${qs})`)
       .bind(...tokens.map((t) => t.toLowerCase()))
       .all();
     for (const r of res.results ?? []) out.set(String((r as { token: string }).token), r as Record<string, unknown>);
@@ -85,60 +98,93 @@ async function metaRows(tokens: string[]): Promise<Map<string, Record<string, un
 }
 
 /** All launched tokens with stats + metadata (30s cache). */
+async function padAddrs(pad: string): Promise<string[]> {
+  const countHex = await rpc("eth_call", [{ data: SEL.tokenCount, to: pad }, "latest"]).catch(() => null);
+  const n = Number(toNum(countHex as string | null));
+  if (!n) return [];
+  const res = await multicall(Array.from({ length: n }, (_, i) => ({ data: SEL.tokens + padNum(BigInt(i)), target: pad })), 200);
+  return res.map((r) => (r ? topicAddr(r) : null)).filter(Boolean) as string[];
+}
+
 export const padList = createServerFn({ method: "POST" }).handler(() =>
   memo("padlist", 15_000, async (): Promise<PadListItem[]> => {
-    const countHex = await rpc("eth_call", [{ data: SEL.tokenCount, to: PAD }, "latest"]);
-    const n = Number(toNum(countHex as string));
-    if (n === 0) return [];
-    const idxCalls = Array.from({ length: n }, (_, i) => ({
-      data: SEL.tokens + padNum(BigInt(i)),
-      target: PAD,
-    }));
-    const addrRes = await multicall(idxCalls, 200);
-    const addrs = addrRes.map((r) => (r ? topicAddr(r) : null)).filter(Boolean) as string[];
+    const [a2, a3] = await Promise.all([padAddrs(PAD), padAddrs(PAD_V3)]);
+    const owners = [...a2.map((a) => [a, PAD] as const), ...a3.map((a) => [a, PAD_V3] as const)]
+      .filter(([a]) => !HIDDEN_TOKENS.has(a.toLowerCase()));
+    const addrs = owners.map((o) => o[0]);
+    if (addrs.length === 0) return [];
 
-    // independent reads in parallel: curve stats, names, symbols, D1 metadata
-    const [curveRes, nameRes, symRes, metas] = await Promise.all([
-      multicall(addrs.map((a) => ({ data: SEL.curve + pad32(a), target: PAD })), 150),
+    const [curveRes, nameRes, symRes, launchRes, metas, icons] = await Promise.all([
+      multicall(owners.map(([a, pad]) => ({ data: SEL.curve + pad32(a), target: pad })), 150),
       multicall(addrs.map((a) => ({ data: SEL.name, target: a })), 200),
       multicall(addrs.map((a) => ({ data: SEL.symbol, target: a })), 200),
-      metaRows(addrs),
+      multicall(a3.map((a) => ({ data: SEL_LAUNCH + pad32(a), target: PAD_V3 })), 150),
+      metaRows(addrs, true),
+      screenerIcons().catch(() => new Map<string, string>()),
     ]);
+    // quote tokens (v3): symbol + USD price, once per distinct token
+    const launchByAddr = new Map<string, string | null>();
+    a3.forEach((a, i) => launchByAddr.set(a.toLowerCase(), launchRes[i] ?? null));
+    const quoteOf = (a: string): string | null => {
+      const l = launchByAddr.get(a.toLowerCase());
+      if (!l || l.length < 2 + 64) return null;
+      const q = topicAddr("0x" + l.slice(2, 66));
+      return !q || /^0x0{40}$/.test(q) || q.toLowerCase() === USDC_FACADE ? null : q.toLowerCase();
+    };
+    const quotes = [...new Set(a3.map(quoteOf).filter(Boolean) as string[])];
+    const [qSyms, qUsd] = await Promise.all([
+      multicall(quotes.map((q) => ({ data: SEL.symbol, target: q })), 50),
+      Promise.all(quotes.map((q) => quoteUsd(q))),
+    ]);
+    const qInfo = new Map(quotes.map((q, i) => [q, { sym: decodeString(qSyms[i]) || "?", usd: qUsd[i] }]));
 
-    return addrs.map((a, i) => {
+    return owners.map(([a, pad], i) => {
       const c = curveRes[i];
-      let usdcReserve = 0n;
-      let tokenReserve = 0n;
-      let vol = 0n;
-      let txc = 0n;
+      let quoteReserve = 0n, tokenReserve = 0n, vol = 0n, txc = 0n;
       if (c && c.length >= 2 + 64 * 4) {
         const w = (j: number) => BigInt("0x" + c.slice(2 + j * 64, 2 + (j + 1) * 64));
-        usdcReserve = w(0);
-        tokenReserve = w(1);
-        vol = w(2);
-        txc = w(3);
+        quoteReserve = w(0); tokenReserve = w(1); vol = w(2); txc = w(3);
       }
+      const isV3 = pad === PAD_V3;
+      const l = isV3 ? launchByAddr.get(a.toLowerCase()) : null;
+      const lw = (j: number) => (l && l.length >= 2 + 64 * (j + 1) ? BigInt("0x" + l.slice(2 + j * 64, 2 + (j + 1) * 64)) : 0n);
+      const quote = isV3 ? quoteOf(a) : null;
+      const qi = quote ? qInfo.get(quote) : undefined;
+      const qusd = quote ? (qi?.usd ?? 0) : 1;
+      const graduated = isV3 && lw(5) === 1n;
+      const pool = isV3 && lw(6) !== 0n ? topicAddr("0x" + l!.slice(2 + 6 * 64, 2 + 7 * 64)) : null;
+      const virtualQ = isV3 ? Number(lw(4) / 10n ** 12n) / 1e6 : VIRTUAL;
       const m = metas.get(a.toLowerCase());
-      const price1m = tokenReserve > 0n ? Number((usdcReserve * 1_000_000_000_000n) / tokenReserve) / 1e6 : 0;
+      // price in quote units per 1M tokens -> USD
+      const price1mQuote = tokenReserve > 0n ? Number((quoteReserve * 1_000_000_000_000n) / tokenReserve) / 1e6 : 0;
       return {
         createdAt: m ? Number(m.created_at ?? 0) || null : null,
-        image: (m?.image as string) || null,
+        graduated,
+        image: m?.has_image ? `/api/pad-logo/${a.toLowerCase()}` : ipfsToHttp(icons.get(a.toLowerCase()) ?? ""),
+        mode: !isV3 ? "v2" : lw(2) === 1n ? "instant" : "curve",
         name: decodeString(nameRes[i]),
-        pricePer1M: price1m,
+        pad,
+        pool,
+        pricePer1M: price1mQuote * qusd,
+        quoteSymbol: quote ? (qi?.sym ?? "?") : "USDC",
+        quoteToken: quote,
+        quoteUsd: qusd,
         symbol: decodeString(symRes[i]),
-        telegram: (m?.telegram as string) || null,
+        targetQuote: isV3 ? Number(lw(3) / 10n ** 12n) / 1e6 : 0,
+        telegram: normSocial("tg", (m?.telegram as string) || null),
         token: a,
-        twitter: (m?.twitter as string) || null,
+        twitter: normSocial("x", (m?.twitter as string) || null),
         txCount: Number(txc),
-        usdcReal: Math.max(0, Number(usdcReserve / 10n ** 12n) / 1e6 - VIRTUAL),
-        volumeUsdc: Number(vol / 10n ** 12n) / 1e6,
-        website: (m?.website as string) || null,
+        usdcReal: Math.max(0, (Number(quoteReserve / 10n ** 12n) / 1e6 - virtualQ) * qusd),
+        volumeUsdc: (Number(vol / 10n ** 12n) / 1e6) * qusd,
+        website: normSocial("web", (m?.website as string) || null),
       };
     });
   }),
 );
 
 export type PadTokenPage = PadListItem & {
+  padAddress: string;
   marketingBps: number;
   rewardsBps: number;
   burnBps: number;
@@ -152,9 +198,13 @@ export const padToken = createServerFn({ method: "POST" })
     const token = data.token.trim();
     if (!/^0x[0-9a-fA-F]{40}$/.test(token)) return { error: "bad address" };
     return memo(`padtoken:${token.toLowerCase()}`, 5_000, async () => {
+      // ktory pad zna ten token? v3 ma wpis w launch(), v2 — niezerowa curve
+      const launchHex = (await rpc("eth_call", [{ data: SEL_LAUNCH + pad32(token), to: PAD_V3 }, "latest"]).catch(() => null)) as string | null;
+      const isV3 = !!launchHex && launchHex.length >= 2 + 64 * 8 && BigInt("0x" + launchHex.slice(2 + 3 * 64, 2 + 4 * 64)) > 0n;
+      const padAddr = isV3 ? PAD_V3 : PAD;
       const [curveHex, metaHex, nameHex, symHex] = await Promise.all([
-        rpc("eth_call", [{ data: SEL.curve + pad32(token), to: PAD }, "latest"]).catch(() => null),
-        rpc("eth_call", [{ data: SEL.meta + pad32(token), to: PAD }, "latest"]).catch(() => null),
+        rpc("eth_call", [{ data: SEL.curve + pad32(token), to: padAddr }, "latest"]).catch(() => null),
+        rpc("eth_call", [{ data: SEL.meta + pad32(token), to: padAddr }, "latest"]).catch(() => null),
         rpc("eth_call", [{ data: SEL.name, to: token }, "latest"]).catch(() => null),
         rpc("eth_call", [{ data: SEL.symbol, to: token }, "latest"]).catch(() => null),
       ]);
@@ -162,7 +212,7 @@ export const padToken = createServerFn({ method: "POST" })
       const w = (hex: string, j: number) => BigInt("0x" + hex.slice(2 + j * 64, 2 + (j + 1) * 64));
       const usdcReserve = w(curveHex as string, 0);
       const tokenReserve = w(curveHex as string, 1);
-      if (tokenReserve === 0n) return { error: "not an ArcToolsPad token" };
+      if (tokenReserve === 0n && !isV3) return { error: "not an ArcToolsPad token" };
 
       let marketingBps = 0;
       let rewardsBps = 0;
@@ -177,6 +227,9 @@ export const padToken = createServerFn({ method: "POST" })
       const metas = await metaRows([token]);
       const m = metas.get(token.toLowerCase());
       return {
+        padAddress: padAddr,
+        pad: padAddr,
+        quoteToken: null, quoteSymbol: "USDC", quoteUsd: 1, graduated: false, pool: null, targetQuote: 0, mode: isV3 ? "curve" : "v2",
         burnBps,
         createdAt: m ? Number(m.created_at ?? 0) || null : null,
         creator,
@@ -186,13 +239,13 @@ export const padToken = createServerFn({ method: "POST" })
         pricePer1M: tokenReserve > 0n ? Number((usdcReserve * 1_000_000_000_000n) / tokenReserve) / 1e6 : 0,
         rewardsBps,
         symbol: decodeString(symHex as string | null),
-        telegram: (m?.telegram as string) || null,
+        telegram: normSocial("tg", (m?.telegram as string) || null),
         token,
-        twitter: (m?.twitter as string) || null,
+        twitter: normSocial("x", (m?.twitter as string) || null),
         txCount: Number(w(curveHex as string, 3)),
         usdcReal: Math.max(0, Number(usdcReserve / 10n ** 12n) / 1e6 - VIRTUAL),
         volumeUsdc: Number(w(curveHex as string, 2) / 10n ** 12n) / 1e6,
-        website: (m?.website as string) || null,
+        website: normSocial("web", (m?.website as string) || null),
       };
     });
   });
@@ -246,9 +299,10 @@ export const padMetaSet = createServerFn({ method: "POST" })
           token,
           clean(data.name),
           clean(data.symbol),
-          clean(data.website),
-          clean(data.twitter),
-          clean(data.telegram),
+          // zapisujemy juz znormalizowane absolutne URL-e (tworcy wpisuja "x.com/foo", "t.me/foo")
+          normSocial("web", clean(data.website)) ?? "",
+          normSocial("x", clean(data.twitter)) ?? "",
+          normSocial("tg", clean(data.telegram)) ?? "",
           img,
           clean(data.creator).toLowerCase(),
           Math.floor(Date.now() / 1000),
@@ -538,6 +592,56 @@ export const gasClaim = createServerFn({ method: "POST" })
     }
   });
 
+// ---- Arc Insider: smart-money leaderboard (data from the buybot API) ----
+const INSIDER_API = "https://bot-production-4200.up.railway.app";
+
+export type InsiderRow = {
+  wallet: string;
+  pnl_total: number;
+  pnl_realized: number;
+  pnl_unrealized: number;
+  pnl_pct: number;
+  winrate: number;
+  trades: number;
+  closed: number;
+  open_positions: number;
+  volume: number;
+  best_symbol: string;
+  best_pnl: number;
+  last_trade: number;
+};
+
+export const insiderBoard = createServerFn({ method: "POST" })
+  .inputValidator((input: { range?: string }) => input)
+  .handler(({ data }) =>
+    memo(`insiders:${data.range ?? "30d"}`, 30_000, async (): Promise<InsiderRow[]> => {
+      try {
+        const r = (await (
+          await fetch(`${INSIDER_API}/api/insiders?range=${encodeURIComponent(data.range ?? "30d")}`, {
+            headers: { Accept: "application/json" },
+          })
+        ).json()) as { rows?: InsiderRow[] };
+        return (r.rows ?? []).map((x) => ({
+          best_pnl: Number(x.best_pnl ?? 0),
+          best_symbol: String(x.best_symbol ?? ""),
+          closed: Number(x.closed ?? 0),
+          last_trade: Number(x.last_trade ?? 0),
+          open_positions: Number(x.open_positions ?? 0),
+          pnl_pct: Number(x.pnl_pct ?? 0),
+          pnl_realized: Number(x.pnl_realized ?? 0),
+          pnl_total: Number(x.pnl_total ?? 0),
+          pnl_unrealized: Number(x.pnl_unrealized ?? 0),
+          trades: Number(x.trades ?? 0),
+          volume: Number(x.volume ?? 0),
+          wallet: String(x.wallet ?? ""),
+          winrate: Number(x.winrate ?? 0),
+        }));
+      } catch {
+        return [];
+      }
+    }),
+  );
+
 /** Vault stats for the rewards page. */
 export const vaultInfo = createServerFn({ method: "POST" })
   .inputValidator((input: { user?: string }) => input)
@@ -552,31 +656,39 @@ export const vaultInfo = createServerFn({ method: "POST" })
       calls.push({ data: SEL.staked + pad32(user), target: VAULT });
       calls.push({ data: SEL.claimableUsdc + pad32(user), target: VAULT });
       calls.push({ data: SEL.balanceOf + pad32(user), target: ARCT });
+      calls.push({ data: SEL.staked + pad32(user), target: VAULT_V2 });          // 6 legacy stake
+      calls.push({ data: SEL.claimableUsdc + pad32(user), target: VAULT_V2 });   // 7 legacy usdc
     }
+    const legacyIdx = calls.length;
+    calls.push({ data: SEL.totalStaked, target: VAULT_V2 });   // legacy vault total (still earning v2 fees)
     const res = await multicall(calls, 50);
     const num = (i: number, dec = 18) => (res[i] ? Number(toNum(res[i]) / 10n ** BigInt(dec - 6)) / 1e6 : 0);
     const dropN = res[1] ? Number(toNum(res[1])) : 0;
 
-    // drops list + user claims
-    const dropCalls: { data: string; target: string }[] = [];
-    for (let i = 0; i < Math.min(dropN, 50); i++) {
-      dropCalls.push({ data: SEL.drops + padNum(BigInt(i)), target: VAULT });
-      if (user) dropCalls.push({ data: SEL.claimableDrop + padNum(BigInt(i)) + pad32(user), target: VAULT });
-    }
-    const dropRes = dropCalls.length > 0 ? await multicall(dropCalls, 60) : [];
-    const per = user ? 2 : 1;
-    const drops = [] as { id: number; token: string; amount: number; claimable: number; symbol: string }[];
-    for (let i = 0; i < Math.min(dropN, 50); i++) {
-      const d = dropRes[i * per];
-      if (!d) continue;
-      const w = (j: number) => BigInt("0x" + d.slice(2 + j * 64, 2 + (j + 1) * 64));
-      drops.push({
-        amount: Number(w(2) / 10n ** 12n) / 1e6,
-        claimable: user && dropRes[i * per + 1] ? Number(toNum(dropRes[i * per + 1]) / 10n ** 12n) / 1e6 : 0,
-        id: i,
-        symbol: "",
-        token: topicAddr(d.slice(2, 66)),
-      });
+    // drops list + user claims — from BOTH vaults (legacy v2 drops stay claimable there)
+    const drops = [] as { id: number; token: string; amount: number; claimable: number; symbol: string; vault: string; legacy: boolean }[];
+    const legacyCountHex = await rpc("eth_call", [{ data: SEL.dropCount, to: VAULT_V2 }, "latest"]).catch(() => null);
+    const vaults: [string, number, boolean][] = [[VAULT, dropN, false], [VAULT_V2, legacyCountHex ? Number(toNum(legacyCountHex as string)) : 0, true]];
+    for (const [vaddr, count, legacy] of vaults) {
+      const n = Math.min(count, 50);
+      if (n === 0) continue;
+      const dropCalls: { data: string; target: string }[] = [];
+      for (let i = 0; i < n; i++) {
+        dropCalls.push({ data: SEL.drops + padNum(BigInt(i)), target: vaddr });
+        if (user) dropCalls.push({ data: SEL.claimableDrop + padNum(BigInt(i)) + pad32(user), target: vaddr });
+      }
+      const dropRes = await multicall(dropCalls, 60);
+      const per = user ? 2 : 1;
+      for (let i = 0; i < n; i++) {
+        const d = dropRes[i * per];
+        if (!d) continue;
+        const w = (j: number) => BigInt("0x" + d.slice(2 + j * 64, 2 + (j + 1) * 64));
+        drops.push({
+          amount: Number(w(2) / 10n ** 12n) / 1e6,
+          claimable: user && dropRes[i * per + 1] ? Number(toNum(dropRes[i * per + 1]) / 10n ** 12n) / 1e6 : 0,
+          id: i, legacy, symbol: "", token: topicAddr(d.slice(2, 66)), vault: vaddr,
+        });
+      }
     }
     if (drops.length > 0) {
       const syms = await multicall(drops.map((d) => ({ data: SEL.symbol, target: d.token })), 60);
@@ -585,6 +697,9 @@ export const vaultInfo = createServerFn({ method: "POST" })
     return {
       arctInVault: num(2),
       drops,
+      legacyClaimableUsdc: user ? num(7) : 0,
+      legacyStaked: user ? num(6) : 0,
+      legacyTotalStaked: num(legacyIdx),
       totalStaked: num(0),
       userArct: user ? num(5) : 0,
       userClaimableUsdc: user ? num(4) : 0,

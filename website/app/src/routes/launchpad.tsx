@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
 import { gasClaim, gasStatus, padList, padMetaSet, type PadListItem } from "@/lib/arcpad";
+import { getPrice1m } from "@/lib/arc-api";
 import {
-  ARCT, PAD, connectWallet, encodeCreateToken, fileToSmallDataUrl, fmt, onWalletChange, sendTx, waitReceipt,
+  ARCT, FN, FN3, PAD_V3, TOLLY, connectWallet, encodeCreateTokenV3, ethCall, fileToSmallDataUrl, fmt, onWalletChange, p32, sendTx, waitReceipt,
 } from "@/lib/arc-wallet";
 import "../arc-site.css";
 
@@ -63,8 +64,53 @@ function CreateForm() {
   const [burn, setBurn] = useState(0);
   const [mktWallet, setMktWallet] = useState("");
   const [img, setImg] = useState<string>("");
-  const [rewardMode, setRewardMode] = useState<"usdc" | "arct" | "custom">("usdc");
+  const [rewardMode, setRewardMode] = useState<"quote" | "usdc" | "arct" | "custom">("quote");
   const [customReward, setCustomReward] = useState("");
+  const [launchMode, setLaunchMode] = useState<"curve5k" | "curve10k" | "instant">("curve5k");
+  const [pairMode, setPairMode] = useState<"usdc" | "tolly" | "custom">("usdc");
+  const [customQuote, setCustomQuote] = useState("");
+  const [seed, setSeed] = useState("");               // instant: quote units
+  const [quotePrice, setQuotePrice] = useState<number | null>(1); // USD per 1 quote token
+  const [quoteSym, setQuoteSym] = useState("USDC");
+  const [instantFee, setInstantFee] = useState<number | null>(null); // USDC, z kontraktu
+  useEffect(() => {
+    ethCall(PAD_V3, FN3.instantFee).then((r) => setInstantFee(r && r !== "0x" ? Number(BigInt(r) / 10n ** 12n) / 1e6 : 0)).catch(() => setInstantFee(null));
+  }, []);
+  const ZERO = "0x0000000000000000000000000000000000000000";
+  const quoteAddr = pairMode === "usdc" ? ZERO : pairMode === "tolly" ? TOLLY : customQuote.trim();
+  const isInstant = launchMode === "instant";
+
+  // cena quote tokena (USD za 1 token) — do przeliczenia celu $5k/$10k na jednostki quote
+  useEffect(() => {
+    if (pairMode === "usdc") { setQuotePrice(1); setQuoteSym("USDC"); return; }
+    if (!/^0x[0-9a-fA-F]{40}$/.test(quoteAddr)) { setQuotePrice(null); setQuoteSym("?"); return; }
+    let alive = true;
+    setQuotePrice(null);
+    void (async () => {
+      // cena i symbol niezaleznie — blad symbolu nie moze zablokowac wyceny
+      const [pr, symHex] = await Promise.all([
+        getPrice1m({ data: { token: quoteAddr } }).catch(() => ({ price1m: null as number | null })),
+        ethCall(quoteAddr, "0x95d89b41").catch(() => null),   // symbol()
+      ]);
+      if (!alive) return;
+      setQuotePrice(pr.price1m !== null && pr.price1m > 0 ? pr.price1m / 1e6 : 0);
+      let sym = "?";
+      try {
+        if (symHex && symHex.length >= 130) {
+          const ln = parseInt(symHex.slice(66, 130), 16);
+          const raw = symHex.slice(130, 130 + ln * 2);
+          sym = new TextDecoder().decode(new Uint8Array(raw.match(/.{2}/g)!.map((b) => parseInt(b, 16)))).replace(/\0/g, "").trim() || "?";
+        } else if (symHex && symHex.length === 66) {
+          sym = new TextDecoder().decode(new Uint8Array(symHex.slice(2).match(/.{2}/g)!.map((b) => parseInt(b, 16)))).replace(/\0/g, "").trim() || "?";
+        }
+      } catch { sym = "?"; }
+      setQuoteSym(sym);
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pairMode, quoteAddr]);
+  const targetUsd = launchMode === "curve10k" ? 10_000 : 5_000;
+  const targetQuoteUnits = quotePrice && quotePrice > 0 ? targetUsd / quotePrice : null;
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -100,28 +146,57 @@ function CreateForm() {
     try {
       if (!name.trim() || !symbol.trim()) throw new Error("Name and symbol are required.");
       if (taxSum > 15) throw new Error("Total taxes cannot exceed 15%.");
+      if (isInstant && taxSum > 0) throw new Error("Instant Uniswap launches cannot have taxes (trades happen on Uniswap, not on our curve).");
+      if (pairMode === "custom" && !/^0x[0-9a-fA-F]{40}$/.test(quoteAddr)) throw new Error("Pair token is not an address.");
+      if (pairMode !== "usdc" && (quotePrice === null || quotePrice <= 0)) throw new Error("Pair token has no USDC pool on Arc — it cannot be priced.");
       setBusy("Connecting wallet...");
       const from = await connectWallet();
       setWallet(from);
       const mw = mkt > 0 ? (mktWallet || from) : from;
       if (!/^0x[0-9a-fA-F]{40}$/.test(mw)) throw new Error("Marketing wallet is not an address.");
-      let rewardToken = "0x0000000000000000000000000000000000000000";
+
+      let rewardToken = ZERO; // = quote token
+      if (rew > 0 && rewardMode === "usdc" && pairMode !== "usdc") rewardToken = "0x3600000000000000000000000000000000000000";
       if (rew > 0 && rewardMode === "arct") rewardToken = ARCT;
       if (rew > 0 && rewardMode === "custom") {
         if (!/^0x[0-9a-fA-F]{40}$/.test(customReward.trim())) throw new Error("Reward token is not an address.");
         rewardToken = customReward.trim();
       }
+
+      // target: curve -> $5k/$10k in quote units; instant -> seed typed by the creator
+      let targetQuote: bigint;
+      if (isInstant) {
+        const n = Number(seed);
+        if (!n || n <= 0) throw new Error("Enter the initial liquidity you will seed the pool with.");
+        if (n < 100) throw new Error(`Minimum seed is 100 ${quoteSym}.`);
+        targetQuote = BigInt(Math.round(n * 1e6)) * 10n ** 12n;
+      } else {
+        targetQuote = BigInt(Math.round((targetQuoteUnits ?? targetUsd) * 1e6)) * 10n ** 12n;
+      }
+
+      // instant + ERC-20 quote: the pad pulls the seed via transferFrom -> approve first
+      if (isInstant && pairMode !== "usdc") {
+        const al = await ethCall(quoteAddr, "0xdd62ed3e" + p32(from) + p32(PAD_V3));
+        if (!al || BigInt(al) < targetQuote) {
+          setBusy(`Approve ${quoteSym}...`);
+          await waitReceipt(await sendTx({ data: FN.approve + p32(PAD_V3) + "f".repeat(64), from, to: quoteAddr }));
+        }
+      }
+
       setBusy("Confirm in your wallet...");
-      const data = encodeCreateToken(
-        name.trim(), symbol.trim().toUpperCase(), Math.round(mkt * 100), Math.round(rew * 100),
-        Math.round(burn * 100), mw, website.trim(), twitter.trim(), telegram.trim(), rewardToken,
-      );
-      const hash = await sendTx({ data, from, to: PAD });
+      const data = encodeCreateTokenV3({
+        burnBps: Math.round(burn * 100), marketingBps: Math.round(mkt * 100), marketingWallet: mw,
+        mode: isInstant ? 1 : 0, name: name.trim(), quoteToken: quoteAddr, rewardToken, rewardsBps: Math.round(rew * 100),
+        symbol: symbol.trim().toUpperCase(), targetQuote, telegram: telegram.trim(), twitter: twitter.trim(), website: website.trim(),
+      });
+      const feeWei = isInstant ? BigInt(Math.round((instantFee ?? 30) * 1e6)) * 10n ** 12n : 0n;
+      const value = isInstant ? feeWei + (pairMode === "usdc" ? targetQuote : 0n) : undefined;
+      const hash = await sendTx({ data, from, to: PAD_V3, value });
       setBusy("Waiting for confirmation...");
       const rcpt = await waitReceipt(hash);
       if (Number(rcpt.status) !== 1) throw new Error("Transaction reverted on-chain.");
-      // the new token = first log emitter that isn't the launchpad
-      const tokenAddr = rcpt.logs.find((l) => l.address.toLowerCase() !== PAD.toLowerCase())?.address;
+      // the new token is the first log emitter (its mint Transfer) that isn't the launchpad
+      const tokenAddr = rcpt.logs.find((l) => l.address.toLowerCase() !== PAD_V3.toLowerCase())?.address;
       if (tokenAddr) {
         const meta = await padMetaSet({
           data: {
@@ -148,7 +223,7 @@ function CreateForm() {
       <div style={{ border: "1px solid var(--arc-cobalt)", padding: 22 }}>
         <p className="arc-mono" style={{ color: "var(--arc-cobalt)", fontSize: 14 }}>Token launched.</p>
         <p className="arc-mono" style={{ fontSize: 12, wordBreak: "break-all" }}>{done}</p>
-        <Link className="arc-cta" params={{ ca: done }} style={{ display: "inline-block", marginTop: 14, textDecoration: "none" }} to="/pad/$ca">
+        <Link className="arc-cta" params={{ ca: done }} style={{ display: "inline-block", marginTop: 14, textDecoration: "none" }} to="/token/$ca">
           Open token page
         </Link>
       </div>
@@ -191,52 +266,78 @@ function CreateForm() {
         <input onChange={(e) => setMktWallet(e.target.value)} placeholder="marketing wallet 0x… (defaults to you)" style={inp} value={mktWallet} />
       )}
 
-      <div className="arc-grid-2">
+      <div className="arc-grid-3">
         <label className="arc-mono" style={{ fontSize: 12 }}>
-          <span style={{ color: "var(--arc-muted)", textTransform: "uppercase" }}>Rewards paid in</span>
-          <select
-            disabled={rew === 0}
-            onChange={(e) => setRewardMode(e.target.value as "usdc" | "arct" | "custom")}
-            style={{ ...inp, marginTop: 6 }}
-            value={rewardMode}
-          >
-            <option value="usdc">USDC (native)</option>
-            <option value="arct">$ARCT</option>
-            <option value="custom">Custom token…</option>
+          <span style={{ color: "var(--arc-muted)", textTransform: "uppercase" }}>Launch mode</span>
+          <select onChange={(e) => setLaunchMode(e.target.value as "curve5k" | "curve10k" | "instant")} style={{ ...inp, marginTop: 6 }} value={launchMode}>
+            <option value="curve5k">Curve → Uniswap at $5k</option>
+            <option value="curve10k">Curve → Uniswap at $10k</option>
+            <option value="instant">Instant Uniswap launch</option>
           </select>
         </label>
         <label className="arc-mono" style={{ fontSize: 12 }}>
           <span style={{ color: "var(--arc-muted)", textTransform: "uppercase" }}>Trading pair</span>
-          <select style={{ ...inp, marginTop: 6 }}>
-            <option>USDC (native)</option>
-            <option disabled>Other pairs — coming soon</option>
+          <select onChange={(e) => setPairMode(e.target.value as "usdc" | "tolly" | "custom")} style={{ ...inp, marginTop: 6 }} value={pairMode}>
+            <option value="usdc">USDC (native)</option>
+            <option value="tolly">TOLLY</option>
+            <option value="custom">Custom token…</option>
+          </select>
+        </label>
+        <label className="arc-mono" style={{ fontSize: 12 }}>
+          <span style={{ color: "var(--arc-muted)", textTransform: "uppercase" }}>Rewards paid in</span>
+          <select disabled={rew === 0} onChange={(e) => setRewardMode(e.target.value as "quote" | "usdc" | "arct" | "custom")} style={{ ...inp, marginTop: 6 }} value={rewardMode}>
+            <option value="quote">{pairMode === "usdc" ? "USDC (pair)" : `${quoteSym} (pair)`}</option>
+            {pairMode !== "usdc" && <option value="usdc">USDC</option>}
+            <option value="arct">$ARCT</option>
+            <option value="custom">Custom token…</option>
           </select>
         </label>
       </div>
-      {rew > 0 && rewardMode === "custom" && (
-        <input
-          onChange={(e) => setCustomReward(e.target.value)}
-          placeholder="reward token CA 0x… (must have a USDC pool on Arc)"
-          style={inp}
-          value={customReward}
-        />
+      {pairMode === "custom" && (
+        <input onChange={(e) => setCustomQuote(e.target.value)} placeholder="pair token CA 0x… (18 decimals, must have a USDC pool on Arc)" style={inp} value={customQuote} />
       )}
-      {rew > 0 && rewardMode !== "usdc" && (
+      {pairMode !== "usdc" && (
+        <p className="arc-mono" style={{ color: quotePrice ? "var(--arc-muted)" : "var(--arc-error)", fontSize: 11, margin: 0 }}>
+          {quotePrice
+            ? `1 ${quoteSym} ≈ $${quotePrice < 0.01 ? quotePrice.toFixed(8) : quotePrice.toFixed(4)}. Buyers pay in ${quoteSym}; ${isInstant ? "the Uniswap pool is" : "the curve and the graduation pool are"} ${quoteSym}/${symbol.trim().toUpperCase() || "TOKEN"}.`
+            : quotePrice === 0 ? `${quoteSym} has no USDC pool on Arc — it cannot be priced, so it cannot be a pair.`
+            : pairMode === "tolly" || /^0x[0-9a-fA-F]{40}$/.test(quoteAddr) ? "Pricing the pair token…" : "Enter the pair token address."}
+        </p>
+      )}
+      {!isInstant && (
         <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>
-          Reward USDC is auto-swapped to the chosen token on Uniswap V3 each trade. No USDC pool = rewards
-          wait until one exists.
+          Graduation target: <span style={{ color: "var(--arc-cobalt)" }}>${targetUsd.toLocaleString()}</span>
+          {pairMode !== "usdc" && targetQuoteUnits ? ` ≈ ${fmt(targetQuoteUnits)} ${quoteSym}` : ""} of real reserve. At that point the
+          reserve and matching tokens move into a full-range Uniswap V3 pool and the LP is burned — liquidity is permanent.
+        </p>
+      )}
+      {isInstant && (
+        <>
+          <input inputMode="decimal" onChange={(e) => setSeed(e.target.value.replace(",", "."))} placeholder={`initial liquidity in ${quoteSym} (min 100)`} style={inp} value={seed} />
+          <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>
+            No curve: 95% of supply + your {quoteSym} go straight into a Uniswap V3 pool at launch, LP burned. Taxes are not available in this mode (trades happen on Uniswap). 5% of supply still goes to ARCT stakers.
+            {" "}<span style={{ color: "var(--arc-cobalt)" }}>Instant launch fee: {instantFee === null ? "…" : `${instantFee} USDC`}</span>, paid with the launch transaction{pairMode === "usdc" ? ` (total sent: seed + ${instantFee ?? 30} USDC)` : ` (in native USDC, on top of the ${quoteSym} seed)`}.
+          </p>
+        </>
+      )}
+      {rew > 0 && rewardMode === "custom" && (
+        <input onChange={(e) => setCustomReward(e.target.value)} placeholder="reward token CA 0x… (must have a pool against the pair token)" style={inp} value={customReward} />
+      )}
+      {rew > 0 && rewardMode !== "quote" && (
+        <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>
+          Reward {quoteSym} is auto-swapped to the chosen token on Uniswap V3 each trade. No pool = rewards wait until one exists.
         </p>
       )}
 
       <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>
-        <span style={{ color: "var(--arc-cobalt)" }}>🎉 Launching is FREE</span> — you only pay network gas (a cent
+        <span style={{ color: "var(--arc-cobalt)" }}>🎉 Curve launches are FREE</span> — you only pay network gas (a cent
         or less). 1B supply. 5% locked for ARCT stakers. Platform fee 1% per trade (10% of it flows to ARCT stakers).
         Total taxes: <span style={{ color: taxSum > 15 ? "var(--arc-error)" : "var(--arc-cobalt)" }}>{taxSum}%</span> (max 15%).
       </p>
 
       {error && <p className="arc-mono" style={{ color: "var(--arc-error)", fontSize: 13, margin: 0 }}>{error}</p>}
       <button className="arc-cta" disabled={!!busy} onClick={() => void launch()} style={{ border: "none", cursor: busy ? "wait" : "pointer" }} type="button">
-        {busy ?? (wallet ? "Launch token" : "Connect & launch")}
+        {busy ?? (wallet ? (isInstant ? `Launch on Uniswap (${instantFee ?? 30} USDC fee)` : "Launch token") : "Connect & launch")}
       </button>
     </div>
   );

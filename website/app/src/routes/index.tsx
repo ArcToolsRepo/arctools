@@ -305,7 +305,7 @@ function Index() {
           <a className="arc-link-tick" href="https://t.me/ArcToolsBuyBot" rel="noreferrer" target="_blank">
             Buy bot
           </a>
-          <a className="arc-link-tick" href="https://x.com/ArcChainTools" rel="noreferrer" target="_blank">
+          <a className="arc-link-tick" href="https://x.com/ArcToolsBackup" rel="noreferrer" target="_blank">
             X
           </a>
         </div>

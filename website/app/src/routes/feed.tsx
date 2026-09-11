@@ -178,8 +178,8 @@ function TokenRow({ t }: { t: PadToken }) {
 
   return (
     <div style={{ borderBottom: "1px solid var(--arc-line)" }}>
-      <button
-        onClick={() => void toggle()}
+      <a
+        href={`/token/${t.token}`}
         style={{
           alignItems: "center",
           background: "transparent",
@@ -190,35 +190,46 @@ function TokenRow({ t }: { t: PadToken }) {
           gap: 12,
           padding: "12px 0",
           textAlign: "left",
+          textDecoration: "none",
           width: "100%",
         }}
-        type="button"
       >
-        {t.logo && !logoErr ? (
-          <img
-            alt=""
-            loading="lazy"
-            onError={() => setLogoErr(true)}
-            src={t.logo}
-            style={{ borderRadius: "50%", height: 36, objectFit: "cover", width: 36 }}
-          />
-        ) : (
-          <span
-            className="arc-mono"
-            style={{
-              alignItems: "center",
-              border: "1px solid var(--arc-line)",
-              borderRadius: "50%",
-              display: "inline-flex",
-              fontSize: 14,
-              height: 36,
-              justifyContent: "center",
-              width: 36,
-            }}
-          >
-            {(t.symbol || "?").slice(0, 1)}
-          </span>
-        )}
+        <span
+          className="arc-mono"
+          style={{
+            alignItems: "center",
+            border: "1px solid var(--arc-line)",
+            borderRadius: "50%",
+            display: "inline-flex",
+            flex: "0 0 36px",
+            fontSize: 14,
+            height: 36,
+            justifyContent: "center",
+            overflow: "hidden",
+            position: "relative",
+            width: 36,
+          }}
+        >
+          {/* monogram jest ZAWSZE pod spodem: widoczny w trakcie pobierania
+              logo i gdy grafika nie wczyta sie wcale (brak pustych kolek) */}
+          {(t.symbol || "?").slice(0, 1)}
+          {t.logo && !logoErr ? (
+            <img
+              alt=""
+              loading="lazy"
+              onError={() => setLogoErr(true)}
+              src={t.logo}
+              style={{
+                height: "100%",
+                left: 0,
+                objectFit: "cover",
+                position: "absolute",
+                top: 0,
+                width: "100%",
+              }}
+            />
+          ) : null}
+        </span>
         <span style={{ flex: "1 1 180px", minWidth: 150 }}>
           <strong style={{ fontSize: 15 }}>{t.name}</strong>
           <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 8 }}>
@@ -240,7 +251,7 @@ function TokenRow({ t }: { t: PadToken }) {
         <span className="arc-mono" style={{ color: "var(--arc-cobalt)", fontSize: 13 }}>
           {open ? "▴" : "▾"}
         </span>
-      </button>
+      </a>
 
       {open && (
         <div style={{ border: "1px solid var(--arc-line)", marginBottom: 14, padding: 18 }}>
@@ -319,7 +330,7 @@ const OFFICIAL: PadToken = {
   symbol: "ARCT",
   telegram: "https://t.me/ArcToolsPortal",
   token: "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52",
-  twitter: "https://x.com/ArcChainTools",
+  twitter: "https://x.com/ArcToolsBackup",
   venueUrl: "https://radardex.pro/#0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52",
   volUsd: null,
   website: "https://arctools.fun",
@@ -365,7 +376,7 @@ function FeedPage() {
           telegram: p.telegram,
           token: p.token,
           twitter: p.twitter,
-          venueUrl: `/pad/${p.token}`,
+          venueUrl: `/token/${p.token}`,
           volUsd: p.volumeUsdc,
           website: p.website,
         });

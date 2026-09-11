@@ -119,20 +119,20 @@ function ScanPage() {
             <Row good={report.renounced} label="Ownership" value={report.renounced ? "renounced / no owner" : `owner: ${report.owner}`} />
             <Row good={!report.mintable} label="Mint function" value={report.mintable ? "present in bytecode" : "not found"} />
             <Row good={!report.pausable} label="Pause function" value={report.pausable ? "present in bytecode" : "not found"} />
-            <Row good={report.pool !== null} label="USDC V3 pool" value={report.pool ?? "none found (curve-stage token?)"} />
+            <Row good={report.pool !== null} label={`USDC pool${report.poolVersion ? ` (Uniswap ${report.poolVersion.toUpperCase()})` : ""}`} value={report.pool ?? "none found (curve-stage token?)"} />
             <Row
               good={report.liquidityUsdc === null ? null : report.liquidityUsdc > 1000}
               label="Pool USDC liquidity"
               value={report.liquidityUsdc === null ? "n/a" : `${report.liquidityUsdc.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDC`}
             />
-            <Row label="Price (1M tokens)" value={report.price1m === null ? "no quote" : `${report.price1m.toFixed(4)} USDC`} />
+            <Row label="Price (1M tokens)" value={report.price1m === null ? "no quote" : `${report.price1m < 0.01 ? report.price1m.toFixed(6) : report.price1m.toFixed(4)} USDC`} />
             <Row label="Total supply" value={Number(report.totalSupply).toLocaleString()} />
             <Row
               good={report.clones <= 1}
               label="Ticker clones"
               value={report.clones <= 1 ? "unique on RadarDex list" : `${report.clones} tokens share this ticker`}
             />
-            <Row good={report.radarBadge ? true : null} label="RadarDex launch" value={report.radarBadge ? "yes (locked LP model)" : "not on the RadarDex list"} />
+            <Row good={report.radarBadge || report.launchpad ? true : null} label="Launchpad" value={report.radarBadge ? "RadarDex (locked LP model)" : report.launchpad ? report.launchpad : "not indexed by any launchpad"} />
             <div style={{ display: "flex", gap: 16, marginTop: 18 }}>
               <a
                 className="arc-link-tick"

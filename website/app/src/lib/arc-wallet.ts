@@ -6,7 +6,8 @@
 export const CHAIN_HEX = "0x13b2"; // 5042
 export const RPC_URL = "https://rpc-production-ba7a.up.railway.app";
 export const PAD = "0x1EaAD48260eECC7624666F1dFec202b2D75257fE";
-export const VAULT = "0x7D49f880c7BdAE4FD44D52c3dBfB43534E83dABd";
+export const VAULT = "0x48aDA931C2C220B074c39449B7e70860A3B4C277";     // v3 (pad v3 fees + drops)
+export const VAULT_V2 = "0x7D49f880c7BdAE4FD44D52c3dBfB43534E83dABd";  // legacy: v2 fees + old drops, withdraw/claim only
 export const ARCT = "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52";
 
 export const FN = {
@@ -66,6 +67,52 @@ export function encodeCreateToken(
     }
   }
   return FN.createToken + heads.join("") + tails.join("");
+}
+
+// ---------------- ArcPad v3: quote tokens, launch modes, graduation ----------------
+export const PAD_V3 = "0x2726AeC64D8a9BC41B9940dDA5D21c889458B348";
+export const TOLLY = "0xbc43ce8dec648ea298c4275559b81d6261c90b67";
+export const FN3 = {
+  buyToken: "0xe671499b",     // buyToken(address token, uint256 quoteIn, uint256 minOut)
+  createToken: "0x7eaa59d8",  // createToken(CreateParams)
+  launch: "0x214013ca",       // launch(address) -> (quoteToken, quoteTier, mode, targetQuote, virtualQuote, graduated, pool, lpTokenId)
+  minTarget: "0x260840c9",
+  instantFee: "0xc47d51be",  // instantFee() -> flat launch fee for Instant mode (native USDC)
+};
+
+export type CreateParamsV3 = {
+  name: string; symbol: string;
+  marketingBps: number; rewardsBps: number; burnBps: number;
+  marketingWallet: string;
+  website: string; twitter: string; telegram: string;
+  rewardToken: string;   // 0x0 = paid in the quote token
+  quoteToken: string;    // 0x0 = native USDC
+  mode: 0 | 1;           // 0 curve, 1 instant Uniswap
+  targetQuote: bigint;   // curve graduation target OR instant seed, quote units (1e18)
+};
+
+/** ABI-encode createToken((string,string,uint16,uint16,uint16,address,string,string,string,address,address,uint8,uint256)). */
+export function encodeCreateTokenV3(p: CreateParamsV3): string {
+  const dyn = [p.name, p.symbol, p.website, p.twitter, p.telegram];
+  const statics: (string | null)[] = [
+    null, null, pnum(BigInt(p.marketingBps)), pnum(BigInt(p.rewardsBps)), pnum(BigInt(p.burnBps)),
+    p32(p.marketingWallet), null, null, null, p32(p.rewardToken), p32(p.quoteToken), pnum(BigInt(p.mode)), pnum(p.targetQuote),
+  ];
+  const heads: string[] = [];
+  const tails: string[] = [];
+  let off = statics.length * 32;
+  let d = 0;
+  for (const s of statics) {
+    if (s !== null) heads.push(s);
+    else {
+      const t = encStringTail(dyn[d++]);
+      heads.push(pnum(BigInt(off)));
+      tails.push(t);
+      off += t.length / 2;
+    }
+  }
+  // single tuple argument: outer head is the offset (0x20) to the tuple body
+  return FN3.createToken + pnum(32n) + heads.join("") + tails.join("");
 }
 
 // ---------------- provider ----------------

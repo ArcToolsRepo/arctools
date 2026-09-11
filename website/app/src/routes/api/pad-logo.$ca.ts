@@ -25,7 +25,9 @@ export const Route = createFileRoute("/api/pad-logo/$ca")({
           const bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
           return new Response(bytes, {
             headers: {
-              "Cache-Control": "public, max-age=300",
+              // logo praktycznie sie nie zmienia — dlugi cache + CORS dla botow/embedow
+              "Access-Control-Allow-Origin": "*",
+              "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
               "Content-Type": m[1],
             },
           });

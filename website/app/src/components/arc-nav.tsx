@@ -55,13 +55,16 @@ export function ArcNav({ active }: { active?: string }) {
         <a className="arc-link-tick" data-active={active === "/rewards" || undefined} href="/rewards">
           Rewards
         </a>
+        <a className="arc-link-tick" data-active={active === "/insiders" || undefined} href="/insiders">
+          Insiders
+        </a>
         <a className="arc-link-tick" href="https://t.me/ArcSniper_bot" rel="noreferrer" target="_blank">
           Bot
         </a>
         <a
           aria-label="ArcTools on X"
           className="arc-link-tick"
-          href="https://x.com/ArcChainTools"
+          href="https://x.com/ArcToolsBackup"
           rel="noreferrer"
           style={{ fontSize: 15, textTransform: "none" }}
           target="_blank"

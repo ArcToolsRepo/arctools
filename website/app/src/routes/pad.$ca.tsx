@@ -128,7 +128,7 @@ function PadTokenView() {
     try {
       setUsdcBal(await nativeBalance(addr));
       setTokBal(await tokenBalance(ca, addr));
-      const cl = await ethCall(PAD, FN.claimable + p32(ca) + p32(addr));
+      const cl = await ethCall(t?.padAddress ?? PAD, FN.claimable + p32(ca) + p32(addr));
       setClaimableUsdc(cl && cl !== "0x" ? Number(BigInt(cl) / 10n ** 12n) / 1e6 : 0);
     } catch { /* ignore */ }
   }, [ca]);
@@ -181,7 +181,7 @@ function PadTokenView() {
       try {
         const wei = BigInt(Math.round(n * 1e6)) * 10n ** 12n;
         const sel = side === "buy" ? FN.quoteBuy : FN.quoteSell;
-        const r = await ethCall(PAD, sel + p32(ca) + pnum(wei));
+        const r = await ethCall(t?.padAddress ?? PAD, sel + p32(ca) + pnum(wei));
         setQuote(r && r !== "0x" ? Number(BigInt(r) / 10n ** 12n) / 1e6 : null);
       } catch {
         setQuote(null);
@@ -214,10 +214,10 @@ function PadTokenView() {
       let hash: string;
       if (side === "buy") {
         const value = BigInt(Math.round(n * 1e6)) * 10n ** 12n;
-        hash = await sendTx({ data: FN.buy + p32(ca) + pnum(minOut), from, to: PAD, value });
+        hash = await sendTx({ data: FN.buy + p32(ca) + pnum(minOut), from, to: t?.padAddress ?? PAD, value });
       } else {
         const tokensIn = BigInt(Math.round(n * 1e6)) * 10n ** 12n;
-        hash = await sendTx({ data: FN.sell + p32(ca) + pnum(tokensIn) + pnum(minOut), from, to: PAD });
+        hash = await sendTx({ data: FN.sell + p32(ca) + pnum(tokensIn) + pnum(minOut), from, to: t?.padAddress ?? PAD });
       }
       setBusy("Waiting for confirmation...");
       const r = await waitReceipt(hash);
@@ -236,7 +236,7 @@ function PadTokenView() {
   const claim = async () => {
     try {
       const from = wallet ?? (await connectWallet());
-      const hash = await sendTx({ data: FN.claimRewards + p32(ca), from, to: PAD });
+      const hash = await sendTx({ data: FN.claimRewards + p32(ca), from, to: t?.padAddress ?? PAD });
       await waitReceipt(hash);
       setTxMsg("Rewards claimed.");
       void refreshBalances(from);
@@ -450,7 +450,7 @@ function PadTokenView() {
                 <div style={{ borderTop: "1px solid var(--arc-line)" }}>
                   {holders.top.map((h, i) => {
                     const tag =
-                      h.address.toLowerCase() === PAD.toLowerCase() ? " · bonding curve"
+                      (h.address.toLowerCase() === PAD.toLowerCase() || h.address.toLowerCase() === (t?.padAddress ?? "").toLowerCase()) ? " · bonding curve"
                       : h.address.toLowerCase() === "0x000000000000000000000000000000000000dead" ? " · burned"
                       : "";
                     return (

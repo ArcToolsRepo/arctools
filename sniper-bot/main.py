@@ -7,6 +7,7 @@ from arctools.config import CFG
 from arctools import db, sniper, alerts, feed
 from arctools.ui.handlers import router
 
+logging.getLogger("web3.manager.RequestManager").setLevel(logging.CRITICAL)  # failover jest obslugiwany w chain.py; ERROR to szum
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("main")
 

@@ -5,6 +5,8 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 
+import { bindings } from "@/lib/bindings.server";
+
 // Primary: our Railway relay (arc-scan via Railway egress: no CF 429, no quota).
 // Fallbacks: Infura shared key (daily quota), then arc-scan direct.
 const RPCS = [
@@ -219,14 +221,51 @@ function quoteCalldata(token: string, amount: bigint): string {
   return SEL.quote + pad32(token) + pad32(USDC) + padNum(amount) + padNum(10000n) + padNum(0n);
 }
 
+/** Value `amount` of `token` in USDC: Uniswap V3 quoter -> ArcToolsPad curve (v2/v3, quote converted) -> RadarDex price. */
 async function quoteToUsdc(token: string, amount: bigint): Promise<number | null> {
   if (amount <= 0n) return null;
   try {
     const res = (await rpc("eth_call", [{ data: quoteCalldata(token, amount), to: QUOTER_V2 }, "latest"])) as string;
-    return Number(BigInt("0x" + res.slice(2, 66))) / 1e6;
+    const v = Number(BigInt("0x" + res.slice(2, 66))) / 1e6;
+    if (v > 0) return v;
   } catch {
-    return null;
+    /* no canonical V3 pool — try the launchpads */
   }
+  // ArcToolsPad curve: quoteSell(token, amount) in quote units (1e18); v3 quotes may be non-USDC
+  for (const pad of ["0x2726AeC64D8a9BC41B9940dDA5D21c889458B348", "0x1EaAD48260eECC7624666F1dFec202b2D75257fE"]) {
+    try {
+      const r = (await rpc("eth_call", [{ data: "0xd98b2f5c" + pad32(token) + padNum(amount), to: pad }, "latest"])) as string;
+      const outQ = r && r !== "0x" ? Number(BigInt(r) / 10n ** 12n) / 1e6 : 0;
+      if (outQ > 0) {
+        if (pad.toLowerCase() === "0x2726aec64d8a9bc41b9940dda5d21c889458b348") {
+          const l = (await rpc("eth_call", [{ data: "0x214013ca" + pad32(token), to: pad }, "latest"])) as string;
+          const q = l && l.length >= 66 ? topicAddr("0x" + l.slice(2, 66)) : null;
+          if (q && !/^0x0{40}$/.test(q) && q.toLowerCase() !== USDC) {
+            const qres = (await rpc("eth_call", [{ data: quoteCalldata(q, 10n ** 18n), to: QUOTER_V2 }, "latest"]).catch(() => null)) as string | null;
+            const qUsd = qres ? Number(BigInt("0x" + qres.slice(2, 66))) / 1e6 : 0;
+            return qUsd > 0 ? outQ * qUsd : null;
+          }
+        }
+        return outQ;
+      }
+    } catch {
+      /* not this pad */
+    }
+  }
+  // Uniswap V4 / other pads: screener spot price (USD per token) — valued linearly
+  try {
+    const list = (await memo("radar:tokens", 60_000, async () =>
+      (await fetch("https://api.radardex.pro/tokens", { headers: { Accept: "application/json" } })).json(),
+    )) as { tokens?: { address?: string; price?: number; decimals?: number }[] };
+    const t = (list.tokens ?? []).find((x) => String(x.address ?? "").toLowerCase() === token.toLowerCase());
+    if (t && typeof t.price === "number" && t.price > 0) {
+      const dec = BigInt(t.decimals ?? 18);
+      return (Number(amount / 10n ** (dec > 6n ? dec - 6n : 0n)) / (dec > 6n ? 1e6 : Number(10n ** dec))) * t.price;
+    }
+  } catch {
+    /* screener down */
+  }
+  return null;
 }
 
 // ---------------- new pairs feed ----------------
@@ -311,10 +350,379 @@ export type ScanReport = {
   pool: string | null;
   price1m: number | null;
   radarBadge: boolean;
+  poolVersion: string | null;
+  launchpad: string | null;
   renounced: boolean;
   symbol: string;
   totalSupply: string;
 };
+
+// ---------------- unified token page (/token/$ca) ----------------
+
+export const SWAP_FEE_ROUTER = "0xA4E79c06eeC23c4caAa63aA37aCC6Fb7f0370a12";
+const ARCPAD_LAUNCHPAD = "0x1EaAD48260eECC7624666F1dFec202b2D75257fE";
+const ARCPAD_V3 = "0x2726AeC64D8a9BC41B9940dDA5D21c889458B348";
+const SEL_CURVE = "0x06d8d7db";
+const SEL_LAUNCH = "0x214013ca";
+
+export type TokenPageInfo = {
+  token: string;
+  name: string;
+  symbol: string;
+  decimals: number;
+  supply: number;
+  /** pad = ArcToolsPad bonding curve · v3 = canonical Uniswap V3 (fee router) · external = other pad's own factory */
+  venue: "pad" | "v3" | "external";
+  pool: string | null;
+  poolFee: number | null;
+  liquidityUsdc: number | null;
+  price1m: number | null;
+  mcapUsd: number | null;
+  logo: string | null;
+  website: string | null;
+  twitter: string | null;
+  telegram: string | null;
+  launchpad: string | null;
+  venueUrl: string | null;
+  holders: number | null;
+  createdAt: string | null;
+  deployer: string | null;
+  /** launchpad contract for venue=pad (v2 or v3) */
+  padAddress: string | null;
+  /** v3 quote token (null = native USDC) + its symbol and USD price */
+  quoteToken: string | null;
+  quoteSymbol: string;
+  quoteUsd: number;
+  graduated: boolean;
+  padMode: "v2" | "curve" | "instant" | null;
+  targetQuote: number | null;
+};
+
+export const tokenPage = createServerFn({ method: "POST" })
+  .inputValidator((input: { token: string }) => input)
+  .handler(({ data }) =>
+    memo(`tokenpage:${data.token.toLowerCase()}`, 20_000, async (): Promise<TokenPageInfo | { error: string }> => {
+      const token = data.token.trim();
+      if (!/^0x[0-9a-fA-F]{40}$/.test(token)) return { error: "That is not a contract address." };
+      const lc = token.toLowerCase();
+
+      // 1) basic ERC20 + venue detection, one multicall
+      const tiers = [10000, 3000, 500, 100];
+      const calls = [
+        { data: SEL.name, target: token },
+        { data: SEL.symbol, target: token },
+        { data: SEL.decimals, target: token },
+        { data: SEL.totalSupply, target: token },
+        { data: SEL_CURVE + pad32(token), target: ARCPAD_LAUNCHPAD },
+        ...tiers.map((f) => ({ data: SEL.getPool + pad32(token) + pad32(USDC) + padNum(BigInt(f)), target: UNIV3_FACTORY })),
+        { data: SEL_CURVE + pad32(token), target: ARCPAD_V3 },
+        { data: SEL_LAUNCH + pad32(token), target: ARCPAD_V3 },
+      ];
+      const res = await multicall(calls, 20);
+      const name = decodeString(res[0]);
+      const symbol = decodeString(res[1]);
+      if ((!name || name === "?") && (!symbol || symbol === "?")) return { error: "No token contract at this address on Arc." };
+      const decimals = Number(toNum(res[2])) || 18;
+      const supply = Number(toNum(res[3]) / BigInt(10) ** BigInt(Math.max(0, decimals - 6))) / 1e6;
+
+      let venue: TokenPageInfo["venue"] = "external";
+      let pool: string | null = null;
+      let poolFee: number | null = null;
+      let padAddress: string | null = null;
+      let quoteToken: string | null = null;
+      let quoteSymbol = "USDC";
+      let quoteUsd = 1;
+      let graduated = false;
+      let padMode: TokenPageInfo["padMode"] = null;
+      let targetQuote: number | null = null;
+      let curve = res[4];
+      const curve3 = res[5 + tiers.length];
+      const launch3 = res[6 + tiers.length];
+      const w = (hex: string | null, j: number) => (hex && hex.length >= 2 + 64 * (j + 1) ? toNum("0x" + hex.slice(2 + j * 64, 2 + (j + 1) * 64)) : 0n);
+      const isV3 = !!launch3 && launch3.length >= 2 + 64 * 8 && (w(launch3, 3) > 0n || w(curve3, 1) > 0n);
+      if (isV3) {
+        padAddress = ARCPAD_V3;
+        curve = curve3;
+        const q = topicAddr("0x" + launch3!.slice(2, 66));
+        quoteToken = !q || /^0x0{40}$/.test(q) || q.toLowerCase() === USDC ? null : q.toLowerCase();
+        graduated = w(launch3, 5) === 1n;
+        padMode = w(launch3, 2) === 1n ? "instant" : "curve";
+        targetQuote = Number(w(launch3, 3) / 10n ** 12n) / 1e6;
+        if (quoteToken) {
+          const [qs, qp] = await Promise.all([
+            rpc("eth_call", [{ data: SEL.symbol, to: quoteToken }, "latest"]).catch(() => null),
+            quoteToUsdc(quoteToken, 10n ** 18n * 1_000_000n),
+          ]);
+          quoteSymbol = decodeString(qs as string | null) || "?";
+          quoteUsd = qp && qp > 0 ? qp / 1e6 : 0;
+        }
+        if (graduated) {
+          venue = "v3";
+          pool = topicAddr("0x" + launch3!.slice(2 + 6 * 64, 2 + 7 * 64));
+          poolFee = 10000;
+        } else {
+          venue = "pad";
+          pool = ARCPAD_V3;
+        }
+      } else if (curve && curve.length >= 2 + 64 * 2 && toNum("0x" + curve.slice(2, 66)) > 0n) {
+        venue = "pad";
+        pool = ARCPAD_LAUNCHPAD;
+        padAddress = ARCPAD_LAUNCHPAD;
+        padMode = "v2";
+      } else {
+        for (let i = 0; i < tiers.length; i++) {
+          const p = res[5 + i];
+          if (p && toNum(p) !== 0n) {
+            venue = "v3";
+            pool = topicAddr(p);
+            poolFee = tiers[i];
+            break;
+          }
+        }
+      }
+
+      // 2) screener metadata (logo, socials, holders, launchpad, external pool)
+      let meta: Record<string, unknown> = {};
+      try {
+        const list = (await memo("radar:tokens", 60_000, async () =>
+          (await fetch("https://api.radardex.pro/tokens", { headers: { Accept: "application/json" } })).json(),
+        )) as { tokens?: Record<string, unknown>[] };
+        meta = (list.tokens ?? []).find((t) => String(t.address ?? "").toLowerCase() === lc) ?? {};
+      } catch {
+        /* screener down */
+      }
+      // Swieze tokeny Tolly nie sa jeszcze w RadarDex — rozpoznajemy je z listy Tolly
+      // (launchpad, logo, sociale, mcap), inaczej strona nie wiedzialaby skad brac dane.
+      if (!meta.launchpad) {
+        try {
+          const list = (await memo("tolly:tokens", 30_000, async () =>
+            (await fetch("https://api.tollylabs.com/tokens", {
+              headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; ArcToolsSite/1.0)" },
+            })).json(),
+          )) as { tokens?: Record<string, unknown>[] };
+          const tl = (list.tokens ?? []).find((t) => String(t.address ?? "").toLowerCase() === lc);
+          if (tl) {
+            meta = {
+              ...meta,
+              deployTs: tl.created_ts,
+              deployer: tl.creator,
+              icon: tl.image_uri,
+              launchpad: "tolly",
+              liquidityUsdc: tl.liquidity,
+              mcap: tl.marketCap,
+              price: tl.price,
+              telegram: tl.telegram,
+              twitter: tl.twitter,
+              website: tl.website,
+            };
+          }
+        } catch {
+          /* tolly down */
+        }
+      }
+      if (venue === "external" && !pool) {
+        try {
+          const lr = (await memo("radar:launches", 30_000, async () =>
+            (await fetch("https://api.radardex.pro/launches")).json(),
+          )) as { launches?: { token?: string; pool?: string }[] };
+          pool = (lr.launches ?? []).find((l) => (l.token ?? "").toLowerCase() === lc)?.pool ?? null;
+        } catch {
+          /* skip */
+        }
+      }
+      // our own pad metadata (logo/socials from D1) when it's an ArcToolsPad token
+      let padLogo: string | null = null;
+      let padCreator: string | null = null;
+      let padSocial: { website?: string; twitter?: string; telegram?: string } = {};
+      if (padAddress) {
+        try {
+          const db = bindings().DB;
+          const row = db
+            ? ((await db
+                .prepare("SELECT website, twitter, telegram, creator, CASE WHEN image != '' THEN 1 ELSE 0 END AS has_image FROM pad_meta WHERE token = ?")
+                .bind(lc)
+                .first()) as { website?: string; twitter?: string; telegram?: string; creator?: string; has_image?: number } | null)
+            : null;
+          if (row) {
+            padSocial = row;
+            padCreator = row.creator?.toLowerCase() ?? null;
+            if (row.has_image) padLogo = `/api/pad-logo/${lc}`;
+          }
+        } catch {
+          /* D1 unavailable */
+        }
+      }
+
+      // 3) market numbers
+      let liquidityUsdc: number | null = null;
+      let price1m: number | null = null;
+      if (venue === "pad" && curve) {
+        // curve(token): quoteReserve(virtual+real), tokenReserve, volume, txCount — quote units 1e18
+        const cw = (j: number) => toNum("0x" + curve!.slice(2 + j * 64, 2 + (j + 1) * 64));
+        const qRes = cw(0);
+        const tokRes = cw(1);
+        const virtual = isV3 ? Number(w(launch3, 4) / 10n ** 12n) / 1e6 : 3000;
+        if (tokRes > 0n) price1m = (Number((qRes * 1_000_000_000_000n) / tokRes) / 1e6) * quoteUsd;
+        liquidityUsdc = Math.max(0, Number(qRes / 10n ** 12n) / 1e6 - virtual) * quoteUsd;
+      } else if (pool) {
+        const balHex = await rpc("eth_call", [{ data: SEL.balanceOf + pad32(pool), to: USDC }, "latest"]).catch(() => null);
+        if (balHex) liquidityUsdc = Number(toNum(balHex as string)) / 1e6;
+      }
+      // Kanoniczna pula V3 istnieje, ale jest martwa (np. $0.5 z placeholdera) — realny handel
+      // toczy sie na V4 / curve innego pada. Nie wolno tam kierowac swapow uzytkownika.
+      if (venue === "v3" && !padAddress && (liquidityUsdc ?? 0) < 25) {
+        venue = "external";
+        poolFee = null;
+        liquidityUsdc = null;
+      }
+      if (liquidityUsdc === null && typeof meta.liquidityUsdc === "number") liquidityUsdc = Number(meta.liquidityUsdc);
+      if (venue === "v3") price1m = await quoteToUsdc(token, BigInt(10) ** BigInt(decimals) * 1_000_000n);
+      if (price1m !== null && !(price1m > 0)) price1m = null;
+      if (price1m === null && typeof meta.price === "number") price1m = Number(meta.price) * 1e6;
+      const mcapUsd = price1m !== null && supply > 0 ? (price1m / 1e6) * supply : (typeof meta.mcap === "number" ? Number(meta.mcap) : null);
+
+      const lp = (meta.launchpad as string | undefined) ?? null;
+      const venueUrl =
+        venue === "pad" || padAddress ? `/pad/${lc}`
+          : lp === "tolly" ? `https://tollylabs.com/token/${lc}`
+          : lp === "warp" ? `https://circlewarp.fun/token/${lc}`
+          : lp === "arcpad" || lp === "arcfun" ? `https://arcpad.meme/token/${lc}`
+          : `https://radardex.pro/#${lc}`;
+
+      return {
+        createdAt: typeof meta.deployTs === "number" ? new Date(Number(meta.deployTs) * 1000).toISOString() : null,
+        decimals,
+        deployer: typeof meta.deployer === "string" && /^0x[0-9a-fA-F]{40}$/.test(meta.deployer) ? meta.deployer.toLowerCase() : (padCreator ?? null),
+        graduated,
+        padAddress,
+        padMode,
+        quoteSymbol,
+        quoteToken,
+        quoteUsd,
+        targetQuote,
+        holders: typeof meta.holderCount === "number" ? Number(meta.holderCount) : null,
+        launchpad: padAddress ? "ArcToolsPad" : lp,
+        liquidityUsdc,
+        logo: padLogo ?? ipfsToHttp(String(meta.icon ?? "")),
+        mcapUsd,
+        name,
+        pool,
+        poolFee,
+        price1m,
+        supply,
+        symbol,
+        telegram: normSocial("tg", padSocial.telegram || (meta.telegram as string) || null),
+        token: lc,
+        twitter: normSocial("x", padSocial.twitter || (meta.twitter as string) || null),
+        venue,
+        venueUrl,
+        website: normSocial("web", padSocial.website || (meta.website as string) || null),
+      };
+    }),
+  );
+
+/**
+ * Venue-side market data used as a FALLBACK when our own swap index has not
+ * caught up with a token yet (fresh launches, pools still in the repair queue).
+ * RadarDex indexes every venue on Arc incl. Uniswap V4 and exposes per-token
+ * stats + last 50 swaps; Tolly exposes real OHLC for its own tokens.
+ */
+export type VenueSwap = { ts: number; side: "buy" | "sell"; usdc: number; price1m: number; wallet: string; tx: string; venue: string };
+export type VenueData = {
+  stats: {
+    price1m: number | null; mcap: number | null; liquidityUsdc: number | null; vol24: number;
+    buys24: number; sells24: number; traders24: number; txns24: number; holders: number | null;
+    change: { "5m": number | null; "1h": number | null; "6h": number | null; "24h": number | null };
+  } | null;
+  swaps: VenueSwap[];
+  candles: { t: number; o: number; h: number; l: number; c: number; v: number }[]; // price1m units
+};
+
+export const venueData = createServerFn({ method: "POST" })
+  .inputValidator((input: { token: string; launchpad?: string | null }) => input)
+  .handler(({ data }) =>
+    memo(`venue:${data.token.toLowerCase()}:${data.launchpad ?? ""}`, 15_000, async (): Promise<VenueData> => {
+      const lc = data.token.toLowerCase();
+      const H = { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; ArcToolsSite/1.0)" };
+      const [tok, sw, tc] = await Promise.all([
+        fetch(`https://api.radardex.pro/token/${lc}`, { headers: H }).then((r) => (r.ok ? r.json() : null)).catch(() => null) as Promise<Record<string, unknown> | null>,
+        fetch(`https://api.radardex.pro/swaps?token=${lc}`, { headers: H }).then((r) => (r.ok ? r.json() : null)).catch(() => null) as Promise<{ swaps?: Record<string, unknown>[] } | null>,
+        data.launchpad === "tolly"
+          ? (fetch(`https://api.tollylabs.com/candles?token=${lc}`, { headers: H }).then((r) => (r.ok ? r.json() : null)).catch(() => null) as Promise<{ candles?: Record<string, number>[] } | null>)
+          : Promise.resolve(null),
+      ]);
+      const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+      const tokOk = tok && String(tok.address ?? "").toLowerCase() === lc;
+      // Tolly: swieze tokeny nie sa jeszcze w RadarDex, ale lista Tolly ma pelne statystyki
+      let tl: Record<string, unknown> | null = null;
+      if (!tokOk && data.launchpad === "tolly") {
+        try {
+          const list = (await memo("tolly:tokens", 30_000, async () =>
+            (await fetch("https://api.tollylabs.com/tokens", { headers: H })).json(),
+          )) as { tokens?: Record<string, unknown>[] };
+          tl = (list.tokens ?? []).find((t) => String(t.address ?? "").toLowerCase() === lc) ?? null;
+        } catch { /* skip */ }
+      }
+      const tlStats = tl
+        ? {
+            buys24: num(tl.buyTransactions6h) ?? 0,
+            change: { "5m": null, "1h": num(tl.change1h), "6h": num(tl.change6h), "24h": num(tl.change24h) },
+            holders: null,
+            liquidityUsdc: num(tl.liquidity),
+            mcap: num(tl.marketCap),
+            price1m: num(tl.price) !== null ? Number(tl.price) * 1e6 : null,
+            sells24: Math.max(0, (num(tl.txns24h) ?? 0) - (num(tl.buyTransactions6h) ?? 0)),
+            traders24: num(tl.traders24h) ?? 0,
+            txns24: num(tl.txns24h) ?? 0,
+            vol24: num(tl.volume24h) ?? 0,
+          }
+        : null;
+      const stats = tokOk && tok
+        ? {
+            buys24: num(tok.buys24) ?? 0,
+            change: { "5m": num(tok.change5m), "1h": num(tok.change1h), "6h": num(tok.change6h), "24h": num(tok.change24h) },
+            holders: num(tok.holderCount),
+            liquidityUsdc: num(tok.liquidityUsdc),
+            mcap: num(tok.mcap),
+            price1m: num(tok.price) !== null ? Number(tok.price) * 1e6 : null,
+            sells24: num(tok.sells24) ?? 0,
+            traders24: num(tok.traders24) ?? 0,
+            txns24: num(tok.txns24) ?? 0,
+            vol24: num(tok.volume24) ?? 0,
+          }
+        : tlStats;
+      // RadarDex /swaps?token= dla NIEZNANEGO tokena zwraca globalny strumien swapow (bez filtra) —
+      // bez tej linii strona swiezego tokena pokazywalaby trade'y i wykres zupelnie innego tokena.
+      const rawSwaps = (sw?.swaps ?? []).filter((s) =>
+        String(s.token ?? "").toLowerCase() === lc &&
+        typeof s.price === "number" && typeof s.usdc === "number" && Number(s.usdc) >= 0.25);
+      // RadarDex miesza swapy ze wszystkich puli tokena, w tym martwych placeholderow z absurdalna cena.
+      // Bierzemy dominujaca wersje puli i odrzucamy ceny poza [mediana/20, mediana*20].
+      const byVer = new Map<string, number>();
+      for (const s of rawSwaps) byVer.set(String(s.version ?? ""), (byVer.get(String(s.version ?? "")) ?? 0) + 1);
+      const topVer = [...byVer.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+      const verSwaps = topVer !== undefined ? rawSwaps.filter((s) => String(s.version ?? "") === topVer) : rawSwaps;
+      const prices = verSwaps.map((s) => Number(s.price)).filter((p) => p > 0).sort((a, b) => a - b);
+      const med = prices.length ? prices[Math.floor(prices.length / 2)] : 0;
+      const clean = med > 0 ? verSwaps.filter((s) => Number(s.price) >= med / 6 && Number(s.price) <= med * 6) : verSwaps;
+      const swaps: VenueSwap[] = clean
+        .map((s) => ({
+          price1m: Number(s.price) * 1e6,
+          side: (s.side === "sell" ? "sell" : "buy") as "buy" | "sell",
+          ts: Number(s.time ?? 0),
+          tx: String(s.txHash ?? ""),
+          usdc: Number(s.usdc),
+          venue: String(s.version ?? "radar"),
+          wallet: String(s.trader ?? ""),
+        }))
+        .sort((a, b) => b.ts - a.ts);
+      const candles = (tc?.candles ?? [])
+        .filter((c) => typeof c.open === "number")
+        .map((c) => ({ c: c.close * 1e6, h: c.high * 1e6, l: c.low * 1e6, o: c.open * 1e6, t: Number(c.bucket), v: Number(c.volume ?? 0) }))
+        .sort((a, b) => a.t - b.t);
+      return { candles, stats, swaps };
+    }),
+  );
 
 export const scanToken = createServerFn({ method: "POST" })
   .inputValidator((input: { token: string }) => input)
@@ -357,13 +765,37 @@ export const scanToken = createServerFn({ method: "POST" })
         /* API down: skip */
       }
     }
-    const effPool = pool ?? padPool;
+    let effPool = pool ?? padPool;
     let liquidityUsdc: number | null = null;
+    let poolVersion: string | null = effPool ? (pool ? "v3" : "launchpad") : null;
+    let launchpadName: string | null = null;
+    let radarPrice1m: number | null = null;
     if (effPool) {
       const balHex = await rpc("eth_call", [{ data: SEL.balanceOf + pad32(effPool), to: USDC }, "latest"]).catch(
         () => null,
       );
       if (balHex) liquidityUsdc = Number(toNum(balHex as string)) / 1e6;
+    }
+    // Uniswap V4 / other pads: canonical factory knows nothing — RadarDex indexes every venue incl. V4
+    if (!effPool || (liquidityUsdc ?? 0) < 25) {
+      try {
+        const rt = (await memo(`radar:token:${token.toLowerCase()}`, 60_000, async () => {
+          const r = await fetch(`https://api.radardex.pro/token/${token.toLowerCase()}`, { headers: { Accept: "application/json" } });
+          return r.ok ? r.json() : null;
+        })) as { pools?: { pool: string; version: string; liquidityUsdc?: number; swaps?: number }[]; liquidityUsdc?: number; price?: number; launchpad?: string } | null;
+        if (rt) {
+          const best = (rt.pools ?? []).sort((a, b) => (b.liquidityUsdc ?? 0) - (a.liquidityUsdc ?? 0))[0];
+          if (best && (best.liquidityUsdc ?? 0) > (liquidityUsdc ?? 0)) {
+            effPool = best.pool;
+            poolVersion = best.version ?? null;
+            liquidityUsdc = best.liquidityUsdc ?? rt.liquidityUsdc ?? null;
+          }
+          if (typeof rt.price === "number" && rt.price > 0) radarPrice1m = rt.price * 1e6;
+          launchpadName = rt.launchpad ?? null;
+        }
+      } catch {
+        /* screener down */
+      }
     }
 
     let clones = 0;
@@ -387,8 +819,10 @@ export const scanToken = createServerFn({ method: "POST" })
       name: decodeString(nameHex as string | null),
       owner,
       pausable: bytecode.includes("8456cb59"),
+      launchpad: launchpadName,
       pool: effPool,
-      price1m: await quoteToUsdc(token, BigInt(10) ** BigInt(decimals) * 1_000_000n),
+      poolVersion,
+      price1m: (await quoteToUsdc(token, BigInt(10) ** BigInt(decimals) * 1_000_000n)) ?? radarPrice1m,
       radarBadge,
       renounced,
       symbol,
@@ -498,6 +932,14 @@ export const getPortfolio = createServerFn({ method: "POST" })
       const q = quotes[i];
       h.valueUsdc = q && q.length >= 66 ? Number(BigInt("0x" + q.slice(2, 66))) / 1e6 : null;
     });
+    // no canonical V3 quote (pad curve, V4, other pads): fall back per token, a few at a time
+    const missing = holdings.map((h, i) => [h, i] as const).filter(([h]) => !h.valueUsdc);
+    for (let k = 0; k < missing.length; k += 4) {
+      await Promise.all(missing.slice(k, k + 4).map(async ([h, i]) => {
+        const v = await quoteToUsdc(h.token, rawBalances[i]).catch(() => null);
+        if (v && v > 0) h.valueUsdc = v;
+      }));
+    }
     holdings.sort((a, b) => (b.valueUsdc ?? 0) - (a.valueUsdc ?? 0));
     const total = usdc + holdings.reduce((s, h) => s + (h.valueUsdc ?? 0), 0);
     return { holdings, total, usdc };
@@ -579,6 +1021,39 @@ function decodeStringAt(data: string, slotIndex: number): string {
   }
 }
 
+/**
+ * Warp writes a JSON metadata blob as the 3rd string of its TokenCreated
+ * event: {"image":"ipfs://…","description":"…","twitter":"…"}. That is the
+ * ONLY source of Warp artwork (their site ships no public API and the
+ * screener indexes just a handful of Warp tokens), so we decode it on chain.
+ */
+export function ipfsToHttp(uri: string): string | null {
+  if (!uri) return null;
+  // przez wlasne proxy z cache na brzegu — publiczne bramy IPFS limituja ruch
+  if (uri.startsWith("ipfs://")) return `/api/logo/ipfs/${uri.slice(7).replace(/^ipfs\//, "")}`;
+  const gw = uri.match(/^https?:\/\/[^/]+\/ipfs\/(.+)$/);
+  if (gw) return `/api/logo/ipfs/${gw[1]}`;
+  if (/^https?:\/\//.test(uri)) return uri;
+  if (/^Qm[1-9A-HJ-NP-Za-km-z]{20,}/.test(uri)) return `/api/logo/ipfs/${uri}`;
+  return null;
+}
+
+function warpMeta(data: string): { image: string | null; twitter: string | null; website: string | null } {
+  const empty = { image: null, twitter: null, website: null };
+  try {
+    const raw = decodeStringAt(data, 2);
+    if (!raw.trim().startsWith("{")) return empty;
+    const j = JSON.parse(raw) as { image?: string; twitter?: string; website?: string; telegram?: string };
+    return {
+      image: ipfsToHttp(j.image ?? ""),
+      twitter: j.twitter || null,
+      website: j.website || null,
+    };
+  } catch {
+    return empty;
+  }
+}
+
 async function warpTokens(): Promise<PadToken[]> {
   if (warpCache && Date.now() - warpTs < 5 * 60_000) return warpCache;
   const head = Number(toNum((await rpc("eth_blockNumber", [])) as string));
@@ -598,9 +1073,10 @@ async function warpTokens(): Promise<PadToken[]> {
   for (const logs of results as { data: string; topics: string[] }[][]) {
     for (const l of logs) {
       const token = topicAddr(l.topics[1]);
+      const wm = warpMeta(l.data);
       out.push({
         createdAt: null,
-        logo: null,
+        logo: wm.image,
         mcapUsd: null,
         name: decodeStringAt(l.data, 0) || "?",
         pad: "Warp",
@@ -609,10 +1085,10 @@ async function warpTokens(): Promise<PadToken[]> {
         symbol: decodeStringAt(l.data, 1) || "?",
         telegram: null,
         token,
-        twitter: null,
+        twitter: wm.twitter,
         venueUrl: `https://circlewarp.fun/token/${token}`,
         volUsd: null,
-        website: null,
+        website: wm.website,
       });
     }
   }
@@ -622,9 +1098,90 @@ async function warpTokens(): Promise<PadToken[]> {
   return out;
 }
 
+/**
+ * Normalise social links from every source into absolute https URLs.
+ * Launchpad APIs and creators hand us `x.com/foo`, `t.me/foo`, `@foo`, `foo.xyz`
+ * or plain junk; a scheme-less value rendered as <a href> becomes a RELATIVE
+ * link and opens arctools.fun/x.com/foo. Returns null for anything unusable.
+ */
+export function normSocial(kind: "x" | "tg" | "web", raw: string | null | undefined): string | null {
+  let v = (raw ?? "").trim();
+  if (!v) return null;
+  v = v.split(/\s+/)[0].replace(/^["'<]+|["'>),.]+$/g, "");
+  if (kind === "x") {
+    const m = v.match(/(?:^|\/\/|^www\.)?(?:x\.com|twitter\.com)\/(?:#!\/)?@?([A-Za-z0-9_]{1,15})/i);
+    if (m) return `https://x.com/${m[1]}`;
+    if (/^@?[A-Za-z0-9_]{1,15}$/.test(v)) return `https://x.com/${v.replace(/^@/, "")}`;
+    return null;
+  }
+  if (kind === "tg") {
+    const m = v.match(/t\.me\/(\+?[A-Za-z0-9_/-]{3,64})/i);
+    if (m) return `https://t.me/${m[1]}`;
+    if (/^@?[A-Za-z0-9_]{4,64}$/.test(v)) return `https://t.me/${v.replace(/^@/, "")}`;
+    return null;
+  }
+  // web
+  if (/^https?:\/\//i.test(v)) return v;
+  if (/^[A-Za-z0-9.-]+\.[A-Za-z]{2,}(\/.*)?$/.test(v) && !/^(x|twitter)\.com|^t\.me/i.test(v)) return `https://${v}`;
+  return null;
+}
+
 export const listTokens = createServerFn({ method: "POST" })
   .inputValidator((input: { pad: string }) => input)
-  .handler(({ data }): Promise<PadToken[]> => memo(`list:${data.pad}`, 20_000, () => listTokensImpl(data.pad)));
+  .handler(({ data }): Promise<PadToken[]> =>
+    memo(`list:${data.pad}`, 20_000, async () =>
+      (await withLogos(await listTokensImpl(data.pad))).map((t) => ({
+        ...t,
+        telegram: normSocial("tg", t.telegram),
+        twitter: normSocial("x", t.twitter),
+        website: normSocial("web", t.website),
+      }))));
+
+/**
+ * Cross-pad logo source. No single index covers Arc: the RadarDex screener
+ * ranks only the top ~200 tokens, Tolly and ArcPad each know their own. We
+ * merge all three into one address -> icon map, so a token keeps its artwork
+ * in EVERY tab (incl. raw Uniswap V3 pools and Warp tokens whose IPFS art
+ * failed), and only fall back to the monogram when nobody has a picture.
+ */
+let iconMap = new Map<string, string>();
+let iconTs = 0;
+
+export async function screenerIcons(): Promise<Map<string, string>> {
+  if (iconMap.size > 0 && Date.now() - iconTs < 300_000) return iconMap;
+  const m = new Map<string, string>();
+  const put = (addr?: string, icon?: string) => {
+    const a = (addr ?? "").toLowerCase();
+    if (/^0x[0-9a-f]{40}$/.test(a) && icon && !m.has(a)) m.set(a, icon);
+  };
+  const [radar, tolly, arcpad] = await Promise.all([
+    fetch("https://api.radardex.pro/tokens", { headers: { Accept: "application/json" } })
+      .then((r) => r.json())
+      .catch(() => ({})) as Promise<{ tokens?: { address?: string; icon?: string; logoURI?: string }[] }>,
+    fetch("https://api.tollylabs.com/tokens", {
+      headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; ArcToolsSite/1.0)" },
+    })
+      .then((r) => r.json())
+      .catch(() => ({})) as Promise<{ tokens?: { address?: string; image_uri?: string }[] }>,
+    fetch("https://arcpad.meme/api/tokens?limit=200")
+      .then((r) => r.json())
+      .catch(() => ({})) as Promise<{ creations?: { token?: string; imageURI?: string }[] }>,
+  ]);
+  for (const t of radar.tokens ?? []) put(t.address, t.icon || t.logoURI);
+  for (const t of tolly.tokens ?? []) put(t.address, t.image_uri);
+  for (const c of arcpad.creations ?? []) put(c.token, c.imageURI);
+  if (m.size > 0) {
+    iconMap = m;
+    iconTs = Date.now();
+  }
+  return iconMap;
+}
+
+async function withLogos(list: PadToken[]): Promise<PadToken[]> {
+  if (!list.some((t) => !t.logo)) return list;
+  const icons = await screenerIcons();
+  return list.map((t) => (t.logo ? t : { ...t, logo: ipfsToHttp(icons.get((t.token || "").toLowerCase()) ?? "") }));
+}
 
 async function listTokensImpl(pad: string): Promise<PadToken[]> {
 
@@ -640,7 +1197,7 @@ async function listTokensImpl(pad: string): Promise<PadToken[]> {
         const s = socials.get((l.token ?? "").toLowerCase());
         return {
           createdAt: l.createdAt ?? null,
-          logo: l.icon || s?.logoURI || null,
+          logo: ipfsToHttp(l.icon || s?.logoURI || ""),
           mcapUsd: null,
           name: l.name ?? "?",
           pad: "RadarDex",
@@ -662,7 +1219,7 @@ async function listTokensImpl(pad: string): Promise<PadToken[]> {
         .filter((t) => t.address && !inLaunches.has(t.address.toLowerCase()))
         .map((t) => ({
           createdAt: null,
-          logo: t.logoURI ?? null,
+          logo: ipfsToHttp(t.logoURI ?? ""),
           mcapUsd: null,
           name: t.name ?? "?",
           pad: "RadarDex",
@@ -685,7 +1242,7 @@ async function listTokensImpl(pad: string): Promise<PadToken[]> {
         .catch(() => ({}))) as { creations?: (ArcpadCreation & { volume24Usd?: number })[] };
       return (res.creations ?? []).map((c) => ({
         createdAt: c.timestamp ? new Date(c.timestamp * 1000).toISOString() : null,
-        logo: c.imageURI ?? null,
+        logo: ipfsToHttp(c.imageURI ?? ""),
         mcapUsd: c.marketCapUsd ?? null,
         name: c.name ?? "?",
         pad: "ArcPad",
@@ -719,7 +1276,7 @@ async function listTokensImpl(pad: string): Promise<PadToken[]> {
         .filter((t) => t.address)
         .map((t) => ({
           createdAt: t.created_ts ? new Date(t.created_ts * 1000).toISOString() : null,
-          logo: t.image_uri ?? null,
+          logo: ipfsToHttp(t.image_uri ?? ""),
           mcapUsd: t.marketCap ?? null,
           name: t.name ?? "?",
           pad: "Tolly",

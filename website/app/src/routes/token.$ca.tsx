@@ -1,0 +1,601 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { ArcNav } from "@/components/arc-nav";
+import { SocialCheck } from "@/components/social-check";
+import { TvChart, type Candle } from "@/components/tv-chart";
+import { SWAP_FEE_ROUTER, tokenPage, venueData, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
+import { padHolders } from "@/lib/arcpad";
+import {
+  FN, FN3, PAD, connectWallet, ethCall, fmt, nativeBalance, onWalletChange, p32, pnum, sendTx, tokenBalance, waitReceipt,
+} from "@/lib/arc-wallet";
+import "../arc-site.css";
+
+export const Route = createFileRoute("/token/$ca")({
+  loader: async ({ params }) => {
+    const r = await tokenPage({ data: { token: params.ca } });
+    return { info: "error" in r ? null : r, error: "error" in r ? r.error : null };
+  },
+  head: ({ loaderData }) => {
+    const i = loaderData?.info;
+    return {
+      meta: [
+        { title: i ? `${i.symbol} · ${i.name} on Arc: chart, trades, swap` : "Token on Arc" },
+        { name: "description", content: i ? `Live chart, trades, holders and one-click swap for ${i.name} (${i.symbol}) on Arc.` : "Arc token page" },
+      ],
+    };
+  },
+  component: TokenPage,
+});
+
+const BOT_API = "https://bot-production-4200.up.railway.app";
+const USDC = "0x3600000000000000000000000000000000000000";
+const QUOTER_V2 = "0x7dfd4f31be6814d2906bde155c3e1b146eac1468";
+const SWAP_ROUTER02 = "0x53BF6B0684Ec7eF91e1387Da3D1a1769bC5A6F77";
+const SEL_EXACT_INPUT_SINGLE = "0x04e45aaf"; // exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))
+const SEL = {
+  allowance: "0xdd62ed3e",
+  approve: "0x095ea7b3",
+  quoteExactInputSingle: "0xc6a5026a",
+  routerBuy: "0xa0328eb2",
+  routerSell: "0x7dfcb0d3",
+};
+const TFS = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
+const TF_SEC: Record<string, number> = { "1d": 86400, "1h": 3600, "1m": 60, "4h": 14400, "5m": 300, "15m": 900 };
+
+/** Buduje swiece z listy swapow (fallback, gdy zaden indeks nie ma jeszcze OHLC). */
+function candlesFromSwaps(swaps: { ts: number; price1m: number; usdc: number }[], tf: string): Candle[] {
+  const step = TF_SEC[tf] ?? 300;
+  const byB = new Map<number, Candle>();
+  for (const s of [...swaps].sort((a, b) => a.ts - b.ts)) {
+    if (!(s.price1m > 0)) continue;
+    const b = Math.floor(s.ts / step) * step;
+    const k = byB.get(b);
+    if (!k) byB.set(b, { c: s.price1m, h: s.price1m, l: s.price1m, n: 1, o: s.price1m, t: b, v: s.usdc, vb: 0 });
+    else { k.c = s.price1m; k.h = Math.max(k.h, s.price1m); k.l = Math.min(k.l, s.price1m); k.v += s.usdc; k.n += 1; }
+  }
+  const out = [...byB.values()].sort((a, b) => a.t - b.t);
+  for (let i = 1; i < out.length; i++) { out[i].o = out[i - 1].c; out[i].h = Math.max(out[i].h, out[i].o); out[i].l = Math.min(out[i].l, out[i].o); }
+  return out;
+}
+type TF = (typeof TFS)[number];
+
+type Stats = {
+  price1m: number | null;
+  change: Record<"5m" | "1h" | "6h" | "24h", number | null>;
+  vol24: number; buys24: number; sells24: number; traders24: number; txns_all: number; vol_all: number;
+};
+type Trade = {
+  tx: string; ts: number; wallet: string; side: "buy" | "sell"; usdc: number; tokens: number; price1m: number;
+  venue: string; insider_rank: number | null; insider_pnl: number | null;
+};
+
+const money = (v: number | null | undefined, d = 2) => (v === null || v === undefined ? "—" : `$${fmt(v, d)}`);
+const pct = (v: number | null | undefined) =>
+  v === null || v === undefined ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+const ago = (ts: number) => {
+  const s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+};
+const priceFromP1m = (p1m: number | null) => (p1m === null ? null : p1m / 1e6);
+
+function Cell({ k, v, tone }: { k: string; v: string; tone?: "up" | "down" }) {
+  return (
+    <div style={{ background: "var(--arc-panel, #0e1118)", border: "1px solid var(--arc-line)", padding: "8px 10px" }}>
+      <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, letterSpacing: 0.6, margin: 0 }}>{k}</p>
+      <p className="arc-mono" style={{ color: tone === "up" ? "#22c580" : tone === "down" ? "#f0534f" : "var(--arc-ink)", fontSize: 14, margin: "3px 0 0" }}>{v}</p>
+    </div>
+  );
+}
+
+function TokenPage() {
+  const { info, error } = Route.useLoaderData();
+  const [tf, setTf] = useState<TF>("5m");
+  const [mode, setMode] = useState<"price" | "mcap">("mcap");
+  const [candles, setCandles] = useState<Candle[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [holders, setHolders] = useState<{ count: number; top: { address: string; pct: number }[] } | null>(null);
+  const [venue, setVenue] = useState<VenueData | null>(null);
+  const [tab, setTab] = useState<"trades" | "holders" | "info">("trades");
+  const [copied, setCopied] = useState(false);
+
+  // ---- swap state
+  const [wallet, setWallet] = useState<string | null>(null);
+  const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [amount, setAmount] = useState("");
+  const [quote, setQuote] = useState<number | null>(null);
+  const [slippage, setSlippage] = useState(5);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [balUsdc, setBalUsdc] = useState<number | null>(null);
+  const [balTok, setBalTok] = useState<number | null>(null);
+
+  const ca = info?.token ?? "";
+  const dec = info?.decimals ?? 18;
+  const padAddr = info?.padAddress ?? PAD;
+  const quoteTok = info?.quoteToken ?? null;         // null = native USDC
+  const qSym = info?.quoteSymbol ?? "USDC";
+  const qUsd = info?.quoteUsd ?? 1;
+  const canTrade = info?.venue === "pad" || (info?.venue === "v3" && info.poolFee !== null);
+  // graduowany token v3 w parze z innym tokenem (np. BTOLLY/TOLLY): pula jest token/quote, nie token/USDC
+  const v3Quote = info?.venue === "v3" && !!info.quoteToken;
+
+  // ---- data loaders (bot API, CORS open)
+  const loadCandles = useCallback(async () => {
+    if (!ca) return;
+    try {
+      const r = (await (await fetch(`${BOT_API}/api/ohlc?token=${ca}&tf=${tf}&limit=600`)).json()) as { candles: Candle[] };
+      setCandles(r.candles ?? []);
+    } catch { /* keep old */ }
+  }, [ca, tf]);
+  const loadSide = useCallback(async () => {
+    if (!ca) return;
+    try {
+      const [s, t] = await Promise.all([
+        fetch(`${BOT_API}/api/token-stats?token=${ca}`).then((r) => r.json()) as Promise<Stats>,
+        fetch(`${BOT_API}/api/trades?token=${ca}&limit=60`).then((r) => r.json()) as Promise<{ trades: Trade[] }>,
+      ]);
+      setStats(s);
+      setTrades(t.trades ?? []);
+    } catch { /* keep old */ }
+  }, [ca]);
+
+  useEffect(() => {
+    void loadCandles();
+    const id = setInterval(loadCandles, 15_000);
+    return () => clearInterval(id);
+  }, [loadCandles]);
+  useEffect(() => {
+    void loadSide();
+    const id = setInterval(loadSide, 12_000);
+    return () => clearInterval(id);
+  }, [loadSide]);
+  useEffect(() => {
+    if (!ca) return;
+    const load = () => venueData({ data: { launchpad: info?.launchpad ?? null, token: ca } }).then(setVenue).catch(() => null);
+    void load();
+    const id = setInterval(load, 20_000);
+    return () => clearInterval(id);
+  }, [ca, info?.launchpad]);
+  useEffect(() => {
+    if (!ca) return;
+    padHolders({ data: { token: ca } }).then(setHolders).catch(() => null);
+  }, [ca]);
+
+  // ---- wallet
+  const refreshBalances = useCallback(async (addr: string | null) => {
+    if (!addr || !ca) return;
+    try {
+      const [u, t] = await Promise.all([quoteTok ? tokenBalance(quoteTok, addr).then((b) => Number(b / 10n ** 12n) / 1e6) : nativeBalance(addr), tokenBalance(ca, addr)]);
+      setBalUsdc(u);
+      setBalTok(Number(t / BigInt(10) ** BigInt(Math.max(0, dec - 6))) / 1e6);
+    } catch { /* ignore */ }
+  }, [ca, dec, quoteTok]);
+  useEffect(() => {
+    let saved: string | null = null;
+    try { saved = localStorage.getItem("arctools_wallet"); } catch { /* ignore */ }
+    setWallet(saved);
+    void refreshBalances(saved);
+    return onWalletChange((a) => { setWallet(a); void refreshBalances(a); });
+  }, [refreshBalances]);
+
+  // ---- quote (debounced)
+  useEffect(() => {
+    const n = Number(amount);
+    if (!info || !n || n <= 0 || !canTrade) { setQuote(null); return; }
+    const id = setTimeout(async () => {
+      try {
+        if (info.venue === "pad") {
+          const wei = BigInt(Math.round(n * 1e6)) * 10n ** 12n;
+          const r = await ethCall(padAddr, (side === "buy" ? FN.quoteBuy : FN.quoteSell) + p32(ca) + pnum(wei));
+          setQuote(r && r !== "0x" ? Number(BigInt(r) / 10n ** 12n) / 1e6 : null);
+        } else {
+          // V3: 1% service fee is taken from USDC before the swap (buy) / after (sell)
+          const fee = BigInt(info.poolFee ?? 10000);
+          if (v3Quote && info.quoteToken) {
+            // para token/quote (18 dec po obu stronach), bez fee routera
+            const amountIn = BigInt(Math.round(n * 1e6)) * 10n ** 12n;
+            const [tin, tout] = side === "buy" ? [info.quoteToken, ca] : [ca, info.quoteToken];
+            const r = await ethCall(QUOTER_V2, SEL.quoteExactInputSingle + p32(tin) + p32(tout) + pnum(amountIn) + pnum(fee) + pnum(0n));
+            if (!r || r === "0x") { setQuote(null); return; }
+            setQuote(Number(BigInt("0x" + r.slice(2, 66)) / 10n ** 12n) / 1e6);
+            return;
+          }
+          const amountIn = side === "buy"
+            ? (BigInt(Math.round(n * 1e6)) * 99n) / 100n
+            : BigInt(Math.round(n * 1e6)) * BigInt(10) ** BigInt(Math.max(0, dec - 6));
+          const [tin, tout] = side === "buy" ? [USDC, ca] : [ca, USDC];
+          const data = SEL.quoteExactInputSingle + p32(tin) + p32(tout) + pnum(amountIn) + pnum(fee) + pnum(0n);
+          const r = await ethCall(QUOTER_V2, data);
+          if (!r || r === "0x") { setQuote(null); return; }
+          const out = BigInt("0x" + r.slice(2, 66));
+          setQuote(side === "buy"
+            ? Number(out / BigInt(10) ** BigInt(Math.max(0, dec - 6))) / 1e6
+            : (Number(out) / 1e6) * 0.99);
+        }
+      } catch { setQuote(null); }
+    }, 350);
+    return () => clearTimeout(id);
+  }, [amount, side, ca, info, canTrade, dec, padAddr, v3Quote]);
+
+  const setPctAmount = (p: number) => {
+    const bal = side === "buy" ? balUsdc : balTok;
+    if (bal === null) return;
+    const v = side === "buy" ? Math.max(0, bal - 0.05) * p : bal * p; // leave gas on full USDC
+    setAmount(v > 0 ? v.toFixed(6).replace(/\.?0+$/, "") : "0");
+  };
+
+  const swap = async () => {
+    setMsg(null); setErr(null);
+    try {
+      if (!info) return;
+      const from = wallet ?? (await connectWallet());
+      setWallet(from);
+      const n = Number(amount);
+      if (!n || n <= 0) throw new Error("Enter an amount.");
+      if (quote === null) throw new Error("No quote yet.");
+      setBusy("Confirm in wallet...");
+      let hash: string;
+      if (info.venue === "pad") {
+        const minOut = BigInt(Math.round(quote * (1 - slippage / 100) * 1e6)) * 10n ** 12n;
+        const amt = BigInt(Math.round(n * 1e6)) * 10n ** 12n;
+        if (side === "buy") {
+          if (info.quoteToken) {
+            // v3, ERC-20 quote (e.g. TOLLY): approve once, then buyToken pulls it
+            const al = await ethCall(info.quoteToken, SEL.allowance + p32(from) + p32(padAddr));
+            if (!al || BigInt(al) < amt) {
+              setBusy(`Approve ${qSym}...`);
+              await waitReceipt(await sendTx({ data: SEL.approve + p32(padAddr) + "f".repeat(64), from, to: info.quoteToken }));
+              setBusy("Confirm in wallet...");
+            }
+            hash = await sendTx({ data: FN3.buyToken + p32(ca) + pnum(amt) + pnum(minOut), from, to: padAddr });
+          } else {
+            hash = await sendTx({ data: FN.buy + p32(ca) + pnum(minOut), from, to: padAddr, value: amt });
+          }
+        } else {
+          hash = await sendTx({ data: FN.sell + p32(ca) + pnum(amt) + pnum(minOut), from, to: padAddr });
+        }
+      } else if (v3Quote && info.quoteToken) {
+        // SwapRouter02 exactInputSingle: quote -> token (buy) lub token -> quote (sell), 18 dec
+        const fee = BigInt(info.poolFee ?? 10000);
+        const amt = BigInt(Math.round(n * 1e6)) * 10n ** 12n;
+        const minOut = BigInt(Math.round(quote * (1 - slippage / 100) * 1e6)) * 10n ** 12n;
+        const tin = side === "buy" ? info.quoteToken : ca;
+        const tout = side === "buy" ? ca : info.quoteToken;
+        const al = await ethCall(tin, SEL.allowance + p32(from) + p32(SWAP_ROUTER02));
+        if (!al || BigInt(al) < amt) {
+          setBusy(`Approve ${side === "buy" ? qSym : info.symbol}...`);
+          await waitReceipt(await sendTx({ data: SEL.approve + p32(SWAP_ROUTER02) + "f".repeat(64), from, to: tin }));
+          setBusy("Confirm in wallet...");
+        }
+        hash = await sendTx({
+          data: SEL_EXACT_INPUT_SINGLE + p32(tin) + p32(tout) + pnum(fee) + p32(from) + pnum(amt) + pnum(minOut) + pnum(0n),
+          from, to: SWAP_ROUTER02,
+        });
+      } else {
+        const fee = BigInt(info.poolFee ?? 10000);
+        const deadline = BigInt(Math.floor(Date.now() / 1000) + 900);
+        if (side === "buy") {
+          const usdcIn = BigInt(Math.round(n * 1e6));
+          const minOut = BigInt(Math.round(quote * (1 - slippage / 100) * 1e6)) * BigInt(10) ** BigInt(Math.max(0, dec - 6));
+          const al = await ethCall(USDC, SEL.allowance + p32(from) + p32(SWAP_FEE_ROUTER));
+          if (!al || BigInt(al) < usdcIn) {
+            setBusy("Approve USDC...");
+            await waitReceipt(await sendTx({ data: SEL.approve + p32(SWAP_FEE_ROUTER) + "f".repeat(64), from, to: USDC }));
+            setBusy("Confirm in wallet...");
+          }
+          hash = await sendTx({ data: SEL.routerBuy + p32(ca) + pnum(fee) + pnum(usdcIn) + pnum(minOut) + pnum(deadline), from, to: SWAP_FEE_ROUTER });
+        } else {
+          const tokIn = BigInt(Math.round(n * 1e6)) * BigInt(10) ** BigInt(Math.max(0, dec - 6));
+          const minOut = BigInt(Math.round((quote / 0.99) * (1 - slippage / 100) * 1e6)); // router checks pre-fee USDC
+          const al = await ethCall(ca, SEL.allowance + p32(from) + p32(SWAP_FEE_ROUTER));
+          if (!al || BigInt(al) < tokIn) {
+            setBusy(`Approve ${info.symbol}...`);
+            await waitReceipt(await sendTx({ data: SEL.approve + p32(SWAP_FEE_ROUTER) + "f".repeat(64), from, to: ca }));
+            setBusy("Confirm in wallet...");
+          }
+          hash = await sendTx({ data: SEL.routerSell + p32(ca) + pnum(fee) + pnum(tokIn) + pnum(minOut) + pnum(deadline), from, to: SWAP_FEE_ROUTER });
+        }
+      }
+      setBusy("Waiting for confirmation...");
+      const r = await waitReceipt(hash);
+      if (Number(r.status) !== 1) throw new Error("Transaction reverted (slippage?).");
+      setMsg(`${side === "buy" ? "Bought" : "Sold"} ${info.symbol} — confirmed.`);
+      setAmount("");
+      void refreshBalances(from);
+      setTimeout(() => { void loadSide(); void loadCandles(); }, 2500);
+    } catch (e) {
+      setErr((e as Error).message.slice(0, 200));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // ---- derived: nasz indeks pierwszy, dane venue (RadarDex/Tolly) gdy indeks jeszcze cienki
+  const ownThin = !stats || stats.txns_all < 5;
+  const vs = venue?.stats ?? null;
+  const eff = {
+    buys24: ownThin && vs ? vs.buys24 : (stats?.buys24 ?? 0),
+    change: ownThin && vs ? vs.change : (stats?.change ?? { "1h": null, "24h": null, "5m": null, "6h": null }),
+    sells24: ownThin && vs ? vs.sells24 : (stats?.sells24 ?? 0),
+    traders24: ownThin && vs ? vs.traders24 : (stats?.traders24 ?? 0),
+    txns: ownThin && vs ? vs.txns24 : (stats?.txns_all ?? 0),
+    vol24: ownThin && vs ? vs.vol24 : (stats?.vol24 ?? 0),
+    volAll: stats?.vol_all ?? null,
+  };
+  const lastP1m = (!ownThin ? stats?.price1m : null) ?? vs?.price1m ?? info?.price1m ?? stats?.price1m ?? null;
+  const price = priceFromP1m(lastP1m);
+  const mcap = info && lastP1m !== null ? (lastP1m / 1e6) * info.supply : (vs?.mcap ?? info?.mcapUsd ?? null);
+  const liquidity = info?.liquidityUsdc && info.liquidityUsdc > 0 ? info.liquidityUsdc : (vs?.liquidityUsdc ?? info?.liquidityUsdc ?? null);
+  // arc-scan zwraca max 50 wierszy (rozmiar strony), screener ma prawdziwy licznik — bierzemy najwiekszy
+  const holderCount = Math.max(holders?.count ?? 0, vs?.holders ?? 0, info?.holders ?? 0) || null;
+  const scale = useMemo(() => (mode === "mcap" ? (info?.supply ?? 0) / 1e6 : 1e-6), [mode, info?.supply]);
+  const buys = eff.buys24;
+  const sells = eff.sells24;
+  const buyPct = buys + sells > 0 ? (buys / (buys + sells)) * 100 : 50;
+  const effTrades: Trade[] = trades.length >= 5 || !venue
+    ? trades
+    : [...trades, ...venue.swaps.filter((s) => !trades.some((t) => t.tx === s.tx)).map((s) => ({
+        block: 0, insider_pnl: null, insider_rank: null, price1m: s.price1m, side: s.side, tokens: s.price1m > 0 ? (s.usdc / s.price1m) * 1e6 : 0,
+        ts: s.ts, tx: s.tx, usdc: s.usdc, venue: s.venue, wallet: s.wallet,
+      }))].sort((a, b) => b.ts - a.ts);
+  const effCandles: Candle[] = useMemo(() => {
+    if (candles.length >= 5) return candles;
+    if (venue?.candles.length) {
+      // Tolly daje swiece godzinowe; dla krotszych interwalow i tak lepsze niz pustka
+      const vc = venue.candles.map((c) => ({ ...c, n: 0, vb: 0 }));
+      return vc.length > candles.length ? vc : candles;
+    }
+    const src = venue?.swaps.length ? venue.swaps : trades.length ? trades : [];
+    if (src.length) {
+      // 50 ostatnich swapow to zwykle <1h historii — przy grubszym interwale wyszloby 2-3 swiece
+      let fromSwaps = candlesFromSwaps(src, tf);
+      if (fromSwaps.length < 8) fromSwaps = candlesFromSwaps(src, "1m");
+      return fromSwaps.length > candles.length ? fromSwaps : candles;
+    }
+    return candles;
+  }, [candles, venue, tf, trades]);
+
+  if (!info) {
+    return (
+      <main className="arc-site" style={{ minHeight: "100dvh" }}>
+        <ArcNav active="/feed" />
+        <section className="arc-section" style={{ paddingTop: 130 }}>
+          <h1 className="arc-h2">Token not found</h1>
+          <p className="arc-body">{error ?? "Unknown error."}</p>
+        </section>
+      </main>
+    );
+  }
+
+  const copyCa = () => {
+    void navigator.clipboard?.writeText(ca);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  };
+
+  return (
+    <main className="arc-site" style={{ minHeight: "100dvh" }}>
+      <ArcNav active="/feed" />
+      <section className="arc-section arc-token" style={{ maxWidth: 1440, paddingTop: 112 }}>
+        {/* ---------- header ---------- */}
+        <div className="arc-token__head">
+          <div style={{ alignItems: "center", display: "flex", gap: 14, minWidth: 0 }}>
+            <span className="arc-mono" style={{ alignItems: "center", background: "#0e1118", border: "1px solid var(--arc-line)", borderRadius: 12, display: "inline-flex", flex: "0 0 56px", fontSize: 20, height: 56, justifyContent: "center", overflow: "hidden", position: "relative", width: 56 }}>
+              {(info.symbol || "?").slice(0, 1)}
+              {info.logo && <img alt="" src={info.logo} style={{ height: "100%", left: 0, objectFit: "cover", position: "absolute", top: 0, width: "100%" }} />}
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <h1 className="arc-h3" style={{ margin: 0 }}>{info.name}</h1>
+                <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 13 }}>${info.symbol}</span>
+                {info.launchpad && (
+                  <span className="arc-mono" style={{ background: info.venue === "pad" ? "var(--arc-cobalt)" : "transparent", border: "1px solid var(--arc-cobalt)", color: info.venue === "pad" ? "var(--arc-on-accent)" : "var(--arc-cobalt)", fontSize: 10, padding: "2px 7px", textTransform: "uppercase" }}>
+                    {info.launchpad}
+                  </span>
+                )}
+                {info.website && <a className="arc-mono" href={info.website} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 12 }} target="_blank">web</a>}
+                {info.twitter && <a className="arc-mono" href={info.twitter} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 12 }} target="_blank">𝕏</a>}
+                {info.telegram && <a className="arc-mono" href={info.telegram} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 12 }} target="_blank">✈︎</a>}
+              </div>
+              <div className="arc-mono" style={{ alignItems: "center", color: "var(--arc-muted)", display: "flex", flexWrap: "wrap", fontSize: 11, gap: 10, marginTop: 4 }}>
+                <span>Arc</span>
+                <button className="arc-mono" onClick={copyCa} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "1px 7px" }} type="button">
+                  {copied ? "copied" : `${ca.slice(0, 6)}…${ca.slice(-4)} ⧉`}
+                </button>
+                <a href={`https://arc-scan.org/token/${ca}`} rel="noreferrer" style={{ color: "var(--arc-muted)" }} target="_blank">explorer ↗</a>
+                {info.createdAt && <span>{ago(Math.floor(new Date(info.createdAt).getTime() / 1000))} ago</span>}
+              </div>
+            </div>
+          </div>
+          <div className="arc-token__kpis">
+            <div><p className="arc-mono arc-token__k">MCAP</p><p className="arc-mono arc-token__v">{mcap !== null ? money(mcap, 0) : "—"}</p></div>
+            <div><p className="arc-mono arc-token__k">PRICE</p><p className="arc-mono arc-token__v">{price !== null ? `$${price < 0.01 ? price.toFixed(8) : price.toFixed(5)}` : "—"}</p></div>
+            <div><p className="arc-mono arc-token__k">LIQUIDITY</p><p className="arc-mono arc-token__v">{money(liquidity, 0)}</p></div>
+            <div><p className="arc-mono arc-token__k">24H</p><p className="arc-mono arc-token__v" style={{ color: (eff.change["24h"] ?? 0) >= 0 ? "#22c580" : "#f0534f" }}>{pct(eff.change["24h"])}</p></div>
+          </div>
+        </div>
+
+        {/* ---------- main grid ---------- */}
+        <div className="arc-token__grid">
+          <div style={{ border: "1px solid var(--arc-line)", minWidth: 0 }}>
+            <div className="arc-mono" style={{ alignItems: "center", borderBottom: "1px solid var(--arc-line)", display: "flex", flexWrap: "wrap", fontSize: 12, gap: 4, padding: "8px 10px" }}>
+              {TFS.map((t) => (
+                <button className="arc-mono" key={t} onClick={() => setTf(t)} style={{ background: tf === t ? "rgba(46,124,255,0.18)" : "transparent", border: "none", borderBottom: tf === t ? "2px solid var(--arc-cobalt)" : "2px solid transparent", color: tf === t ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "5px 9px" }} type="button">{t}</button>
+              ))}
+              <span style={{ flex: 1 }} />
+              {(["price", "mcap"] as const).map((m) => (
+                <button className="arc-mono" key={m} onClick={() => setMode(m)} style={{ background: "transparent", border: "none", borderBottom: mode === m ? "2px solid var(--arc-cobalt)" : "2px solid transparent", color: mode === m ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "5px 9px", textTransform: "capitalize" }} type="button">{m === "mcap" ? "MCap" : "Price"}</button>
+              ))}
+            </div>
+            <div className="arc-mono" style={{ borderBottom: "1px solid var(--arc-line)", color: "var(--arc-muted)", fontSize: 11, padding: "6px 10px" }}>
+              {info.symbol}/USDC · {mode === "mcap" ? "Market Cap" : "Price"} · {tf} · {info.venue === "pad" ? `ArcToolsPad curve (${qSym} pair)` : info.venue === "v3" ? `Uniswap V3 ${((info.poolFee ?? 0) / 10000).toFixed(2)}%${info.graduated ? " · graduated from ArcToolsPad" : ""}` : (info.launchpad ?? "external pool")}
+              {candles.length < 5 && effCandles.length > 0 && <span style={{ marginLeft: 10, opacity: 0.7 }}>· venue data (own index syncing)</span>}
+            </div>
+            <TvChart candles={effCandles} mode={mode} scale={scale} />
+          </div>
+
+          {/* ---------- swap panel ---------- */}
+          <aside style={{ border: "1px solid var(--arc-line)", padding: 14 }}>
+            <div className="arc-token__stats">
+              <Cell k="MCAP" v={mcap !== null ? money(mcap, 0) : "—"} />
+              <Cell k="LIQ" v={money(liquidity, 0)} />
+              <Cell k="VOL 24H" v={money(eff.vol24, 0)} />
+              <Cell k={ownThin && vs ? "TXNS 24H" : "TXNS"} v={String(eff.txns)} />
+              <Cell k="TRADERS 24H" v={String(eff.traders24)} />
+              <Cell k="HOLDERS" v={holderCount ? String(holderCount) : "—"} />
+            </div>
+            <div className="arc-token__stats" style={{ marginTop: 8 }}>
+              {(["5m", "1h", "6h", "24h"] as const).map((k) => (
+                <Cell k={k.toUpperCase()} key={k} tone={(eff.change[k] ?? 0) >= 0 ? "up" : "down"} v={pct(eff.change[k])} />
+              ))}
+            </div>
+            {info.venue === "pad" && info.padMode === "curve" && info.targetQuote ? (
+              <div style={{ marginTop: 14 }}>
+                <div className="arc-mono" style={{ display: "flex", fontSize: 11, justifyContent: "space-between" }}>
+                  <span style={{ color: "var(--arc-muted)" }}>bonding curve → Uniswap</span>
+                  <span style={{ color: "var(--arc-cobalt)" }}>
+                    {Math.min(100, ((liquidity ?? 0) / (info.targetQuote * (qUsd || 1))) * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <div style={{ background: "#0e1118", border: "1px solid var(--arc-line)", height: 6, marginTop: 4 }}>
+                  <div style={{ background: "var(--arc-cobalt)", height: "100%", width: `${Math.min(100, ((liquidity ?? 0) / (info.targetQuote * (qUsd || 1))) * 100)}%` }} />
+                </div>
+                <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: "4px 0 0" }}>
+                  ${fmt(liquidity ?? 0, 0)} of ${fmt(info.targetQuote * (qUsd || 1), 0)} · at target the reserve + tokens move to a Uniswap V3 pool, LP burned
+                </p>
+              </div>
+            ) : null}
+            <div className="arc-mono" style={{ fontSize: 11, margin: "16px 0 6px" }}>
+              <span style={{ color: "#22c580" }}>{buys} buys</span> <span style={{ color: "var(--arc-muted)" }}>·</span> <span style={{ color: "#f0534f" }}>{sells} sells</span>
+              <span style={{ color: "var(--arc-muted)", float: "right" }}>24H</span>
+            </div>
+            <div style={{ background: "#f0534f", borderRadius: 2, height: 4, overflow: "hidden" }}>
+              <div style={{ background: "#22c580", height: "100%", width: `${buyPct}%` }} />
+            </div>
+
+            {canTrade ? (
+              <>
+                <div style={{ display: "flex", gap: 8, margin: "16px 0 10px" }}>
+                  {(["buy", "sell"] as const).map((s) => (
+                    <button className="arc-mono" key={s} onClick={() => { setSide(s); setAmount(""); }} style={{ background: side === s ? (s === "buy" ? "#22c580" : "#f0534f") : "transparent", border: `1px solid ${s === "buy" ? "#22c580" : "#f0534f"}`, color: side === s ? "#06090f" : (s === "buy" ? "#22c580" : "#f0534f"), cursor: "pointer", flex: 1, fontSize: 12, fontWeight: 700, padding: "8px 0", textTransform: "uppercase" }} type="button">{s}</button>
+                  ))}
+                  <a className="arc-mono" href={`https://t.me/ArcSniper_bot?start=ca_${ca.slice(2)}`} rel="noreferrer" style={{ alignSelf: "center", color: "var(--arc-muted)", fontSize: 11, textDecoration: "none" }} target="_blank" title="Limit orders, TP/SL and turbo gas in the sniper bot">Limit ↗</a>
+                </div>
+                <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: "0 0 4px" }}>YOU PAY</p>
+                <div style={{ alignItems: "center", background: "#0e1118", border: "1px solid var(--arc-line)", display: "flex", gap: 8, padding: "8px 10px" }}>
+                  <input className="arc-mono" inputMode="decimal" onChange={(e) => setAmount(e.target.value.replace(",", "."))} placeholder="0.0" style={{ background: "transparent", border: "none", color: "var(--arc-ink)", flex: 1, fontSize: 20, minWidth: 0, outline: "none" }} value={amount} />
+                  <span className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 14, fontSize: 12, marginRight: 4, padding: "3px 10px" }}>{side === "buy" ? (info.venue === "pad" || v3Quote ? qSym : "USDC") : info.symbol}</span>
+                </div>
+                <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: "4px 0 6px" }}>
+                  balance {side === "buy" ? (balUsdc !== null ? `${fmt(balUsdc, 4)} ${info.venue === "pad" || v3Quote ? qSym : "USDC"}` : "—") : (balTok !== null ? `${fmt(balTok)} ${info.symbol}` : "—")}
+                  {info.venue === "pad" && quoteTok !== null && qUsd > 0 && Number(amount) > 0 ? ` · ≈ $${fmt(Number(amount) * (side === "buy" ? qUsd : 1), 2)}` : ""}
+                </p>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {[0.25, 0.5, 0.75, 1].map((p) => (
+                    <button className="arc-mono" key={p} onClick={() => setPctAmount(p)} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-muted)", cursor: "pointer", flex: 1, fontSize: 11, padding: "7px 0" }} type="button">{p === 1 ? "Max" : `${p * 100}%`}</button>
+                  ))}
+                </div>
+                <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: "12px 0 4px" }}>TO (ESTIMATED)</p>
+                <div style={{ alignItems: "center", background: "#0e1118", border: "1px solid var(--arc-line)", display: "flex", gap: 8, padding: "8px 10px" }}>
+                  <span className="arc-mono" style={{ flex: 1, fontSize: 20 }}>{quote !== null ? fmt(quote, side === "buy" ? 2 : 4) : "0.0"}</span>
+                  <span className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 14, fontSize: 12, marginRight: 4, padding: "3px 10px" }}>{side === "buy" ? info.symbol : (info.venue === "pad" || v3Quote ? qSym : "USDC")}</span>
+                </div>
+                <div className="arc-mono" style={{ alignItems: "center", color: "var(--arc-muted)", display: "flex", fontSize: 11, justifyContent: "space-between", margin: "8px 0" }}>
+                  <span>slippage</span>
+                  <span>
+                    {[1, 5, 15].map((s) => (
+                      <button className="arc-mono" key={s} onClick={() => setSlippage(s)} style={{ background: slippage === s ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid var(--arc-line)", color: slippage === s ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, marginLeft: 4, padding: "2px 7px" }} type="button">{s}%</button>
+                    ))}
+                  </span>
+                </div>
+                {err && <p className="arc-mono" style={{ color: "var(--arc-error)", fontSize: 11 }}>{err}</p>}
+                {msg && <p className="arc-mono" style={{ color: "#22c580", fontSize: 11 }}>{msg}</p>}
+                <button className="arc-cta" disabled={!!busy} onClick={() => void swap()} style={{ background: side === "buy" ? "#22c580" : "#f0534f", border: "none", color: "#06090f", cursor: busy ? "wait" : "pointer", fontWeight: 700, marginTop: 4, width: "100%" }} type="button">
+                  {busy ?? (wallet ? `${side === "buy" ? "Buy" : "Sell"} ${info.symbol}` : "Connect & trade")}
+                </button>
+                <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, marginTop: 8 }}>
+                  {info.venue === "pad" ? `1% platform fee, 10% of it to ARCT stakers.${info.padMode === "curve" && info.targetQuote ? ` Graduates to Uniswap at ${fmt(info.targetQuote)} ${qSym} real reserve.` : ""}` : v3Quote ? `Uniswap V3 pool ${info.symbol}/${qSym}, swapped directly (pool fee 1%, no service fee).` : "1% service fee, routed via Uniswap V3."} Need TP/SL or limit orders? Use the sniper bot.
+                </p>
+              </>
+            ) : (
+              <div style={{ marginTop: 16 }}>
+                <p className="arc-body" style={{ fontSize: 13 }}>
+                  This token trades on {info.launchpad ?? "another venue"}'s own pool, which the site router cannot reach yet. You can still trade it from our sniper bot (all Arc launchpads supported) or on the venue.
+                </p>
+                <a className="arc-cta" href={`https://t.me/ArcSniper_bot?start=ca_${ca.slice(2)}`} rel="noreferrer" style={{ display: "block", textAlign: "center", textDecoration: "none" }} target="_blank">Trade in @ArcSniper_bot</a>
+                {info.venueUrl && <a className="arc-mono" href={info.venueUrl} rel="noreferrer" style={{ color: "var(--arc-muted)", display: "block", fontSize: 12, marginTop: 10, textAlign: "center" }} target="_blank">open on {info.launchpad ?? "venue"} ↗</a>}
+              </div>
+            )}
+          </aside>
+        </div>
+
+        {/* ---------- social check: who is behind the token ---------- */}
+        <SocialCheck deployer={info.deployer} tg={info.telegram} token={ca} web={info.website} x={info.twitter} />
+
+        {/* ---------- tabs ---------- */}
+        <div style={{ border: "1px solid var(--arc-line)", marginTop: 14 }}>
+          <div style={{ borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 2, padding: "0 8px" }}>
+            {(["trades", "holders", "info"] as const).map((t) => (
+              <button className="arc-mono" key={t} onClick={() => setTab(t)} style={{ background: "transparent", border: "none", borderBottom: tab === t ? "2px solid var(--arc-cobalt)" : "2px solid transparent", color: tab === t ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "10px 12px", textTransform: "uppercase" }} type="button">{t}</button>
+            ))}
+          </div>
+          {tab === "trades" && (
+            <div style={{ maxHeight: 460, overflow: "auto" }}>
+              <table className="arc-mono arc-token__table">
+                <thead><tr><th>age</th><th>side</th><th>USDC</th><th>{info.symbol}</th><th>price</th><th>wallet</th><th>tx</th></tr></thead>
+                <tbody>
+                  {effTrades.map((t) => (
+                    <tr key={t.tx + t.ts}>
+                      <td style={{ color: "var(--arc-muted)" }}>{ago(t.ts)}</td>
+                      <td style={{ color: t.side === "buy" ? "#22c580" : "#f0534f", textTransform: "uppercase" }}>{t.side}</td>
+                      <td>${fmt(t.usdc, 2)}</td>
+                      <td>{fmt(t.tokens, 0)}</td>
+                      <td style={{ color: "var(--arc-muted)" }}>${(t.price1m / 1e6).toFixed(8)}</td>
+                      <td>
+                        <a href={`https://arc-scan.org/address/${t.wallet}`} rel="noreferrer" style={{ color: "var(--arc-ink)", textDecoration: "none" }} target="_blank">{t.wallet.slice(0, 6)}…{t.wallet.slice(-4)}</a>
+                        {t.insider_rank && t.insider_rank <= 50 && (
+                          <a href="/insiders" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", color: "var(--arc-cobalt)", fontSize: 10, marginLeft: 8, padding: "2px 7px", textDecoration: "none", whiteSpace: "nowrap" }} title={`Insider #${t.insider_rank} · 30d PnL $${fmt(t.insider_pnl ?? 0, 0)}`}>INSIDER #{t.insider_rank}</a>
+                        )}
+                      </td>
+                      <td><a href={`https://arc-scan.org/tx/${t.tx}`} rel="noreferrer" style={{ color: "var(--arc-muted)" }} target="_blank">↗</a></td>
+                    </tr>
+                  ))}
+                  {effTrades.length === 0 && <tr><td colSpan={7} style={{ color: "var(--arc-muted)", padding: 18, textAlign: "center" }}>No trades indexed yet.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {tab === "holders" && (
+            <div style={{ padding: 12 }}>
+              {holders && holders.top.length > 0 ? holders.top.map((h, i) => (
+                <div className="arc-mono" key={h.address} style={{ alignItems: "center", display: "flex", fontSize: 12, gap: 10, padding: "6px 0" }}>
+                  <span style={{ color: "var(--arc-muted)", width: 26 }}>{i + 1}</span>
+                  <a href={`https://arc-scan.org/address/${h.address}`} rel="noreferrer" style={{ color: "var(--arc-ink)", textDecoration: "none", width: 130 }} target="_blank">{h.address.slice(0, 6)}…{h.address.slice(-4)}</a>
+                  <span style={{ background: "#0e1118", flex: 1, height: 6 }}><span style={{ background: "var(--arc-cobalt)", display: "block", height: "100%", width: `${Math.min(100, h.pct)}%` }} /></span>
+                  <span style={{ width: 60, textAlign: "right" }}>{h.pct.toFixed(2)}%</span>
+                </div>
+              )) : <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12 }}>Holder data unavailable.</p>}
+            </div>
+          )}
+          {tab === "info" && (
+            <div className="arc-mono" style={{ display: "grid", fontSize: 12, gap: 8, gridTemplateColumns: "160px 1fr", padding: 14 }}>
+              <span style={{ color: "var(--arc-muted)" }}>contract</span><span>{ca}</span>
+              <span style={{ color: "var(--arc-muted)" }}>pool</span><span>{info.pool ?? "—"}</span>
+              <span style={{ color: "var(--arc-muted)" }}>venue</span><span>{info.venue === "pad" ? "ArcToolsPad bonding curve" : info.venue === "v3" ? `Uniswap V3, fee tier ${((info.poolFee ?? 0) / 10000).toFixed(2)}%` : `${info.launchpad ?? "external"} pool`}</span>
+              <span style={{ color: "var(--arc-muted)" }}>supply</span><span>{fmt(info.supply, 0)} {info.symbol}</span>
+              <span style={{ color: "var(--arc-muted)" }}>decimals</span><span>{info.decimals}</span>
+              <span style={{ color: "var(--arc-muted)" }}>all-time volume</span><span>{money(eff.volAll, 0)} over {stats?.txns_all ?? "—"} indexed trades</span>
+              {info.venue === "pad" && (<><span style={{ color: "var(--arc-muted)" }}>creator tools</span><a href={`/pad/${ca}`} style={{ color: "var(--arc-cobalt)" }}>edit logo & socials, claim rewards →</a></>)}
+            </div>
+          )}
+        </div>
+      </section>
+    </main>
+  );
+}

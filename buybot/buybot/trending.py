@@ -9,7 +9,7 @@ import time
 import aiohttp
 from sqlalchemy import select, text
 from .config import CFG
-from .venues import discover_venues
+from .venues import discover_venues, token_symbol, symbol_missing
 from . import db
 
 log = logging.getLogger("trending")
@@ -87,6 +87,8 @@ async def refresh_fillers():
             if not vens:
                 continue
             c["venues"] = vens
+            if symbol_missing(c.get("symbol")):      # screener bez symbolu: dociagnij z lancucha
+                c["symbol"] = await token_symbol(c["token"])
             chosen.append(c)
             if len(chosen) >= 10:
                 break
@@ -170,6 +172,7 @@ async def build_text() -> str:
         lines.append("Quiet for now. Add your token: @" + (CFG.bot_username or "this bot"))
     lines.append("")
     lines.append(f"🤖 Add your token / boost to the top: @{CFG.bot_username}" if CFG.bot_username else "")
+    lines.append("🎯 Smart-money buys in real time: @ArcToolsInsiders")
     return "\n".join(lines)
 
 

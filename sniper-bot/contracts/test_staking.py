@@ -1,5 +1,5 @@
-"""E2E staking test with the exact calldata the /rewards page sends."""
 import os
+"""E2E staking test with the exact calldata the /rewards page sends."""
 import json
 import subprocess
 import time
@@ -9,7 +9,7 @@ from web3 import Web3
 RPC = "https://rpc.arc-scan.org"
 RELAY = "https://rpc-production-ba7a.up.railway.app"
 CHAIN = 5042
-KEY = os.environ["DEPLOYER_KEY"]  # export DEPLOYER_KEY=0x...
+KEY = os.environ["DEPLOYER_KEY"]
 ARCT = "0x1EA1e4f9A9975F1f6e9c0a9f6e8Ada7a66E6de52"
 VAULT = "0x7D49f880c7BdAE4FD44D52c3dBfB43534E83dABd"
 PAD = "0x1EaAD48260eECC7624666F1dFec202b2D75257fE"

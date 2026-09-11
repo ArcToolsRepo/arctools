@@ -1,5 +1,5 @@
-"""Finish ArcPad deployment: wire vault->launchpad, smoke test, save ABIs."""
 import os
+"""Finish ArcPad deployment: wire vault->launchpad, smoke test, save ABIs."""
 import json
 import time
 
@@ -8,7 +8,7 @@ from web3 import Web3
 
 RPC = "https://rpc.arc-scan.org"
 CHAIN = 5042
-KEY = os.environ["DEPLOYER_KEY"]  # export DEPLOYER_KEY=0x...
+KEY = os.environ["DEPLOYER_KEY"]
 VAULT = "0x416aCd6c51361b107b597B847325d9f57668303C"
 PAD = "0x5b15eD6795f22B3d748530BFd8D9674771cE3215"
 

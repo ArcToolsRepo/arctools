@@ -1,6 +1,7 @@
 """Venue discovery + swap decoding for a token: canonical Uniswap V3
 (RadarDex / ArcPad / Tolly / DYOR V3 positions), DYORSwap V2 pairs and
 WarpDex pairs. All pools quote against native USDC (facade, 6 dec)."""
+import asyncio
 import logging
 from eth_abi import encode as abi_encode
 from eth_utils import function_signature_to_4byte_selector as sel, to_checksum_address
@@ -14,6 +15,7 @@ V2_SWAP_TOPIC = "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d
 
 # nasz launchpad (arctools.fun/launchpad): event Trade(token idx, trader idx, buy, usdcIn, usdcOut, tokensIn, tokensOut)
 ARCPAD = "0x1EaAD48260eECC7624666F1dFec202b2D75257fE"
+ARCPAD_V3 = "0x2726AeC64D8a9BC41B9940dDA5D21c889458B348"
 ARCPAD_TRADE_TOPIC = "0x9adcf0ad0cda63c4d50f26a48925cf6405df27d422a39c456b5f03f661c82982"
 CURVE_SEL = "0x06d8d7db"      # curve(address)
 QUOTE_SELL_SEL = "0xd98b2f5c"  # quoteSell(address,uint256)
@@ -58,6 +60,11 @@ async def discover_venues(token: str) -> list[dict]:
     # ArcPad (nasz launchpad): trading na kontrakcie launchpada
     try:
         res = await CHAIN.eth_call(ARCPAD, CURVE_SEL + _pad(token))
+        if not res or int.from_bytes(res[32:64], "big") == 0:
+            res3 = await CHAIN.eth_call(ARCPAD_V3, CURVE_SEL + _pad(token))
+            if res3 and int.from_bytes(res3[32:64], "big") > 0:
+                out.append({"address": ARCPAD_V3, "kind": "arcpad", "venue": "ArcToolsPad"})
+                return out
         body = res.hex().replace("0x", "")
         if len(body) >= 128 and int(body[64:128], 16) > 0:  # tokenReserve > 0
             out.append({"address": ARCPAD, "kind": "arcpad", "venue": "ArcToolsPad"})
@@ -131,14 +138,41 @@ async def price_1m(token: str) -> float | None:
         return None
 
 
+SEL_SYMBOL = "0x95d89b41"
+SEL_NAME = "0x06fdde03"
+
+
+def _decode_str(raw: bytes) -> str:
+    """ABI dynamic string OR bytes32 -> printable text."""
+    s = ""
+    if len(raw) >= 96:                      # offset + len + data
+        ln = int.from_bytes(raw[32:64], "big")
+        if 0 < ln <= 64:
+            s = raw[64:64 + ln].decode("utf-8", "ignore")
+    if not s and len(raw) >= 32:            # bytes32 symbol
+        s = raw[:32].decode("utf-8", "ignore").replace("\x00", "")
+    return "".join(ch for ch in s if ch.isprintable()).strip()[:24]
+
+
 async def token_symbol(token: str) -> str:
-    try:
-        from .chain import ERC20_ABI
-        w3 = CHAIN.w3
-        c = w3.eth.contract(address=to_checksum_address(token), abi=ERC20_ABI)
-        return await c.functions.symbol().call()
-    except Exception:  # noqa
-        return "?"
+    """Symbol tokena z retry + fallbackami (bytes32, name(), skrocony adres).
+    Nigdy nie zwraca gołego '?' — dzięki temu alerty zawsze mają czytelną nazwę."""
+    addr = to_checksum_address(token)
+    for sel in (SEL_SYMBOL, SEL_NAME):
+        for attempt in range(3):
+            try:
+                raw = await CHAIN.eth_call(addr, sel)
+                s = _decode_str(bytes(raw)) if raw else ""
+                if s:
+                    return s
+                break                        # kontrakt odpowiedzial pusto: probuj kolejny selektor
+            except Exception:  # noqa - RPC 429/timeout: retry
+                await asyncio.sleep(0.5 * (attempt + 1))
+    return f"{addr[:6]}…{addr[-4:]}"
+
+
+def symbol_missing(sym: str | None) -> bool:
+    return not sym or sym.strip() in ("?", "")
 
 
 # ---- project socials: screener API (RadarDex/Tolly/others) + ArcToolsPad on-chain meta ----
@@ -186,6 +220,8 @@ async def token_socials(token: str) -> dict:
     # ArcToolsPad token? socials live on-chain in meta(), logo on the site
     try:
         res = await CHAIN.eth_call(ARCPAD, ARCPAD_META_SEL + _pad(token))
+        if not res or len(res) < 64 * 3 or int.from_bytes(res[0:32], "big") == 0:
+            res = await CHAIN.eth_call(ARCPAD_V3, ARCPAD_META_SEL + _pad(token))
         body = res.hex().replace("0x", "")
         if len(body) >= 64 * 10 and body[24:64] == token[2:].lower().rjust(40, "0"):
             out = {

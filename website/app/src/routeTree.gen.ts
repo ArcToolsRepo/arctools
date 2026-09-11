@@ -10,18 +10,70 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as ScanRouteImport } from './routes/scan'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
+import { Route as RewardsRouteImport } from './routes/rewards'
+import { Route as PortfolioRouteImport } from './routes/portfolio'
+import { Route as LaunchpadRouteImport } from './routes/launchpad'
+import { Route as InsidersRouteImport } from './routes/insiders'
+import { Route as FeedRouteImport } from './routes/feed'
+import { Route as DiagRouteImport } from './routes/diag'
+import { Route as BridgeRouteImport } from './routes/bridge'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TokenCaRouteImport } from './routes/token.$ca'
+import { Route as PadCaRouteImport } from './routes/pad.$ca'
+import { Route as ApiPadLogoCaRouteImport } from './routes/api/pad-logo.$ca'
+import { Route as ApiLogoIpfsCidRouteImport } from './routes/api/logo.ipfs.$cid'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ScanRoute = ScanRouteImport.update({
+  id: '/scan',
+  path: '/scan',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
   id: '/robots.txt',
   path: '/robots.txt',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RewardsRoute = RewardsRouteImport.update({
+  id: '/rewards',
+  path: '/rewards',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PortfolioRoute = PortfolioRouteImport.update({
+  id: '/portfolio',
+  path: '/portfolio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LaunchpadRoute = LaunchpadRouteImport.update({
+  id: '/launchpad',
+  path: '/launchpad',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InsidersRoute = InsidersRouteImport.update({
+  id: '/insiders',
+  path: '/insiders',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FeedRoute = FeedRouteImport.update({
+  id: '/feed',
+  path: '/feed',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DiagRoute = DiagRouteImport.update({
+  id: '/diag',
+  path: '/diag',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BridgeRoute = BridgeRouteImport.update({
+  id: '/bridge',
+  path: '/bridge',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppRoute = AppRouteImport.update({
@@ -34,39 +86,156 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TokenCaRoute = TokenCaRouteImport.update({
+  id: '/token/$ca',
+  path: '/token/$ca',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PadCaRoute = PadCaRouteImport.update({
+  id: '/pad/$ca',
+  path: '/pad/$ca',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPadLogoCaRoute = ApiPadLogoCaRouteImport.update({
+  id: '/api/pad-logo/$ca',
+  path: '/api/pad-logo/$ca',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiLogoIpfsCidRoute = ApiLogoIpfsCidRouteImport.update({
+  id: '/api/logo/ipfs/$cid',
+  path: '/api/logo/ipfs/$cid',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
+  '/bridge': typeof BridgeRoute
+  '/diag': typeof DiagRoute
+  '/feed': typeof FeedRoute
+  '/insiders': typeof InsidersRoute
+  '/launchpad': typeof LaunchpadRoute
+  '/portfolio': typeof PortfolioRoute
+  '/rewards': typeof RewardsRoute
   '/robots.txt': typeof RobotsDottxtRoute
+  '/scan': typeof ScanRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/pad/$ca': typeof PadCaRoute
+  '/token/$ca': typeof TokenCaRoute
+  '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
+  '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
+  '/bridge': typeof BridgeRoute
+  '/diag': typeof DiagRoute
+  '/feed': typeof FeedRoute
+  '/insiders': typeof InsidersRoute
+  '/launchpad': typeof LaunchpadRoute
+  '/portfolio': typeof PortfolioRoute
+  '/rewards': typeof RewardsRoute
   '/robots.txt': typeof RobotsDottxtRoute
+  '/scan': typeof ScanRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/pad/$ca': typeof PadCaRoute
+  '/token/$ca': typeof TokenCaRoute
+  '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
+  '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRoute
+  '/bridge': typeof BridgeRoute
+  '/diag': typeof DiagRoute
+  '/feed': typeof FeedRoute
+  '/insiders': typeof InsidersRoute
+  '/launchpad': typeof LaunchpadRoute
+  '/portfolio': typeof PortfolioRoute
+  '/rewards': typeof RewardsRoute
   '/robots.txt': typeof RobotsDottxtRoute
+  '/scan': typeof ScanRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/pad/$ca': typeof PadCaRoute
+  '/token/$ca': typeof TokenCaRoute
+  '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
+  '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/app' | '/robots.txt' | '/sitemap.xml'
+  fullPaths:
+    | '/'
+    | '/app'
+    | '/bridge'
+    | '/diag'
+    | '/feed'
+    | '/insiders'
+    | '/launchpad'
+    | '/portfolio'
+    | '/rewards'
+    | '/robots.txt'
+    | '/scan'
+    | '/sitemap.xml'
+    | '/pad/$ca'
+    | '/token/$ca'
+    | '/api/pad-logo/$ca'
+    | '/api/logo/ipfs/$cid'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/app' | '/robots.txt' | '/sitemap.xml'
-  id: '__root__' | '/' | '/app' | '/robots.txt' | '/sitemap.xml'
+  to:
+    | '/'
+    | '/app'
+    | '/bridge'
+    | '/diag'
+    | '/feed'
+    | '/insiders'
+    | '/launchpad'
+    | '/portfolio'
+    | '/rewards'
+    | '/robots.txt'
+    | '/scan'
+    | '/sitemap.xml'
+    | '/pad/$ca'
+    | '/token/$ca'
+    | '/api/pad-logo/$ca'
+    | '/api/logo/ipfs/$cid'
+  id:
+    | '__root__'
+    | '/'
+    | '/app'
+    | '/bridge'
+    | '/diag'
+    | '/feed'
+    | '/insiders'
+    | '/launchpad'
+    | '/portfolio'
+    | '/rewards'
+    | '/robots.txt'
+    | '/scan'
+    | '/sitemap.xml'
+    | '/pad/$ca'
+    | '/token/$ca'
+    | '/api/pad-logo/$ca'
+    | '/api/logo/ipfs/$cid'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRoute
+  BridgeRoute: typeof BridgeRoute
+  DiagRoute: typeof DiagRoute
+  FeedRoute: typeof FeedRoute
+  InsidersRoute: typeof InsidersRoute
+  LaunchpadRoute: typeof LaunchpadRoute
+  PortfolioRoute: typeof PortfolioRoute
+  RewardsRoute: typeof RewardsRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
+  ScanRoute: typeof ScanRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  PadCaRoute: typeof PadCaRoute
+  TokenCaRoute: typeof TokenCaRoute
+  ApiPadLogoCaRoute: typeof ApiPadLogoCaRoute
+  ApiLogoIpfsCidRoute: typeof ApiLogoIpfsCidRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -78,11 +247,67 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/scan': {
+      id: '/scan'
+      path: '/scan'
+      fullPath: '/scan'
+      preLoaderRoute: typeof ScanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/robots.txt': {
       id: '/robots.txt'
       path: '/robots.txt'
       fullPath: '/robots.txt'
       preLoaderRoute: typeof RobotsDottxtRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rewards': {
+      id: '/rewards'
+      path: '/rewards'
+      fullPath: '/rewards'
+      preLoaderRoute: typeof RewardsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/portfolio': {
+      id: '/portfolio'
+      path: '/portfolio'
+      fullPath: '/portfolio'
+      preLoaderRoute: typeof PortfolioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/launchpad': {
+      id: '/launchpad'
+      path: '/launchpad'
+      fullPath: '/launchpad'
+      preLoaderRoute: typeof LaunchpadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/insiders': {
+      id: '/insiders'
+      path: '/insiders'
+      fullPath: '/insiders'
+      preLoaderRoute: typeof InsidersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/feed': {
+      id: '/feed'
+      path: '/feed'
+      fullPath: '/feed'
+      preLoaderRoute: typeof FeedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/diag': {
+      id: '/diag'
+      path: '/diag'
+      fullPath: '/diag'
+      preLoaderRoute: typeof DiagRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bridge': {
+      id: '/bridge'
+      path: '/bridge'
+      fullPath: '/bridge'
+      preLoaderRoute: typeof BridgeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/app': {
@@ -99,14 +324,54 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/token/$ca': {
+      id: '/token/$ca'
+      path: '/token/$ca'
+      fullPath: '/token/$ca'
+      preLoaderRoute: typeof TokenCaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pad/$ca': {
+      id: '/pad/$ca'
+      path: '/pad/$ca'
+      fullPath: '/pad/$ca'
+      preLoaderRoute: typeof PadCaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/pad-logo/$ca': {
+      id: '/api/pad-logo/$ca'
+      path: '/api/pad-logo/$ca'
+      fullPath: '/api/pad-logo/$ca'
+      preLoaderRoute: typeof ApiPadLogoCaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/logo/ipfs/$cid': {
+      id: '/api/logo/ipfs/$cid'
+      path: '/api/logo/ipfs/$cid'
+      fullPath: '/api/logo/ipfs/$cid'
+      preLoaderRoute: typeof ApiLogoIpfsCidRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRoute,
+  BridgeRoute: BridgeRoute,
+  DiagRoute: DiagRoute,
+  FeedRoute: FeedRoute,
+  InsidersRoute: InsidersRoute,
+  LaunchpadRoute: LaunchpadRoute,
+  PortfolioRoute: PortfolioRoute,
+  RewardsRoute: RewardsRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
+  ScanRoute: ScanRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  PadCaRoute: PadCaRoute,
+  TokenCaRoute: TokenCaRoute,
+  ApiPadLogoCaRoute: ApiPadLogoCaRoute,
+  ApiLogoIpfsCidRoute: ApiLogoIpfsCidRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

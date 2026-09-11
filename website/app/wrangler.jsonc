@@ -40,6 +40,15 @@
   // platform Outbound Worker injects them on server-side egress.
   "vars": { "HF_ENV": "dev", "APP_SLUG": "app-slug-placeholder" },
 
+  // D1 na koncie wlasciciela (deploy przez wrangler, nie przez platforme)
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "arctools-db",
+      "database_id": "4c68f1e3-89fc-4bbb-aa20-4056d753ab7b",
+    },
+  ],
+
   // ── OPT-IN INFRA (off by default) ────────────────────────────────
   // Declare the service in app.manifest.json; the deploy injects the real
   // binding. For local `wrangler dev` of an opted-in resource, uncomment the

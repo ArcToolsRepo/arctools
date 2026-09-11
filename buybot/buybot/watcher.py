@@ -5,12 +5,32 @@ import logging
 import time
 from sqlalchemy import select, insert
 from eth_utils import to_checksum_address
+from aiogram.exceptions import TelegramNetworkError, TelegramServerError, TelegramRetryAfter
 from .config import CFG
 from .chain import CHAIN
-from .venues import ARCPAD_TRADE_TOPIC, V3_SWAP_TOPIC, V2_SWAP_TOPIC, decode_swap, price_1m, token_socials
+from .venues import (ARCPAD_TRADE_TOPIC, V3_SWAP_TOPIC, V2_SWAP_TOPIC, decode_swap, price_1m,
+                     token_socials, token_symbol, symbol_missing)
 from . import db
 
 log = logging.getLogger("watcher")
+
+
+async def _with_retry(fn, label: str, attempts: int = 4):
+    """Wysylka do Telegrama z retry na bledy sieci/5xx/flood (Railway -> api.telegram.org
+    czasem zrywa polaczenie: 'Connection reset by peer'). Bledy logiczne (bot wyrzucony
+    z grupy, zly chat) nie sa powtarzane."""
+    delay = 1.0
+    for i in range(attempts):
+        try:
+            return await fn()
+        except TelegramRetryAfter as e:
+            await asyncio.sleep(min(float(e.retry_after) + 0.5, 30))
+        except (TelegramNetworkError, TelegramServerError) as e:
+            if i == attempts - 1:
+                raise
+            log.warning("%s: %s — retry %d/%d in %.1fs", label, e, i + 1, attempts - 1, delay)
+            await asyncio.sleep(delay)
+            delay *= 2
 bot = None  # set by main
 
 def emoji_bar(emoji: str, usdc: float, step: float) -> str:
@@ -86,11 +106,9 @@ async def post_buy(track: dict, buy: dict, tx_hash: str, buyer: str):
     lines.append(links)
     text = "\n".join(lines)
 
-    try:
+    async def _send_group():
         mt, mid = track.get("media_type") or "", track.get("media_id") or ""
-        if is_filler:
-            pass  # no group to post into: channel mirror below
-        elif mt == "photo" and mid:
+        if mt == "photo" and mid:
             await bot.send_photo(track["chat_id"], mid, caption=text, parse_mode="HTML")
         elif mt == "animation" and mid:
             await bot.send_animation(track["chat_id"], mid, caption=text, parse_mode="HTML")
@@ -100,14 +118,20 @@ async def post_buy(track: dict, buy: dict, tx_hash: str, buyer: str):
             # brak wlasnego media: uzyj logo projektu (fallback na tekst gdy URL padnie)
             try:
                 await bot.send_photo(track["chat_id"], logo, caption=text, parse_mode="HTML")
-            except Exception:  # noqa
+            except TelegramNetworkError:
+                raise
+            except Exception:  # noqa - zly URL loga
                 await bot.send_message(track["chat_id"], text, parse_mode="HTML",
                                        disable_web_page_preview=True)
         else:
             await bot.send_message(track["chat_id"], text, parse_mode="HTML",
                                    disable_web_page_preview=True)
-    except Exception as e:  # noqa
-        log.warning("post_buy %s: %s", track.get("chat_id"), e)
+
+    if not is_filler:
+        try:
+            await _with_retry(_send_group, f"post_buy {track.get('chat_id')}")
+        except Exception as e:  # noqa
+            log.warning("post_buy %s: %s", track.get("chat_id"), e)
 
     # mirror buys of top-10 trending tokens to the trending channel (once per tx, >= $30)
     try:
@@ -120,15 +144,19 @@ async def post_buy(track: dict, buy: dict, tx_hash: str, buyer: str):
                 if len(_trend_sent) > 500:
                     del _trend_sent[:250]
                 cap = "🔥 <b>TRENDING BUY</b>\n" + text
-                if logo:
-                    try:
-                        await bot.send_photo(CFG.trend_channel_id, logo, caption=cap, parse_mode="HTML")
-                    except Exception:  # noqa - zly URL loga: tekstowo
-                        await bot.send_message(CFG.trend_channel_id, cap, parse_mode="HTML",
-                                               disable_web_page_preview=True)
-                else:
+
+                async def _send_channel():
+                    if logo:
+                        try:
+                            return await bot.send_photo(CFG.trend_channel_id, logo, caption=cap,
+                                                        parse_mode="HTML")
+                        except TelegramNetworkError:
+                            raise
+                        except Exception:  # noqa - zly URL loga: tekstowo
+                            pass
                     await bot.send_message(CFG.trend_channel_id, cap, parse_mode="HTML",
                                            disable_web_page_preview=True)
+                await _with_retry(_send_channel, "trend mirror")
     except Exception as e:  # noqa
         log.warning("trend mirror: %s", e)
 
@@ -136,6 +164,37 @@ async def post_buy(track: dict, buy: dict, tx_hash: str, buyer: str):
 _trend_sent: list[str] = []
 
 MIN_TREND_BUY = 30.0  # na kanal trending trafiaja tylko zakupy >= $30
+
+
+_sym_retry_ts: dict[str, float] = {}   # token -> last on-chain symbol retry
+
+
+async def _heal_symbols(rows: list) -> list:
+    """Tracki zapisane z symbolem '?' (padl RPC przy /add, bytes32 symbol itp.):
+    sprobuj ponownie pobrac nazwe z lancucha (max raz na 5 min per token)
+    i utrwal ja w bazie, zeby alerty nie pokazywaly '? BUY!'."""
+    from sqlalchemy import update
+    out = []
+    for t in rows:
+        t = dict(t)
+        if symbol_missing(t.get("symbol")):
+            key = t["token"].lower()
+            now = time.time()
+            if now - _sym_retry_ts.get(key, 0) > 300:
+                _sym_retry_ts[key] = now
+                try:
+                    sym = await token_symbol(t["token"])
+                    if not symbol_missing(sym):
+                        await db.execute(update(db.tracks).where(
+                            db.tracks.c.token == t["token"]).values(symbol=sym))
+                        log.info("symbol healed %s -> %s", t["token"], sym)
+                        t["symbol"] = sym
+                except Exception as e:  # noqa
+                    log.warning("symbol heal %s: %s", t["token"], e)
+            if symbol_missing(t.get("symbol")):
+                t["symbol"] = f"{t['token'][:6]}…{t['token'][-4:]}"
+        out.append(t)
+    return out
 
 
 async def watcher_loop():
@@ -150,6 +209,7 @@ async def watcher_loop():
             frm, to = last + 1, min(head, last + CFG.max_block_range)
 
             rows = await db.fetchall(select(db.tracks))
+            rows = await _heal_symbols(rows)
             # (no early exit: trending fillers are watched even with 0 tracked tokens)
 
             # pool -> [(track, kind)]

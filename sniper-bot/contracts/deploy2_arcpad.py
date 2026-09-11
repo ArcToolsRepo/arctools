@@ -1,5 +1,5 @@
-"""Deploy fixed ArcPad (vault + launchpad) with simulation-first sends."""
 import os
+"""Deploy fixed ArcPad (vault + launchpad) with simulation-first sends."""
 import json
 import time
 
@@ -8,7 +8,7 @@ from web3 import Web3
 
 RPC = "https://rpc.arc-scan.org"
 CHAIN = 5042
-KEY = os.environ["DEPLOYER_KEY"]  # export DEPLOYER_KEY=0x...
+KEY = os.environ["DEPLOYER_KEY"]
 ARCT = "0x1EA1e4f9A9975F1f6e9c0a9f6e8Ada7a66E6de52"
 TREASURY = "0xb35c471b31D636B96f95b84E7A27D69B63235C0D"
 

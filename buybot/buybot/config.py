@@ -34,6 +34,7 @@ class Config:
     boost_7d_usdc: float = float(os.getenv("BOOST_7D_USDC", "120"))
 
     trend_channel_id: str = os.getenv("TREND_CHANNEL_ID", "")
+    insider_channel_id: str = os.getenv("INSIDER_CHANNEL_ID", "")
     poll_interval: float = float(os.getenv("POLL_INTERVAL", "1.0"))
     max_block_range: int = int(os.getenv("MAX_BLOCK_RANGE", "2000"))
     trend_interval: int = int(os.getenv("TREND_INTERVAL", "300"))

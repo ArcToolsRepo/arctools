@@ -56,6 +56,24 @@ async def start(m: Message, state: FSMContext, command: CommandObject = None):
     if payload.startswith("ca_") and is_address("0x" + payload[3:]):
         await open_ca_panel(m, "0x" + payload[3:])
         return
+    # deep link: /start copy_<hex40> -> add an Insider wallet as a copy target
+    if payload.startswith("copy_") and is_address("0x" + payload[5:]):
+        wallet = to_checksum_address("0x" + payload[5:])
+        dupe = await db.fetchone(select(db.copytargets).where(
+            (db.copytargets.c.tg_id == m.from_user.id) & (db.copytargets.c.wallet == wallet)))
+        if dupe:
+            await db.execute(update(db.copytargets).where(db.copytargets.c.id == dupe["id"]).values(enabled=1))
+        else:
+            await db.execute(insert(db.copytargets).values(
+                tg_id=m.from_user.id, wallet=wallet, amount_usdc=0, enabled=1))
+        await m.answer(
+            f"🤖 <b>Copy-trade armed</b> for Insider wallet:\n<code>{wallet}</code>\n\n"
+            "Every buy this wallet makes will be mirrored from YOUR active wallet "
+            "(default amount, turbo gas). Manage it in the 🤖 Copy-trade menu — "
+            "set a fixed USDC amount per copied trade there.\n\n"
+            "Make sure your wallet is funded: menu → 👛 Wallets.",
+            reply_markup=main_menu(), parse_mode="HTML")
+        return
     await m.answer(
         "🛠 <b>ArcTools</b> — the sniper terminal for Arc\n"
         f"Chain ID: <code>{CFG.chain_id}</code> | gas: native USDC | venues: "

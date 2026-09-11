@@ -102,6 +102,14 @@ async def execute(q):
         return await c.execute(q)
 
 
+async def execute_many(q, rows: list[dict]):
+    """Jedna transakcja na partie wierszy (executemany) — krytyczne dla ingestu."""
+    if not rows:
+        return
+    async with engine.begin() as c:
+        return await c.execute(q, rows)
+
+
 async def kv_get(k: str, default=""):
     r = await fetchone(select(kv).where(kv.c.k == k))
     return r["v"] if r else default
