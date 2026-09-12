@@ -1717,7 +1717,7 @@ export const holderRisk = createServerFn({ method: "POST" })
     const want = [...new Set(data.tokens.slice(0, 60).map((t) => t.toLowerCase()))];
     if (!want.length) return {};
     try {
-      const r = await memo(`hrisk:${want.join(",")}`, 120_000, async () => {
+      const r = await memo(`hrisk:${want.join(",")}`, 45_000, async () => {
         const j = await fetch(`https://bot-production-4200.up.railway.app/api/holder-risk?tokens=${want.join(",")}`).then((x) => x.json()) as { risk?: Record<string, { holders: number; top10: number | null; top1: number | null }> };
         return j.risk ?? {};
       });

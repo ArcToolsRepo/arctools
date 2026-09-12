@@ -106,7 +106,7 @@ function Trade() {
   const [favs, setFavs] = useState<Set<string>>(new Set());
   const [liq, setLiq] = useState<Map<string, number>>(new Map());
   const [logos, setLogos] = useState<Record<string, string>>({});
-  const [risk, setRisk] = useState<Record<string, { holders: number; top10: number | null; top1: number | null; dev_pct?: number | null; bundle_pct?: number | null; bundlers?: number }>>({});
+  const [risk, setRisk] = useState<Record<string, { holders: number; top10: number | null; top1: number | null; dev_pct?: number | null; bundle_pct?: number | null; bundlers?: number; dev?: string | null; bundle_wallets?: string[]; dev_sold_usd?: number; dev_sells?: number; dev_last_sell?: number | null; bundle_sold_usd?: number; bundle_sells?: number; bundle_last_sell?: number | null; bundle_sellers?: number }>>({});
   const [sortKey, setSortKey] = useState<"age" | "mcap" | "vol" | "txs" | "chg">("vol");
   useEffect(() => { setFavs(loadFavs()); }, []);
   const toggleFav = (t: string) => setFavs((f) => { const n = new Set(f); if (n.has(t)) n.delete(t); else n.add(t); try { localStorage.setItem(FAV_KEY, JSON.stringify([...n])); } catch { /* ignore */ } return n; });
@@ -302,6 +302,9 @@ function Trade() {
     fetchLiq(vis);
     const needRisk = vis.filter((t) => !risk[t]).slice(0, 40);
     if (needRisk.length) void holderRisk({ data: { tokens: needRisk } }).then((m) => setRisk((o) => ({ ...o, ...m }))).catch(() => null);
+    // dev / bundle sells must show up while you watch: refresh the visible rows' risk every 60 s
+    const id = setInterval(() => { if (document.hidden) return; void holderRisk({ data: { tokens: vis.slice(0, 40) } }).then((m) => setRisk((o) => ({ ...o, ...m }))).catch(() => null); }, 60_000);
+    return () => clearInterval(id);
   }, [pageRows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -414,7 +417,7 @@ function Trade() {
                         <td className="arc-mono" style={{ ...cell, color: "#f5c542" }}>{r.vol > 0 ? usd(r.vol) : "—"}</td>
                         <td className="arc-mono" style={cell}><div>{r.txs > 0 ? r.txs.toLocaleString() : "—"}</div>{r.txs > 0 && <div style={{ fontSize: 11 }}><span style={{ color: UP }}>{r.buys}</span> / <span style={{ color: DOWN }}>{r.sells}</span></div>}</td>
                         <td className="arc-mono" style={cell}>{(() => { const k = risk[r.token]; if (!k) return <span style={{ color: "var(--arc-muted)" }}>…</span>; if (r.token.toLowerCase() === OFFICIAL_TOKEN) return <div style={{ color: "var(--arc-ink)", fontWeight: 700 }} title="Top-10 share not shown for the official token: the LP pool and the staking vault would dominate it">{k.holders ? `${k.holders} holders` : "—"}</div>; const t10 = k.top10; return <><div style={{ color: t10 == null ? "var(--arc-muted)" : t10 >= 50 ? DOWN : t10 >= 30 ? "#f5c542" : UP, fontWeight: 700 }}>{t10 == null ? "—" : `${t10.toFixed(0)}%`}</div><div style={{ color: "var(--arc-muted)", fontSize: 11 }}>{k.holders ? `${k.holders} h` : ""}{k.top1 != null ? ` · #1 ${k.top1.toFixed(0)}%` : ""}</div></>; })()}</td>
-                        <td className="arc-mono" style={cell}>{(() => { const k = risk[r.token]; if (!k) return <span style={{ color: "var(--arc-muted)" }}>…</span>; const dv = k.dev_pct, bd = k.bundle_pct; const c = (v: number | null | undefined, warn: number, bad: number) => v == null ? "var(--arc-muted)" : v >= bad ? DOWN : v >= warn ? "#f5c542" : UP; return <><div style={{ color: c(dv, 5, 15), fontWeight: 700 }} title="Deployer wallet's share of supply (top-50 holders)">{dv == null ? "—" : `${dv.toFixed(dv < 1 ? 1 : 0)}%`}</div><div style={{ color: c(bd, 10, 25), fontSize: 11 }} title={`Bundled: supply held by wallets that bought within 2 s of the first trade (${k.bundlers ?? 0} wallets)`}>{bd == null ? "" : `bundle ${bd.toFixed(bd < 1 ? 1 : 0)}%`}</div></>; })()}</td>
+                        <td className="arc-mono" style={cell}>{(() => { const k = risk[r.token]; if (!k) return <span style={{ color: "var(--arc-muted)" }}>…</span>; const dv = k.dev_pct, bd = k.bundle_pct; const c = (v: number | null | undefined, warn: number, bad: number) => v == null ? "var(--arc-muted)" : v >= bad ? DOWN : v >= warn ? "#f5c542" : UP; const ds = k.dev_sold_usd ?? 0, bs = k.bundle_sold_usd ?? 0; return <><div style={{ color: c(dv, 5, 15), fontWeight: 700 }} title="Deployer wallet's share of supply (top-50 holders)">{dv == null ? "—" : `${dv.toFixed(dv < 1 ? 1 : 0)}%`}{ds > 0 && <span style={{ background: "rgba(240,83,79,0.16)", border: "1px solid #f0534f", borderRadius: 4, color: "#f0534f", fontSize: 9, marginLeft: 5, padding: "0 4px", verticalAlign: "middle" }} title={`Deployer sold ${usd(ds)} in the last 24 h (${k.dev_sells} sell${k.dev_sells === 1 ? "" : "s"}, last ${ago(k.dev_last_sell ?? null)} ago)`}>DEV SOLD {usd(ds)}</span>}</div><div style={{ color: c(bd, 10, 25), fontSize: 11 }} title={`Bundled: supply held by wallets that bought within 2 s of the first trade (${k.bundlers ?? 0} wallets)`}>{bd == null ? "" : `bundle ${bd.toFixed(bd < 1 ? 1 : 0)}%`}{bs > 0 && <span style={{ color: "#f0534f", fontSize: 10, marginLeft: 5 }} title={`${k.bundle_sellers} launch-block wallet${k.bundle_sellers === 1 ? "" : "s"} sold ${usd(bs)} in the last 24 h (last ${ago(k.bundle_last_sell ?? null)} ago)`}>↓ sold {usd(bs)}</span>}</div></>; })()}</td>
                         <td className="arc-mono arc-col-ins" style={{ ...cell, color: r.insiders ? UP : "var(--arc-muted)" }}>{r.insiders || "—"}</td>
                         <td style={{ ...cell, textAlign: "right" }}><BuyBtn symbol={r.symbol} token={r.token} /></td>
                       </tr>
@@ -480,7 +483,7 @@ function Trade() {
           </div>
         </div>
       </section>
-          <TradeToasts enabled={toastsOn} logos={Object.fromEntries([...tableRows.map((r) => [r.token, r.logo] as const), ...trend.map((t) => [t.token.toLowerCase(), logos[t.token.toLowerCase()] ?? byToken.get(t.token.toLowerCase())?.logo ?? null] as const)])} tokens={[...new Set([...trend.map((t) => t.token), ...tableRows.map((r) => r.token)])]} />
+          <TradeToasts enabled={toastsOn} insiders={Object.fromEntries(Object.entries(risk).map(([t, k]) => [t, { dev: k.dev ?? null, bundle: k.bundle_wallets ?? [] }]))} logos={Object.fromEntries([...tableRows.map((r) => [r.token, r.logo] as const), ...trend.map((t) => [t.token.toLowerCase(), logos[t.token.toLowerCase()] ?? byToken.get(t.token.toLowerCase())?.logo ?? null] as const)])} tokens={[...new Set([...trend.map((t) => t.token), ...tableRows.map((r) => r.token)])]} />
     </main>
   );
 }
