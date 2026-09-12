@@ -119,8 +119,26 @@ def register(app: web.Application):
 # holder concentration (top-1 / top-10 share) from the arc-scan indexer, proxied here because arc-scan
 # rate-limits Cloudflare egress IPs (the site worker) but not Railway.
 SKIP_HOLDERS = {"0x000000000000000000000000000000000000dead", "0x0000000000000000000000000000000000000000",
-                "0x1eaad48260eecc7624666f1dfec202b2d75257fe", "0x2726aec64d8a9bc41b9940dda5d21c889458b348",
-                "0x8366a39cc670b4001a1121b8f6a443a643e40951"}
+                "0x1eaad48260eecc7624666f1dfec202b2d75257fe", "0x2726aec64d8a9bc41b9940dda5d21c889458b348",   # ArcPad v2/v3
+                "0x8366a39cc670b4001a1121b8f6a443a643e40951",                                                   # V4 PoolManager
+                "0x7d49f880c7bdae4fd44d52c3dbfb43534e83dabd", "0x48ada931c2c220b074c39449b7e70860a3b4c277",   # ARCT vaults v2/v3
+                "0xa4e79c06eec23c4caaa63aa37acc6fb7f0370a12", "0xff9a8f35f683c810f6c1507f7409bf0637093707",   # fee router, aggregator
+                "0x05a0158ef87e8e7bfe4e0242e11dda75f83954e1", "0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77",   # V4 router, SwapRouter02
+                "0x39654a85a4c05127f5fd6ed22caec077a0fb1377", "0x0dcad158e98bc24455f9e94f46709d8a5f6d1255"}   # NPM, Warp factory
+_pools_cache: tuple[float, set[str]] = (0.0, set())
+
+
+async def _known_pools() -> set[str]:
+    """Every DEX pool we have indexed (V3/V2/pad curves): LP balances are liquidity, not holders."""
+    global _pools_cache
+    if time.time() - _pools_cache[0] < 300:
+        return _pools_cache[1]
+    try:
+        rows = await db.fetchall(text("SELECT pool FROM insider_pools"))
+        _pools_cache = (time.time(), {r["pool"].lower() for r in rows if r["pool"]})
+    except Exception as e:  # noqa
+        log.warning("known pools: %s", e)
+    return _pools_cache[1]
 _risk_cache: dict[str, tuple[float, dict]] = {}
 _risk_sem = asyncio.Semaphore(6)
 
@@ -131,12 +149,14 @@ async def _risk_one(s: aiohttp.ClientSession, token: str) -> dict:
         return c[1]
     out = {"holders": 0, "top10": None, "top1": None}
     try:
+        pools = await _known_pools()
         async with _risk_sem:
             async with s.get(f"https://api.arc-scan.org/v1/tokens/{token}/holders",
                              headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0 (compatible; ArcToolsBot/1.0)"},
                              timeout=aiohttp.ClientTimeout(total=15)) as r:
                 j = await r.json()
-        items = [x for x in (j.get("items") or []) if (x.get("address") or {}).get("address", "").lower() not in SKIP_HOLDERS]
+        items = [x for x in (j.get("items") or [])
+                 if (a := (x.get("address") or {}).get("address", "").lower()) not in SKIP_HOLDERS and a not in pools]
         shares = [float(x.get("share") or 0) for x in items]
         out = {"holders": int(j.get("holder_count") or len(items)),
                "top10": round(sum(shares[:10]) * 100, 2) if shares else None,

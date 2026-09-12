@@ -1688,6 +1688,8 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   const busiest = [...all].sort((a, b) => (b.volUsd ?? 0) - (a.volUsd ?? 0)).slice(0, 200);
   const keep = new Map<string, PadToken>();
   for (const t of [...newest, ...busiest]) keep.set(t.token.toLowerCase(), t);
+  const official = all.find((t) => t.token.toLowerCase() === "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52");
+  if (official) keep.set(official.token.toLowerCase(), official);
   return [...keep.values()].sort((a, b) => ts(b) - ts(a)).map((t) => ({
     createdAt: t.createdAt, logo: t.logo, mcapUsd: t.mcapUsd, name: (t.name ?? "").slice(0, 40), pad: t.pad, pool: t.pool, priceUsd: t.priceUsd, stage: t.stage ?? null,
     symbol: (t.symbol ?? "").slice(0, 16), telegram: t.telegram, token: t.token, twitter: t.twitter, venueUrl: t.venueUrl, volUsd: t.volUsd, website: t.website,

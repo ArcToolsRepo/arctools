@@ -211,7 +211,20 @@ function Trade() {
     </span>
   );
 
-  const trendMap = useMemo(() => new Map(trend.map((t) => [t.token.toLowerCase(), t])), [trend]);
+  // official token: 24h stats from the index so the pinned row never shows dashes when it is quiet in the 1h window
+  const [offStats, setOffStats] = useState<{ price1m: number | null; vol24: number; buys24: number; sells24: number; traders24: number } | null>(null);
+  useEffect(() => {
+    const load = () => fetch(`${API}/api/token-stats?token=${OFFICIAL_TOKEN}`).then((r) => r.json()).then((j) => setOffStats(j?.token ? j : null)).catch(() => null);
+    void load(); const id = setInterval(load, 30_000); return () => clearInterval(id);
+  }, []);
+  const trendMap = useMemo(() => {
+    const m = new Map(trend.map((t) => [t.token.toLowerCase(), t]));
+    if (!m.has(OFFICIAL_TOKEN) && offStats) {
+      const supply = 1e9; const px = offStats.price1m ? offStats.price1m / 1e6 : null;
+      m.set(OFFICIAL_TOKEN, { token: OFFICIAL_TOKEN, symbol: "ARCT", txs: offStats.buys24 + offStats.sells24, vol: offStats.vol24, buys: offStats.buys24, sells: offStats.sells24, traders: offStats.traders24, p1: offStats.price1m, chg: null, first_ts: null, ath: null, txs_all: 0, supply, mcap: px ? px * supply : null, ath_mcap: null });
+    }
+    return m;
+  }, [trend, offStats]);
   const toRow = (token: string): Row => {
     const k = token.toLowerCase();
     const t = byToken.get(k); const tr = trendMap.get(k); const c = clusterMap.get(k);
@@ -349,7 +362,7 @@ function Trade() {
                         <td className="arc-mono" style={cell}>{r.liq != null && r.liq > 0 ? usd(r.liq) : "—"}</td>
                         <td className="arc-mono" style={{ ...cell, color: "#f5c542" }}>{r.vol > 0 ? usd(r.vol) : "—"}</td>
                         <td className="arc-mono" style={cell}><div>{r.txs > 0 ? r.txs.toLocaleString() : "—"}</div>{r.txs > 0 && <div style={{ fontSize: 11 }}><span style={{ color: UP }}>{r.buys}</span> / <span style={{ color: DOWN }}>{r.sells}</span></div>}</td>
-                        <td className="arc-mono" style={cell}>{(() => { const k = risk[r.token]; if (!k) return <span style={{ color: "var(--arc-muted)" }}>…</span>; const t10 = k.top10; return <><div style={{ color: t10 == null ? "var(--arc-muted)" : t10 >= 50 ? DOWN : t10 >= 30 ? "#f5c542" : UP, fontWeight: 700 }}>{t10 == null ? "—" : `${t10.toFixed(0)}%`}</div><div style={{ color: "var(--arc-muted)", fontSize: 11 }}>{k.holders ? `${k.holders} holders` : ""}{k.top1 != null ? ` · #1 ${k.top1.toFixed(0)}%` : ""}</div></>; })()}</td>
+                        <td className="arc-mono" style={cell}>{(() => { const k = risk[r.token]; if (!k) return <span style={{ color: "var(--arc-muted)" }}>…</span>; if (r.token.toLowerCase() === OFFICIAL_TOKEN) return <><div style={{ color: "var(--arc-ink)", fontWeight: 700 }}>{k.holders ? `${k.holders} holders` : "—"}</div><div style={{ color: "var(--arc-muted)", fontSize: 11 }}>LP + staking vault excluded</div></>; const t10 = k.top10; return <><div style={{ color: t10 == null ? "var(--arc-muted)" : t10 >= 50 ? DOWN : t10 >= 30 ? "#f5c542" : UP, fontWeight: 700 }}>{t10 == null ? "—" : `${t10.toFixed(0)}%`}</div><div style={{ color: "var(--arc-muted)", fontSize: 11 }}>{k.holders ? `${k.holders} holders` : ""}{k.top1 != null ? ` · #1 ${k.top1.toFixed(0)}%` : ""}</div></>; })()}</td>
                         <td className="arc-mono" style={{ ...cell, color: r.insiders ? UP : "var(--arc-muted)" }}>{r.insiders || "—"}</td>
                         <td style={{ ...cell, textAlign: "right" }}><BuyBtn symbol={r.symbol} token={r.token} /></td>
                       </tr>
