@@ -181,7 +181,7 @@ function Profile() {
                     <table style={{ borderCollapse: "collapse", width: "100%" }}>
                       <thead><tr><th style={th}>token</th><th style={th}>amount</th><th style={th}>avg entry</th><th style={th}>price</th><th style={th}>value</th><th style={th}>unrealized</th><th style={th}>realized</th><th style={th}>sell</th><th style={th}>withdraw</th></tr></thead>
                       <tbody>
-                        {pos.length === 0 && <tr><td className="arc-mono" colSpan={9} style={{ ...td, color: "var(--arc-muted)" }}>No open positions. Buy something on <a href="/trade" style={{ color: "var(--arc-cobalt)" }}>/trade</a>.</td></tr>}
+                        {pos.length === 0 && <tr><td className="arc-mono" colSpan={9} style={{ ...td, color: "var(--arc-muted)" }}>No open positions. Buy something in the <a href="/trade" style={{ color: "var(--arc-cobalt)" }}>Terminal</a>.</td></tr>}
                         {pos.map((p) => (
                           <tr key={p.token}>
                             <td style={td}><a href={`/token/${p.token}`} style={{ color: "var(--arc-ink)" }}><strong>{p.symbol ?? short(p.token)}</strong></a>{p.external && <span className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 3, color: "var(--arc-muted)", fontSize: 9, marginLeft: 6, padding: "0 4px" }} title="Held on-chain but not bought through a swap from this wallet (transferred in) — no entry price, so no PnL">transferred in</span>}</td>

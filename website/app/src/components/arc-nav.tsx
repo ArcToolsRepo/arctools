@@ -25,7 +25,7 @@ export function ArcNav({ active }: { active?: string }) {
   };
 
   const links = [
-    ["/trade", "Trade"],
+    ["/trade", "Terminal"],
     ["/profile", "Profile"],
     ["/feed", "Feed"],
     ["/scan", "Scanner"],
@@ -40,6 +40,9 @@ export function ArcNav({ active }: { active?: string }) {
         <img alt="ArcTools monogram" src="/assets/brand/logo-mark.png" />
         ArcTools
       </a>
+      {active && active !== "/" && active !== "/trade" && (
+        <a className="arc-nav__back arc-mono" href="/trade" title="Back to the trading terminal">← Terminal</a>
+      )}
       <div className="arc-nav__links" style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 18 }}>
         {links.map(([href, label]) => (
           <a
@@ -92,6 +95,9 @@ export function ArcNav({ active }: { active?: string }) {
     <PadTicker />
     <style>{`
       .arc-nav__socials { display: flex; align-items: center; gap: 6px; }
+      .arc-nav__back { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px; font-size: 12px; letter-spacing: 0.04em; color: #06130b; background: var(--arc-up); text-decoration: none; font-weight: 700; white-space: nowrap; }
+      .arc-nav__back:hover { filter: brightness(1.08); }
+      .arc-nav--side .arc-nav__back { margin: -4px 0 12px; justify-content: center; }
       .arc-nav__social { display: inline-flex; align-items: center; gap: 8px; color: var(--arc-muted); text-decoration: none; font-size: 13px; padding: 4px 6px; border-radius: 6px; }
       .arc-nav__social:hover { color: var(--arc-ink); background: rgba(255,255,255,0.05); }
       .arc-nav__social-label { display: none; }

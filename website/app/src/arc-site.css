@@ -634,6 +634,7 @@
   .arc-nav__links a::after { display: none; }
   .arc-nav__links a[data-active], .arc-nav__links a[style*="underline"] { background: rgba(46,124,255,0.18); border-color: var(--arc-cobalt); color: #fff; text-decoration: none !important; }
   .arc-nav__socials { order: 2; margin-left: auto; }
+  .arc-nav__back { order: 1; margin-left: 6px; padding: 6px 10px !important; font-size: 11px !important; }
   .arc-nav__social-label { display: none !important; }
   .arc-wallet { order: 2; }
   .arc-site, .arc-site:has(.arc-nav--side) { padding-left: 0 !important; }

@@ -48,7 +48,7 @@ export function QuickBuy({ token, symbol, compact = false }: { token: string; sy
       disabled={busy}
       onClick={run}
       style={{ background: msg ? (msg.ok ? "rgba(34,197,128,0.18)" : "rgba(240,83,79,0.18)") : ready ? "var(--arc-up)" : "transparent", border: "1px solid " + (msg && !msg.ok ? "#f0534f" : "var(--arc-up)"), borderRadius: 4, color: msg ? (msg.ok ? "var(--arc-up)" : "#f0534f") : ready ? "#06130b" : "var(--arc-up)", cursor: "pointer", fontSize: compact ? 11 : 12, fontWeight: 700, padding: compact ? "3px 8px" : "5px 10px", whiteSpace: "nowrap" }}
-      title={ready ? `Buy ${amt} USDC of ${symbol} with the trading wallet (best venue, 10% max slippage)` : "Open the trading wallet on /trade"}
+      title={ready ? `Buy ${amt} USDC of ${symbol} with the trading wallet (best venue, 10% max slippage)` : "Open the trading wallet in the Terminal"}
       type="button"
     >
       {label}

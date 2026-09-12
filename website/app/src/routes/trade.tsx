@@ -17,7 +17,7 @@ const SNIPER = "https://t.me/ArcSniper_bot";
 export const Route = createFileRoute("/trade")({
   head: () => ({
     meta: [
-      { title: "ArcTools Trade: one-click buys on every Arc launchpad" },
+      { title: "ArcTools Terminal: one-click buys on every Arc launchpad" },
       { content: "GMGN-style terminal for Arc: new pairs, trending, insider picks, one-click buy and sell from an in-browser wallet, best price across every venue.", name: "description" },
     ],
   }),
@@ -226,7 +226,7 @@ function Trade() {
           {/* LEFT: terminal */}
           <div>
             <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
-              <h1 style={{ fontSize: 26, margin: 0 }}>Trade</h1>
+              <h1 style={{ fontSize: 26, margin: 0 }}>Terminal</h1>
               <span style={{ color: "var(--arc-muted)", fontSize: 13 }}>every Arc launchpad · one click · best price across venues · <a href="/profile" style={{ color: "var(--arc-cobalt)" }}>profile & history →</a></span>
             </div>
             {/* quick-buy bar */}
