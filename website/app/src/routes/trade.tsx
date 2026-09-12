@@ -84,11 +84,17 @@ function Trade() {
     const id = setInterval(load, 15_000);
     return () => { alive = false; clearInterval(id); };
   }, [tf]);
-  useEffect(() => {
-    fetch("https://api.radardex.pro/tokens").then((r) => r.json()).then((j: { tokens?: { address?: string; liquidityUsdc?: number }[] }) => {
-      setLiq(new Map((j.tokens ?? []).filter((t) => t.address).map((t) => [t.address!.toLowerCase(), Number(t.liquidityUsdc ?? 0)])));
-    }).catch(() => null);
+  // on-chain USDC-side liquidity for the visible rows (own index API: V3/pad pool balances + V4 slot0/liquidity)
+  const liqReq = useRef<Set<string>>(new Set());
+  const fetchLiq = useCallback((tokens: string[]) => {
+    const need = tokens.map((t) => t.toLowerCase()).filter((t) => !liqReq.current.has(t)).slice(0, 120);
+    if (!need.length) return;
+    need.forEach((t) => liqReq.current.add(t));
+    fetch(`${API}/api/liq?tokens=${need.join(",")}`).then((r) => r.json()).then((j: { liq?: Record<string, number> }) => {
+      setLiq((m) => { const n = new Map(m); for (const [k, v] of Object.entries(j.liq ?? {})) n.set(k, v); return n; });
+    }).catch(() => { need.forEach((t) => liqReq.current.delete(t)); });
   }, []);
+  useEffect(() => { const id = setInterval(() => { liqReq.current.clear(); }, 60_000); return () => clearInterval(id); }, []);
   const [clusters, setClusters] = useState<Cluster[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -209,9 +215,9 @@ function Trade() {
     let base: Row[];
     if (tab === "new") base = rows.map((t) => toRow(t.token)).sort((a, b) => (b.age ?? 0) - (a.age ?? 0)).slice(0, 100);
     else if (tab === "new15") {
-      // survivors: launched 15 min – 24 h ago, still have liquidity and at least one trade — the post-snipe window
+      // freshest launches: under 15 minutes old — the snipe window
       const now = Date.now() / 1000;
-      base = rows.map((t) => toRow(t.token)).filter((r) => r.age && now - r.age >= 900 && now - r.age <= 86_400 && (r.liq === null || r.liq > 0))
+      base = rows.map((t) => toRow(t.token)).filter((r) => r.age && now - r.age < 900)
         .sort((a, b) => (b.age ?? 0) - (a.age ?? 0)).slice(0, 100);
     }
     else if (tab === "trending") base = trend.map((t) => toRow(t.token));
@@ -230,6 +236,7 @@ function Trade() {
     const vis = tableRows.slice(0, 60).map((r) => r.token);
     const needLogo = vis.filter((t) => !logos[t] && !byToken.get(t)?.logo);
     if (needLogo.length) void tokenLogos({ data: { tokens: needLogo } }).then((m) => setLogos((o) => ({ ...o, ...m }))).catch(() => null);
+    fetchLiq(vis);
     const needRisk = vis.filter((t) => !risk[t]).slice(0, 40);
     if (needRisk.length) void holderRisk({ data: { tokens: needRisk } }).then((m) => setRisk((o) => ({ ...o, ...m }))).catch(() => null);
   }, [tableRows]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -262,7 +269,7 @@ function Trade() {
             </div>
             {/* tabs */}
             <div style={{ borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 2, marginBottom: 8 }}>
-              {([["new", "New pair"], ["new15", "New >15m"], ["trending", "Trending"], ["insiders", "Insider picks"], ["favs", `★ Watchlist${favs.size ? ` (${favs.size})` : ""}`], ["holdings", `Holdings${positions.length ? ` (${positions.length})` : ""}`]] as const).map(([k, l]) => (
+              {([["new", "New pair"], ["new15", "New <15m"], ["trending", "Trending"], ["insiders", "Insider picks"], ["favs", `★ Watchlist${favs.size ? ` (${favs.size})` : ""}`], ["holdings", `Holdings${positions.length ? ` (${positions.length})` : ""}`]] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setTab(k)} style={{ background: "transparent", border: "none", borderBottom: "2px solid " + (tab === k ? "var(--arc-up)" : "transparent"), color: tab === k ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, fontWeight: tab === k ? 700 : 400, padding: "8px 14px" }} type="button">{l}</button>
               ))}
               <span style={{ marginLeft: "auto" }}>
@@ -297,7 +304,7 @@ function Trade() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tableRows.length === 0 && <tr><td className="arc-mono" colSpan={10} style={{ ...cell, color: "var(--arc-muted)" }}>{tab === "favs" ? "No favourites yet — click ☆ on any row." : tab === "new15" ? "No launches between 15 min and 24 h old with liquidity right now." : tab === "insiders" ? "No token with 2+ insiders in the last 24h." : "Loading…"}</td></tr>}
+                    {tableRows.length === 0 && <tr><td className="arc-mono" colSpan={10} style={{ ...cell, color: "var(--arc-muted)" }}>{tab === "favs" ? "No favourites yet — click ☆ on any row." : tab === "new15" ? "No launch younger than 15 minutes right now — watch New pair." : tab === "insiders" ? "No token with 2+ insiders in the last 24h." : "Loading…"}</td></tr>}
                     {tableRows.map((r) => (
                       <tr key={r.token} style={{ background: favs.has(r.token) ? "rgba(46,124,255,0.05)" : undefined }}>
                         <td style={{ ...cell, paddingRight: 4 }}><button onClick={() => toggleFav(r.token)} style={{ background: "none", border: "none", color: favs.has(r.token) ? "#f5c542" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, padding: 0 }} title="favourite" type="button">{favs.has(r.token) ? "★" : "☆"}</button></td>

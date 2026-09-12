@@ -1627,32 +1627,14 @@ export const tokenLogos = createServerFn({ method: "POST" })
 export const holderRisk = createServerFn({ method: "POST" })
   .inputValidator((input: { tokens: string[] }) => input)
   .handler(async ({ data }): Promise<Record<string, { holders: number; top10: number | null; top1: number | null }>> => {
+    // arc-scan rate-limits Cloudflare egress; the buybot (Railway) proxies + caches the holder pages for us
     const want = [...new Set(data.tokens.slice(0, 60).map((t) => t.toLowerCase()))];
-    const out: Record<string, { holders: number; top10: number | null; top1: number | null }> = {};
-    const one = async (token: string) => {
-      const r = await memo(`hrisk:${token}`, 300_000, async () => {
-        try {
-          const [h, supHex] = await Promise.all([
-            fetch(`https://api.arc-scan.org/v1/tokens/${token}/holders`, { headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; ArcToolsSite/1.0)" } }).then((x) => x.json()) as Promise<{ items?: { address?: { address?: string }; balance?: { raw?: string } }[]; total?: number }>,
-            rpc("eth_call", [{ data: "0x18160ddd", to: token }, "latest"]).catch(() => null) as Promise<string | null>,
-          ]);
-          const items = (h.items ?? []).filter((x) => {
-            const a = (x.address?.address ?? "").toLowerCase();
-            return a !== "0x000000000000000000000000000000000000dead" && a !== "0x0000000000000000000000000000000000000000";
-          });
-          const supply = supHex && supHex !== "0x" ? BigInt(supHex) : 10n ** 27n;
-          if (supply <= 0n) return { holders: h.total ?? items.length, top10: null, top1: null };
-          // exclude the pool / launchpad contracts we know so LP does not count as a "holder"
-          const skip = new Set(["0x1eaad48260eecc7624666f1dfec202b2d75257fe", "0x2726aec64d8a9bc41b9940dda5d21c889458b348", "0x8366a39cc670b4001a1121b8f6a443a643e40951"]);
-          const bals = items.filter((x) => !skip.has((x.address?.address ?? "").toLowerCase())).map((x) => BigInt(x.balance?.raw ?? "0"));
-          const sum = (n: number) => bals.slice(0, n).reduce((s, b) => s + b, 0n);
-          return { holders: h.total ?? items.length, top10: Number((sum(10) * 10_000n) / supply) / 100, top1: Number((sum(1) * 10_000n) / supply) / 100 };
-        } catch {
-          return { holders: 0, top10: null, top1: null };
-        }
+    if (!want.length) return {};
+    try {
+      const r = await memo(`hrisk:${want.join(",")}`, 120_000, async () => {
+        const j = await fetch(`https://bot-production-4200.up.railway.app/api/holder-risk?tokens=${want.join(",")}`).then((x) => x.json()) as { risk?: Record<string, { holders: number; top10: number | null; top1: number | null }> };
+        return j.risk ?? {};
       });
-      out[token] = r as { holders: number; top10: number | null; top1: number | null };
-    };
-    for (let i = 0; i < want.length; i += 6) await Promise.all(want.slice(i, i + 6).map(one));
-    return out;
+      return r as Record<string, { holders: number; top10: number | null; top1: number | null }>;
+    } catch { return {}; }
   });

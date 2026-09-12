@@ -321,6 +321,7 @@ async def v4_bootstrap():
         await db.execute(text(f"ALTER TABLE v4_pools ADD COLUMN IF NOT EXISTS {col} {typ}"))
     _v4_cache.clear()
     asyncio.create_task(v4_keys_backfill(), name="v4-keys-backfill")
+    await warm_supply_cache()
     if await db.kv_get("v4_bootstrapped"):
         return
     head = await CHAIN._bn()
@@ -471,7 +472,48 @@ async def _total_supply(token: str) -> float | None:
     if c and c[0] is None and time.time() - c[1] < 120:
         return None
     async with _supply_sem:
-        return await _total_supply_fetch(token)
+        v = await _total_supply_fetch(token)
+    if v:
+        try:
+            await db.execute(text("INSERT INTO token_supply (token, supply, ts) VALUES (:t, :s, :ts) "
+                                  "ON CONFLICT (token) DO UPDATE SET supply = EXCLUDED.supply, ts = EXCLUDED.ts")
+                             .bindparams(t=token, s=float(v), ts=int(time.time())))
+        except Exception:  # noqa
+            pass
+    return v
+
+
+_supply_pending: set[str] = set()
+
+
+def total_supply_nowait(token: str) -> float | None:
+    """Cached supply (memory, warmed from token_supply at boot) or None; a miss schedules a background fetch
+    so list endpoints never block on 100+ relay calls after a restart."""
+    c = _supply_cache.get(token)
+    if c and c[0] is not None:
+        return c[0]
+    if token not in _supply_pending:
+        _supply_pending.add(token)
+
+        async def _bg():
+            try:
+                await _total_supply(token)
+            finally:
+                _supply_pending.discard(token)
+        asyncio.create_task(_bg())
+    return None
+
+
+async def warm_supply_cache():
+    try:
+        await db.execute(text("CREATE TABLE IF NOT EXISTS token_supply (token VARCHAR(64) PRIMARY KEY, supply DOUBLE PRECISION, ts BIGINT)"))
+        rows = await db.fetchall(text("SELECT token, supply, ts FROM token_supply"))
+        for r in rows:
+            if r["supply"]:
+                _supply_cache[r["token"]] = (float(r["supply"]), float(r["ts"] or time.time()))
+        log.info("supply cache warmed: %d tokens", len(rows))
+    except Exception as e:  # noqa
+        log.warning("warm_supply_cache: %s", e)
 
 
 async def _total_supply_fetch(token: str) -> float | None:
@@ -1124,6 +1166,9 @@ async def start_api():
     app.router.add_get("/health", api_health)
     from . import social as _social
     _social.register(app)
+    from . import liquidity as _liq
+    _liq.register(app)
+    _liq.register_risk(app)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", "8080")))

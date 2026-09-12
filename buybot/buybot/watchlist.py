@@ -322,7 +322,7 @@ async def api_wallet_trades(request: web.Request) -> web.Response:
 async def api_trending(request: web.Request) -> web.Response:
     """GMGN-style trending: per token in the window — volume, buys/sells, traders, price change, last price, ATH price,
     first trade time, supply (for MC). Sorted by window volume."""
-    from .insider import _total_supply
+    from .insider import total_supply_nowait
     mins = min(1440, max(1, int(request.query.get("minutes", "60"))))
     limit = min(150, int(request.query.get("limit", "80")))
     sort = request.query.get("sort", "vol")
@@ -348,12 +348,11 @@ async def api_trending(request: web.Request) -> web.Response:
         FROM agg a LEFT JOIN token_symbols sym ON sym.token = a.token LEFT JOIN life l ON l.token = a.token
         ORDER BY a.vol DESC LIMIT :l""").bindparams(since=now - mins * 60, l=limit))
     out = [dict(r) for r in rows]
-    async def fill(d):
-        d["supply"] = await _total_supply(d["token"])
+    for d in out:
+        d["supply"] = total_supply_nowait(d["token"])
         px = float(d["p1"] or 0) / 1e6
         d["mcap"] = (px * d["supply"]) if (d["supply"] and px > 0) else None
         d["ath_mcap"] = (float(d["ath"]) / 1e6 * d["supply"]) if (d["supply"] and d.get("ath")) else None
-    await asyncio.gather(*[fill(d) for d in out])
     await _fill_symbols(out)
     if sort == "mcap":
         out.sort(key=lambda d: -(d.get("mcap") or 0))

@@ -1,6 +1,6 @@
 /**
- * ArcTools journey: ONE continuous film cut frame-exact into 4 chapter
- * segments (same take, zero seams). Posters are the exact first frames of the
+ * ArcTools journey: two robot takes (terminal hologram, phone alert) cut into 4 chapter
+ * segments of 3 s each (24 fps, keyframe every 8 frames for scrubbing). Posters are the exact first frames of the
  * encoded clips beside them.
  */
 import type {
@@ -27,7 +27,7 @@ export const scrollScrubScenes: ScrollScrubScene[] = [
     mobileClip: "/assets/world/scene-01-mobile.mp4",
     mobilePoster: "/assets/world/scene-01-mobile-poster.png",
     poster: "/assets/world/scene-01-poster.png",
-    tags: ["USDC-NATIVE", "0.6S BLOCKS"],
+    tags: ["USDC-NATIVE", "10 VENUES"],
     title: "Trade the whole chain",
   },
   {
@@ -39,7 +39,7 @@ export const scrollScrubScenes: ScrollScrubScene[] = [
     mobileClip: "/assets/world/scene-02-mobile.mp4",
     mobilePoster: "/assets/world/scene-02-mobile-poster.png",
     poster: "/assets/world/scene-02-poster.png",
-    tags: ["RADARDEX", "ARCPAD", "WARP", "UNISWAP V3"],
+    tags: ["ARCTOOLSPAD", "ARGUSPAD", "ARCHEMIST", "UNISWAP V4"],
     title: "Every launchpad. One swap.",
   },
   {
@@ -50,7 +50,7 @@ export const scrollScrubScenes: ScrollScrubScene[] = [
     mobileClip: "/assets/world/scene-03-mobile.mp4",
     mobilePoster: "/assets/world/scene-03-mobile-poster.png",
     poster: "/assets/world/scene-03-poster.png",
-    tags: ["RACE BROADCAST", "PRE-APPROVED"],
+    tags: ["ONE-CLICK BUY", "1.5% FEE"],
     title: "One click. Native USDC.",
   },
   {
@@ -62,7 +62,7 @@ export const scrollScrubScenes: ScrollScrubScene[] = [
     mobileClip: "/assets/world/scene-04-mobile.mp4",
     mobilePoster: "/assets/world/scene-04-mobile-poster.png",
     poster: "/assets/world/scene-04-poster.png",
-    tags: ["LIVE PNL", "TP 2-10X"],
+    tags: ["TOP-100 WALLETS", "LIVE ALERTS"],
     title: "Insiders. Intel. Positions.",
   },
 ];
