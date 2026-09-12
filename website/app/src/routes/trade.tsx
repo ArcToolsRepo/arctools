@@ -58,7 +58,7 @@ const priceStr = (p: number | null) => (p == null ? "—" : p >= 1 ? `$${p.toFix
 const SEL = { balanceOf: "0x70a08231", allowance: "0xdd62ed3e", approve: "0x095ea7b3" };
 const tfLabel = (m: number) => (m < 60 ? `${m}m` : `${m / 60}h`);
 const UP = "var(--arc-up)", DOWN = "var(--arc-down, #f0534f)";
-const cell: React.CSSProperties = { borderTop: "1px solid var(--arc-line)", fontSize: 12.5, padding: "8px 8px 8px 0", verticalAlign: "middle", whiteSpace: "nowrap" };
+const cell: React.CSSProperties = { borderTop: "1px solid var(--arc-line)", fontSize: 12.5, padding: "8px 6px 8px 0", verticalAlign: "middle", whiteSpace: "nowrap" };
 const hd: React.CSSProperties = { color: "var(--arc-muted)", fontSize: 10, fontWeight: 400, padding: "0 8px 8px 0", textAlign: "left", textTransform: "uppercase", whiteSpace: "nowrap" };
 
 // ---------------- page ----------------
@@ -215,6 +215,16 @@ function Trade() {
     setBusy(null);
   };
 
+  const pager = (pos: "top" | "bottom") => tableRows.length > PAGE && (
+                  <div className="arc-mono" style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", padding: pos === "top" ? "0 0 8px" : "12px 0 4px" }}>
+                    <button className="arc-mono" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: page <= 1 ? "var(--arc-line)" : "var(--arc-ink)", cursor: page <= 1 ? "default" : "pointer", fontSize: 12, padding: "5px 10px" }} type="button">← prev</button>
+                    {Array.from({ length: pages }, (_, i) => i + 1).filter((n) => n === 1 || n === pages || Math.abs(n - page) <= 2).reduce<(number | "…")[]>((acc, n) => { const last = acc[acc.length - 1]; if (typeof last === "number" && n - last > 1) acc.push("…"); acc.push(n); return acc; }, []).map((n, i) => n === "…" ? <span key={`e${i}`} style={{ color: "var(--arc-muted)", padding: "0 4px" }}>…</span> : (
+                      <button className="arc-mono" key={n} onClick={() => setPage(n)} style={{ background: n === page ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (n === page ? "var(--arc-cobalt)" : "var(--arc-line)"), borderRadius: 4, color: n === page ? "#fff" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, minWidth: 32, padding: "5px 8px" }} type="button">{n}</button>
+                    ))}
+                    <button className="arc-mono" disabled={page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: page >= pages ? "var(--arc-line)" : "var(--arc-ink)", cursor: page >= pages ? "default" : "pointer", fontSize: 12, padding: "5px 10px" }} type="button">next →</button>
+                    <span style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 8 }}>{tableRows.length} tokens · page {page}/{pages}</span>
+                  </div>
+  );
   const BuyBtn = ({ token, symbol }: { token: string; symbol: string }) => (
     <button className="arc-mono" disabled={busy === token} onClick={() => void buy(token, symbol)} style={{ background: busy === token ? "transparent" : "var(--arc-up)", border: "1px solid var(--arc-up)", borderRadius: 4, color: busy === token ? "var(--arc-up)" : "#06130b", cursor: "pointer", fontSize: 12, fontWeight: 700, padding: "5px 10px", whiteSpace: "nowrap" }} type="button">
       {busy === token ? "…" : `⚡ ${buyAmt} USDC`}
@@ -370,7 +380,8 @@ function Trade() {
               </div>
             )}
 
-            <div style={{ overflowX: "auto" }}>
+            {tab !== "holdings" && pager("top")}
+            <div className="arc-tablewrap" style={{ overflowX: "auto" }}>
               {tab !== "holdings" && (
                 <><table style={{ borderCollapse: "collapse", width: "100%" }}>
                   <thead>
@@ -393,7 +404,7 @@ function Trade() {
                     {pageRows.map((r) => (
                       <tr className="arc-row-link" key={r.token} onClick={rowClick(r.token)} onMouseEnter={() => { void import("@/lib/arc-api").then((m) => m.tokenPage({ data: { token: r.token } })).catch(() => null); }} style={{ background: r.token.toLowerCase() === OFFICIAL_TOKEN ? "rgba(46,124,255,0.09)" : favs.has(r.token) ? "rgba(46,124,255,0.05)" : undefined, cursor: "pointer" }}>
                         <td style={{ ...cell, paddingRight: 4 }}><button onClick={() => toggleFav(r.token)} style={{ background: "none", border: "none", color: favs.has(r.token) ? "#f5c542" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, padding: 0 }} title="favourite" type="button">{favs.has(r.token) ? "★" : "☆"}</button></td>
-                        <td style={{ ...cell, minWidth: 250 }}>
+                        <td className="arc-tokcell" style={{ ...cell, minWidth: 230 }}>
                           <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
                             <Link params={{ ca: r.token }} preload="intent" style={{ textDecoration: "none" }} to="/token/$ca"><TokenLogo src={r.logo} symbol={r.symbol} /></Link>
                             <div style={{ lineHeight: 1.25 }}>
@@ -424,16 +435,6 @@ function Trade() {
                     ))}
                   </tbody>
                 </table>
-                {tableRows.length > PAGE && (
-                  <div className="arc-mono" style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", padding: "12px 0 4px" }}>
-                    <button className="arc-mono" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: page <= 1 ? "var(--arc-line)" : "var(--arc-ink)", cursor: page <= 1 ? "default" : "pointer", fontSize: 12, padding: "5px 10px" }} type="button">← prev</button>
-                    {Array.from({ length: pages }, (_, i) => i + 1).filter((n) => n === 1 || n === pages || Math.abs(n - page) <= 2).reduce<(number | "…")[]>((acc, n) => { const last = acc[acc.length - 1]; if (typeof last === "number" && n - last > 1) acc.push("…"); acc.push(n); return acc; }, []).map((n, i) => n === "…" ? <span key={`e${i}`} style={{ color: "var(--arc-muted)", padding: "0 4px" }}>…</span> : (
-                      <button className="arc-mono" key={n} onClick={() => setPage(n)} style={{ background: n === page ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (n === page ? "var(--arc-cobalt)" : "var(--arc-line)"), borderRadius: 4, color: n === page ? "#fff" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, minWidth: 32, padding: "5px 8px" }} type="button">{n}</button>
-                    ))}
-                    <button className="arc-mono" disabled={page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: page >= pages ? "var(--arc-line)" : "var(--arc-ink)", cursor: page >= pages ? "default" : "pointer", fontSize: 12, padding: "5px 10px" }} type="button">next →</button>
-                    <span style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 8 }}>{tableRows.length} tokens · page {page}/{pages}</span>
-                  </div>
-                )}
               </>
               )}
               {tab === "holdings" && (
@@ -457,6 +458,7 @@ function Trade() {
                 </table>
               )}
             </div>
+            {tab !== "holdings" && pager("bottom")}
             <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginTop: 14 }}>
               Buys route through ArcAggregator (Uniswap V3 tiers, V4 pools, ArcToolsPad and Warp curves, split when it wins) with a 1.5% platform fee, 10% of it to $ARCT stakers. Need TP/SL, limit orders or copy-trade? <a href={SNIPER} rel="noreferrer" style={{ color: "var(--arc-cobalt)" }} target="_blank">Sniper bot</a>. Not financial advice.
             </p>

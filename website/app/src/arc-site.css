@@ -711,3 +711,4 @@
 @media (min-width: 1024px) and (max-width: 1560px) { .arc-col-ath { display: none !important; } }
 @media (min-width: 1024px) and (max-width: 1380px) { .arc-col-ins { display: none !important; } .arc-name { display: none !important; } }
 @media (min-width: 1024px) and (max-width: 1280px) { .arc-2col { grid-template-columns: minmax(0, 1fr) 300px !important; } table td, table th { font-size: 12px !important; padding-right: 6px !important; } }
+@media (min-width: 1024px) and (max-width: 1560px) { .arc-tablewrap table td, .arc-tablewrap table th { font-size: 12px !important; padding-right: 5px !important; } .arc-tokcell { min-width: 210px !important; } }
