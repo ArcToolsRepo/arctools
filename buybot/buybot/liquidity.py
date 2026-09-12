@@ -238,5 +238,18 @@ async def api_venue_tokens(req: web.Request):
         "(SELECT price1m FROM swaps x WHERE x.token = s.token AND x.price1m > 0 ORDER BY ts DESC LIMIT 1) AS price1m "
         "FROM swaps s LEFT JOIN token_symbols sym ON sym.token = s.token "
         "WHERE s.venue = :v AND s.ts > :since GROUP BY s.token, sym.symbol ORDER BY vol DESC LIMIT 300").bindparams(v=venue, since=int(time.time()) - days * 86400))
-    return web.json_response({"venue": venue, "rows": [dict(r) for r in rows]},
+    out = [dict(r) for r in rows]
+    # symbols missing from token_symbols (vanity-address V2 tokens never went through a launchpad feed): resolve on chain, cached
+    from .insider import _symbol, total_supply_nowait
+    async def fill(d):
+        if not d.get("symbol"):
+            try:
+                d["symbol"] = await _symbol(d["token"]) or None
+            except Exception:  # noqa
+                d["symbol"] = None
+        sup = total_supply_nowait(d["token"])
+        d["supply"] = sup
+        d["mcap"] = (float(d["price1m"]) / 1e6 * sup) if (sup and d.get("price1m")) else None
+    await asyncio.gather(*[fill(d) for d in out])
+    return web.json_response({"venue": venue, "rows": out},
                              headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=30"})

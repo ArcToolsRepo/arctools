@@ -1742,9 +1742,9 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   }, (v) => v.length > 20).catch(() => [] as PadToken[]);
   // DYORSwap / WarpDex V2 pairs come from our own swap index (no public listing API)
   const v2: PadToken[] = await memo("v2:tokens", 60_000, async () => {
-    const j = (await fetch("https://bot-production-4200.up.railway.app/api/venue-tokens?venue=v2", { signal: AbortSignal.timeout(8000) }).then((r) => r.json())) as { rows?: { token: string; symbol: string | null; first_ts: number | null; vol: number | null; price1m: number | null }[] };
+    const j = (await fetch("https://bot-production-4200.up.railway.app/api/venue-tokens?venue=v2", { signal: AbortSignal.timeout(8000) }).then((r) => r.json())) as { rows?: { token: string; symbol: string | null; first_ts: number | null; vol: number | null; price1m: number | null; mcap?: number | null }[] };
     return (j.rows ?? []).filter((r) => /^0x[0-9a-f]{40}$/i.test(r.token)).map((r) => ({
-      createdAt: r.first_ts ? new Date(Number(r.first_ts) * 1000).toISOString() : null, logo: null, mcapUsd: null, name: r.symbol ?? "", pad: "DYORSwap", pool: null,
+      createdAt: r.first_ts ? new Date(Number(r.first_ts) * 1000).toISOString() : null, logo: null, mcapUsd: r.mcap ?? null, name: r.symbol ?? "", pad: "DYORSwap", pool: null,
       priceUsd: r.price1m ? Number(r.price1m) / 1e6 : null, stage: "V2 pair", symbol: r.symbol ?? "", telegram: null, token: r.token.toLowerCase(), twitter: null,
       venueUrl: `/token/${r.token.toLowerCase()}`, volUsd: r.vol ?? null, website: null, dexes: ["dyor"],
     }) as PadToken);
