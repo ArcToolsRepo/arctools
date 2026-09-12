@@ -204,16 +204,16 @@ function TokenPage() {
     const id = setTimeout(async () => {
       try {
         if (useAgg) {
-          // buy: msg.value = spend + 1% fee  -> spend = n / 1.01 ; sell: fee on output
+          // buy: msg.value = spend + 1.5% fee -> spend = n / 1.015 ; sell: fee on output
           const wei = BigInt(Math.round(n * 1e6)) * 10n ** 12n;
-          const spend = side === "buy" ? (wei * 100n) / 101n : BigInt(Math.round(n * 1e6)) * BigInt(10) ** BigInt(Math.max(0, dec - 6));
+          const spend = side === "buy" ? (wei * 1000n) / 1015n : BigInt(Math.round(n * 1e6)) * BigInt(10) ** BigInt(Math.max(0, dec - 6));
           const r = await routeSwap({ data: { token: ca, side, amount: spend.toString() } });
           setRoute(r);
           if (r.error || r.legs.length === 0) { setQuote(null); return; }
           const out = BigInt(r.out);
           setQuote(side === "buy"
             ? Number(out / BigInt(10) ** BigInt(Math.max(0, dec - 6))) / 1e6
-            : (Number(out / 10n ** 12n) / 1e6) * 0.99);
+            : (Number(out / 10n ** 12n) / 1e6) * 0.985);
           return;
         }
         setRoute(null);
@@ -283,9 +283,9 @@ function TokenPage() {
         const legs = route.legs.map((l) => ({ venue: l.venue, target: l.target, fee: l.fee, key: l.key, amount: l.amount }));
         if (side === "buy") {
           const spend = legs.reduce((s, l) => s + BigInt(l.amount), 0n);
-          const value = spend + spend / 100n;
+          const value = spend + (spend * 15n) / 1000n;
           const minOut = BigInt(Math.round(quote * (1 - slippage / 100) * 1e6)) * BigInt(10) ** BigInt(Math.max(0, dec - 6));
-          hash = await send({ data: encodeAggregatorSwap("buy", ca, legs, minOut, from, 100), from, to: ARC_AGGREGATOR, value });
+          hash = await send({ data: encodeAggregatorSwap("buy", ca, legs, minOut, from, 150), from, to: ARC_AGGREGATOR, value });
         } else {
           const tokIn = legs.reduce((s, l) => s + BigInt(l.amount), 0n);
           const minOut = BigInt(Math.round(quote * (1 - slippage / 100) * 1e6)) * 10n ** 12n;   // post-fee native USDC
@@ -295,7 +295,7 @@ function TokenPage() {
             await waitReceipt(await send({ data: SEL.approve + p32(ARC_AGGREGATOR) + "f".repeat(64), from, to: ca }));
             setBusy("Confirm in wallet...");
           }
-          hash = await send({ data: encodeAggregatorSwap("sell", ca, legs, minOut, from, 100), from, to: ARC_AGGREGATOR });
+          hash = await send({ data: encodeAggregatorSwap("sell", ca, legs, minOut, from, 150), from, to: ARC_AGGREGATOR });
         }
       } else if (info.venue === "pad") {
         const minOut = BigInt(Math.round(quote * (1 - slippage / 100) * 1e6)) * 10n ** 12n;
@@ -645,7 +645,7 @@ function TokenPage() {
                   {busy ?? (hot && hotOk && useAgg ? `⚡ ${side === "buy" ? "Buy" : "Sell"} ${info.symbol} · no popup` : wallet ? `${side === "buy" ? "Buy" : "Sell"} ${info.symbol}` : "Connect & trade")}
                 </button>
                 <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, marginTop: 8 }}>
-                  {info.venue === "pad" ? `1% platform fee, 10% of it to ARCT stakers.${info.padMode === "curve" && info.targetQuote ? ` Graduates to Uniswap at ${fmt(info.targetQuote)} ${qSym} real reserve.` : ""}` : v3Quote ? `Uniswap V3 pool ${info.symbol}/${qSym}, swapped directly (pool fee 1%, no service fee).` : "1% service fee, best price across every venue (V3, V4, curves)."} Need TP/SL or limit orders? Use the sniper bot.
+                  {info.venue === "pad" ? `1% platform fee, 10% of it to ARCT stakers.${info.padMode === "curve" && info.targetQuote ? ` Graduates to Uniswap at ${fmt(info.targetQuote)} ${qSym} real reserve.` : ""}` : v3Quote ? `Uniswap V3 pool ${info.symbol}/${qSym}, swapped directly (pool fee 1%, no service fee).` : "1.5% platform fee, best price across every venue (V3, V4, curves)."} Need TP/SL or limit orders? Use the sniper bot.
                 </p>
               </>
             ) : (

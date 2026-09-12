@@ -106,9 +106,9 @@ function Profile() {
       if (r.error || r.legs.length === 0) throw new Error("No route to sell this token right now.");
       const al = BigInt((await hotCall(p.token, SEL.allowance + p32(addr) + p32(ARC_AGGREGATOR))) || "0x0");
       if (al < amt) await hotWait(await hotSend({ to: p.token, data: SEL.approve + p32(ARC_AGGREGATOR) + "f".repeat(64), gasLimit: 80_000n }));
-      const minOut = (BigInt(r.out) * 99n * 90n) / 10_000n;
+      const minOut = (BigInt(r.out) * 985n * 90n) / 100_000n;
       const legs = r.legs.map((l) => ({ venue: l.venue, target: l.target, fee: l.fee, key: l.key, amount: l.amount }));
-      const h = await hotSend({ to: ARC_AGGREGATOR, data: encodeAggregatorSwap("sell", p.token, legs, minOut, addr, 100) });
+      const h = await hotSend({ to: ARC_AGGREGATOR, data: encodeAggregatorSwap("sell", p.token, legs, minOut, addr, 150) });
       setToast({ ok: true, text: `Selling ${pct}% of ${p.symbol ?? short(p.token)}…`, tx: h });
       const rc = await hotWait(h);
       setToast({ ok: rc.status === 1, text: rc.status === 1 ? `Sold ${pct}% of ${p.symbol ?? short(p.token)} → USDC in the wallet.` : "Sell reverted.", tx: h });

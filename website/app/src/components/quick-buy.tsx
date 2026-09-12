@@ -28,12 +28,12 @@ export function QuickBuy({ token, symbol, compact = false }: { token: string; sy
     if (!ready || !addr) { window.location.href = `/trade?buy=${token}`; return; }
     setBusy(true); setMsg(null);
     try {
-      const spend = (BigInt(Math.round(amt * 1e6)) * 10n ** 12n * 100n) / 101n;
+      const spend = (BigInt(Math.round(amt * 1e6)) * 10n ** 12n * 1000n) / 1015n;
       const r = await routeSwap({ data: { token, side: "buy", amount: spend.toString() } });
       if (r.error || r.legs.length === 0) throw new Error("no pool yet");
       const minOut = (BigInt(r.out) * 90n) / 100n;   // 10% slippage for one-click
       const legs = r.legs.map((l) => ({ venue: l.venue, target: l.target, fee: l.fee, key: l.key, amount: l.amount }));
-      const h = await hotSend({ to: ARC_AGGREGATOR, data: encodeAggregatorSwap("buy", token, legs, minOut, addr, 100), value: spend + spend / 100n });
+      const h = await hotSend({ to: ARC_AGGREGATOR, data: encodeAggregatorSwap("buy", token, legs, minOut, addr, 150), value: spend + (spend * 15n) / 1000n });
       setMsg({ ok: true, text: "sent…" });
       const rc = await hotWait(h);
       setMsg({ ok: rc.status === 1, text: rc.status === 1 ? `bought ${symbol}` : "reverted" });

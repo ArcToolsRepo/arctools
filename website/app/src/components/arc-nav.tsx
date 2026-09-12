@@ -35,7 +35,7 @@ export function ArcNav({ active }: { active?: string }) {
 
   return (
     <>
-    <nav className="arc-nav">
+    <nav className={"arc-nav" + (active && active !== "/" ? " arc-nav--side" : "")}>
       <a className="arc-nav__brand" href="/">
         <img alt="ArcTools monogram" src="/assets/brand/logo-mark.png" />
         ArcTools
@@ -100,6 +100,19 @@ export function ArcNav({ active }: { active?: string }) {
       )}
     </nav>
     <PadTicker />
+    {active && active !== "/" && <style>{`
+      @media (min-width: 1024px) {
+        .arc-nav--side { inset: 0 auto 0 0; width: 200px; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 6px; padding: 18px 14px; border-bottom: none; border-right: 1px solid var(--arc-line); overflow-y: auto; }
+        .arc-nav--side .arc-nav__brand { margin-bottom: 14px; }
+        .arc-nav--side .arc-nav__links { flex-direction: column; align-items: stretch !important; gap: 2px !important; flex: 1; }
+        .arc-nav--side .arc-nav__links a { padding: 9px 10px; border-radius: 6px; font-size: 13px; }
+        .arc-nav--side .arc-nav__links a[data-active], .arc-nav--side .arc-nav__links a[style*="underline"] { background: rgba(46,124,255,0.14); color: var(--arc-cobalt); text-decoration: none !important; }
+        .arc-nav--side .arc-wallet { margin-top: 12px; width: 100%; }
+        .arc-site:has(.arc-nav--side) { padding-left: 200px; }
+        .arc-site:has(.arc-nav--side) .arc-section { padding-top: 70px !important; }
+        .arc-site:has(.arc-nav--side) .arc-ticker, .arc-site:has(.arc-nav--side) .pad-ticker { margin-left: 0; }
+      }
+    `}</style>}
     </>
   );
 }

@@ -12,7 +12,15 @@ const SEND_RPCS = ["/api/rpc"];   // Worker proxy (public Arc RPCs have no CORS 
 const READ_RPC = "https://rpc-production-ba7a.up.railway.app";
 const UNLOCK_MS = 30 * 60_000;
 
-type Stored = { addr: string; iv: string; salt: string; ct: string; createdAt: number };
+type Stored = { addr: string; iv: string; salt: string; ct: string; createdAt: number; riv?: string; rsalt?: string; rct?: string };
+/** Recovery code: 5 groups of 5 (base32, no confusable chars). Encrypts a second copy of the key. */
+export function makeRecoveryCode(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const b = crypto.getRandomValues(new Uint8Array(25));
+  const chars = Array.from(b).map((x) => alphabet[x % alphabet.length]);
+  return [0, 5, 10, 15, 20].map((i) => chars.slice(i, i + 5).join("")).join("-");
+}
+const normCode = (c: string) => c.toUpperCase().replace(/[^A-Z2-9]/g, "");
 let _key: Uint8Array | null = null;
 let _addr: string | null = null;
 let _timer: ReturnType<typeof setTimeout> | null = null;
@@ -72,26 +80,59 @@ function armLock() {
 export function lock() { _key = null; if (_timer) clearTimeout(_timer); _timer = null; try { sessionStorage.removeItem(SESSION); } catch { /* ignore */ } emit(); }
 if (typeof window !== "undefined") restoreSession();
 
-async function persist(priv: Uint8Array, pass: string) {
+async function encryptWith(secret: string, priv: Uint8Array) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const aes = await deriveAes(pass, salt);
+  const aes = await deriveAes(secret, salt);
   const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv as BufferSource }, aes, priv as BufferSource));
-  const s: Stored = { addr: addressOf(priv), iv: b64(iv), salt: b64(salt), ct: b64(ct), createdAt: Date.now() };
+  return { iv: b64(iv), salt: b64(salt), ct: b64(ct) };
+}
+
+async function persist(priv: Uint8Array, pass: string, recoveryCode: string) {
+  const a = await encryptWith(pass, priv);
+  const r = await encryptWith(normCode(recoveryCode), priv);
+  const s: Stored = { addr: addressOf(priv), iv: a.iv, salt: a.salt, ct: a.ct, riv: r.iv, rsalt: r.salt, rct: r.ct, createdAt: Date.now() };
   localStorage.setItem(STORE, JSON.stringify(s));
   _key = priv; _addr = s.addr; armLock(); emit();
   return s.addr;
 }
 
-export async function createWallet(pass: string): Promise<string> {
+export type Created = { address: string; privateKey: string; recoveryCode: string };
+
+/** Creates the wallet. Returns the key + recovery code ONCE — the UI must force the user to save them. */
+export async function createWallet(pass: string): Promise<Created> {
   if (pass.length < 6) throw new Error("Passcode: at least 6 characters.");
-  return persist(secp.utils.randomPrivateKey(), pass);
+  const priv = secp.utils.randomPrivateKey();
+  const code = makeRecoveryCode();
+  const address = await persist(priv, pass, code);
+  return { address, privateKey: hex(priv), recoveryCode: code };
 }
-export async function importWallet(privHex: string, pass: string): Promise<string> {
+export async function importWallet(privHex: string, pass: string): Promise<Created> {
   const priv = unhex(privHex.trim());
   if (priv.length !== 32) throw new Error("Private key must be 32 bytes hex.");
   if (pass.length < 6) throw new Error("Passcode: at least 6 characters.");
-  return persist(priv, pass);
+  const code = makeRecoveryCode();
+  const address = await persist(priv, pass, code);
+  return { address, privateKey: hex(priv), recoveryCode: code };
+}
+/** Forgot the passcode: decrypt with the recovery code and set a new passcode (new recovery code too). */
+export async function recoverWallet(code: string, newPass: string): Promise<Created> {
+  const s = JSON.parse(localStorage.getItem(STORE) ?? "null") as Stored | null;
+  if (!s || !s.rct || !s.riv || !s.rsalt) throw new Error("No recovery data on this device (wallet created before recovery codes existed) — import the private key instead.");
+  if (newPass.length < 6) throw new Error("New passcode: at least 6 characters.");
+  const aes = await deriveAes(normCode(code), unb64(s.rsalt));
+  let priv: Uint8Array;
+  try {
+    priv = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(s.riv) as BufferSource }, aes, unb64(s.rct) as BufferSource));
+  } catch {
+    throw new Error("Recovery code does not match this wallet.");
+  }
+  const fresh = makeRecoveryCode();
+  const address = await persist(priv, newPass, fresh);
+  return { address, privateKey: hex(priv), recoveryCode: fresh };
+}
+export function hasRecovery(): boolean {
+  try { const s = JSON.parse(localStorage.getItem(STORE) ?? "null") as Stored | null; return !!s?.rct; } catch { return false; }
 }
 export async function unlock(pass: string): Promise<string> {
   const s = JSON.parse(localStorage.getItem(STORE) ?? "null") as Stored | null;

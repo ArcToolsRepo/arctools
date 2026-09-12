@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   createWallet, exportKey, forgetWallet, hasWallet, hotAddress, hotBalance, hotWait, hotWithdraw,
-  importWallet, isUnlocked, lock, onHotChange, unlock,
+  importWallet, isUnlocked, lock, onHotChange, recoverWallet, unlock, type Created,
 } from "@/lib/arc-hotwallet";
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -13,7 +13,10 @@ const DOWN = "var(--arc-down, #f0534f)";
 export function WalletPanel({ onReady }: { onReady: (addr: string | null) => void }) {
   const [, force] = useState(0);
   const [pass, setPass] = useState("");
-  const [mode, setMode] = useState<"create" | "import" | "unlock" | "open">(hasWallet() ? "unlock" : "create");
+  const [mode, setMode] = useState<"create" | "import" | "unlock" | "open" | "recover">(hasWallet() ? "unlock" : "create");
+  const [backup, setBackup] = useState<Created | null>(null);   // shown once after create/import/recover — must be acknowledged
+  const [ack, setAck] = useState(false);
+  const [rcode, setRcode] = useState("");
   const [imp, setImp] = useState("");
   const [bal, setBal] = useState<number | null>(null);
   const [qr, setQr] = useState<string | null>(null);
@@ -30,7 +33,7 @@ export function WalletPanel({ onReady }: { onReady: (addr: string | null) => voi
     setQr(await QRCode.toDataURL(a, { margin: 1, width: 150, color: { dark: "#e8ecf6", light: "#0e1118" } }).catch(() => null));
   }, []);
   useEffect(() => {
-    const off = onHotChange(() => { force((x) => x + 1); setMode(isUnlocked() ? "open" : hasWallet() ? "unlock" : "create"); onReady(isUnlocked() ? hotAddress() : null); });
+    const off = onHotChange(() => { force((x) => x + 1); setMode((m) => (m === "recover" && !isUnlocked() ? m : isUnlocked() ? "open" : hasWallet() ? "unlock" : "create")); onReady(isUnlocked() ? hotAddress() : null); });
     if (isUnlocked()) setMode("open");
     void refresh();
     const id = setInterval(refresh, 15_000);
@@ -51,19 +54,39 @@ export function WalletPanel({ onReady }: { onReady: (addr: string | null) => voi
       {mode !== "open" && (
         <div style={{ display: "grid", gap: 8 }}>
           {mode === "import" && <input className="arc-mono" onChange={(e) => setImp(e.target.value)} placeholder="private key 0x…" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 12, padding: "8px 10px" }} type="password" value={imp} />}
-          <input className="arc-mono" onChange={(e) => setPass(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void act(() => (mode === "unlock" ? unlock(pass) : mode === "import" ? importWallet(imp, pass) : createWallet(pass))); }} placeholder={mode === "unlock" ? "passcode" : "new passcode (min 6 chars)"} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 13, padding: "9px 10px" }} type="password" value={pass} />
+          {mode === "recover" && <input className="arc-mono" onChange={(e) => setRcode(e.target.value)} placeholder="recovery code XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 12, padding: "8px 10px" }} value={rcode} />}
+          <input className="arc-mono" onChange={(e) => setPass(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && mode === "unlock") void act(() => unlock(pass)); }} placeholder={mode === "unlock" ? "passcode" : "new passcode (min 6 chars)"} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 13, padding: "9px 10px" }} type="password" value={pass} />
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {mode === "unlock" && <button className="arc-cta" onClick={() => void act(() => unlock(pass))} type="button">Unlock</button>}
-            {mode === "create" && <button className="arc-cta" onClick={() => void act(() => createWallet(pass))} type="button">Create wallet</button>}
-            {mode === "import" && <button className="arc-cta" onClick={() => void act(() => importWallet(imp, pass))} type="button">Import</button>}
+            {mode === "create" && <button className="arc-cta" onClick={() => void act(async () => { setBackup(await createWallet(pass)); setAck(false); })} type="button">Create wallet</button>}
+            {mode === "import" && <button className="arc-cta" onClick={() => void act(async () => { setBackup(await importWallet(imp, pass)); setAck(false); })} type="button">Import</button>}
+            {mode === "recover" && <button className="arc-cta" onClick={() => void act(async () => { setBackup(await recoverWallet(rcode, pass)); setAck(false); })} type="button">Reset passcode</button>}
             {mode !== "import" && <button className="arc-mono" onClick={() => setMode("import")} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "6px 10px" }} type="button">import key</button>}
-            {mode === "import" && <button className="arc-mono" onClick={() => setMode(hasWallet() ? "unlock" : "create")} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "6px 10px" }} type="button">back</button>}
+            {(mode === "import" || mode === "recover") && <button className="arc-mono" onClick={() => setMode(hasWallet() ? "unlock" : "create")} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "6px 10px" }} type="button">back</button>}
+            {mode === "unlock" && <button className="arc-mono" onClick={() => setMode("recover")} style={{ background: "transparent", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, textDecoration: "underline" }} type="button">forgot passcode?</button>}
             {hasWallet() && mode !== "unlock" && <button className="arc-mono" onClick={() => setMode("unlock")} style={{ background: "transparent", border: "none", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 11 }} type="button">unlock existing</button>}
           </div>
           {hasWallet() && mode === "unlock" && addr && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>{short(addr)} · balance {bal !== null ? `${bal.toFixed(2)} USDC` : "…"}</p>}
         </div>
       )}
-      {mode === "open" && addr && (
+      {mode === "open" && addr && backup && !ack && (
+        <div style={{ background: "rgba(240,83,79,0.08)", border: "1px solid #f0534f", padding: 12 }}>
+          <p style={{ fontWeight: 700, margin: "0 0 6px" }}>Save these now. They are shown once.</p>
+          <p style={{ color: "var(--arc-muted)", fontSize: 12, margin: "0 0 8px" }}>The key exists only in this browser. If you clear site data or lose the device without these, the funds are gone. Either one restores the wallet anywhere.</p>
+          <p className="arc-mono" style={{ fontSize: 10, margin: "6px 0 2px" }}>PRIVATE KEY</p>
+          <p className="arc-mono" style={{ background: "#0e1118", border: "1px solid var(--arc-line)", fontSize: 11, margin: 0, padding: 8, wordBreak: "break-all" }}>{backup.privateKey}</p>
+          <p className="arc-mono" style={{ fontSize: 10, margin: "8px 0 2px" }}>RECOVERY CODE (resets a forgotten passcode on this device)</p>
+          <p className="arc-mono" style={{ background: "#0e1118", border: "1px solid var(--arc-line)", fontSize: 13, letterSpacing: 1, margin: 0, padding: 8 }}>{backup.recoveryCode}</p>
+          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+            <button className="arc-mono" onClick={() => { void navigator.clipboard.writeText(`ArcTools trading wallet ${backup.address}\nprivate key: ${backup.privateKey}\nrecovery code: ${backup.recoveryCode}`); setMsg("Copied both to clipboard."); }} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", cursor: "pointer", fontSize: 11, padding: "5px 10px" }} type="button">copy both</button>
+            <a className="arc-mono" download={`arctools-wallet-${backup.address.slice(2, 8)}.txt`} href={`data:text/plain,${encodeURIComponent(`ArcTools trading wallet\naddress: ${backup.address}\nprivate key: ${backup.privateKey}\nrecovery code: ${backup.recoveryCode}\n`)}`} style={{ border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 11, padding: "5px 10px", textDecoration: "none" }}>download .txt</a>
+          </div>
+          <label style={{ alignItems: "center", display: "flex", fontSize: 12, gap: 8, marginTop: 10 }}>
+            <input onChange={(e) => e.target.checked && setAck(true)} type="checkbox" /> I saved the private key or the recovery code somewhere safe.
+          </label>
+        </div>
+      )}
+      {mode === "open" && addr && (!backup || ack) && (
         <div>
           <div style={{ alignItems: "center", display: "flex", gap: 10 }}>
             <p className="arc-mono" style={{ fontSize: 26, margin: 0 }}>{bal !== null ? bal.toFixed(2) : "…"} <span style={{ color: "var(--arc-muted)", fontSize: 12 }}>USDC</span></p>
@@ -99,7 +122,7 @@ export function WalletPanel({ onReady }: { onReady: (addr: string | null) => voi
                 <button className="arc-mono" onClick={() => void act(async () => setShowKey(await exportKey(pass)))} style={{ background: "transparent", border: "1px solid var(--arc-cobalt)", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 11, padding: "0 10px" }} type="button">export</button>
               </div>
               {showKey && <p className="arc-mono" style={{ background: "#0e1118", border: "1px solid var(--arc-line)", fontSize: 11, margin: 0, padding: 8, wordBreak: "break-all" }}>{showKey}</p>}
-              <p style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>The key lives only in this browser. Back it up: clearing site data deletes it and the funds with it. Import it in MetaMask/Rabby any time.</p>
+              <p style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>The key lives only in this browser. Back it up: clearing site data deletes it and the funds with it. Import it in MetaMask/Rabby any time. Forgot the passcode? Lock and use "forgot passcode?" with your recovery code.</p>
               <button className="arc-mono" onClick={() => { if (confirm("Remove the wallet from this browser? Make sure the key is backed up.")) forgetWallet(); }} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: DOWN, cursor: "pointer", fontSize: 11, padding: "4px 8px", width: "fit-content" }} type="button">remove from this device</button>
             </div>
           )}

@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
-import { listTokens, type PadToken } from "@/lib/arc-api";
+import { holderRisk, listTokens, tokenLogos, type PadToken } from "@/lib/arc-api";
 import { padList } from "@/lib/arcpad";
 import { ARC_AGGREGATOR, encodeAggregatorSwap, p32 } from "@/lib/arc-wallet";
 import { hotAddress, hotCall, hotSend, hotWait } from "@/lib/arc-hotwallet";
@@ -62,6 +62,8 @@ function Trade() {
   const [tf, setTf] = useState(60);
   const [favs, setFavs] = useState<Set<string>>(new Set());
   const [liq, setLiq] = useState<Map<string, number>>(new Map());
+  const [logos, setLogos] = useState<Record<string, string>>({});
+  const [risk, setRisk] = useState<Record<string, { holders: number; top10: number | null; top1: number | null }>>({});
   const [sortKey, setSortKey] = useState<"age" | "mcap" | "vol" | "txs" | "chg">("vol");
   useEffect(() => { setFavs(loadFavs()); }, []);
   const toggleFav = (t: string) => setFavs((f) => { const n = new Set(f); if (n.has(t)) n.delete(t); else n.add(t); try { localStorage.setItem(FAV_KEY, JSON.stringify([...n])); } catch { /* ignore */ } return n; });
@@ -127,14 +129,14 @@ function Trade() {
     if (!addr) { setToast({ ok: false, text: "Create or unlock the trading wallet first." }); return; }
     setBusy(token); setToast(null);
     try {
-      const spend = (BigInt(Math.round(buyAmt * 1e6)) * 10n ** 12n * 100n) / 101n;
+      const spend = (BigInt(Math.round(buyAmt * 1e6)) * 10n ** 12n * 1000n) / 1015n;
       const r = await routeSwap({ data: { token, side: "buy", amount: spend.toString() } });
       if (r.error || r.legs.length === 0) throw new Error(r.error === "no venue" ? "No pool found for this token yet." : r.error ?? "No route.");
       lastRoute.current.set(token, r);
       const minOut = (BigInt(r.out) * BigInt(100 - slip)) / 100n;
       const legs = r.legs.map((l) => ({ venue: l.venue, target: l.target, fee: l.fee, key: l.key, amount: l.amount }));
-      const value = spend + spend / 100n;
-      const h = await hotSend({ to: ARC_AGGREGATOR, data: encodeAggregatorSwap("buy", token, legs, minOut, addr, 100), value });
+      const value = spend + (spend * 15n) / 1000n;
+      const h = await hotSend({ to: ARC_AGGREGATOR, data: encodeAggregatorSwap("buy", token, legs, minOut, addr, 150), value });
       setToast({ ok: true, text: `Buying ${symbol} for ${buyAmt} USDC via ${r.legs.map((l) => l.label).join(" + ")}…`, tx: h });
       const rc = await hotWait(h);
       setToast({ ok: rc.status === 1, text: rc.status === 1 ? `Bought ${symbol} for ${buyAmt} USDC.` : `Buy of ${symbol} reverted (slippage?).`, tx: h });
@@ -157,9 +159,9 @@ function Trade() {
         setToast({ ok: true, text: `Approving ${p.symbol ?? short(p.token)}…` });
         await hotWait(await hotSend({ to: p.token, data: SEL.approve + p32(ARC_AGGREGATOR) + "f".repeat(64), gasLimit: 80_000n }));
       }
-      const minOut = (BigInt(r.out) * 99n * BigInt(100 - slip)) / 10_000n;   // post-fee native USDC
+      const minOut = (BigInt(r.out) * 985n * BigInt(100 - slip)) / 100_000n;   // post-fee native USDC
       const legs = r.legs.map((l) => ({ venue: l.venue, target: l.target, fee: l.fee, key: l.key, amount: l.amount }));
-      const h = await hotSend({ to: ARC_AGGREGATOR, data: encodeAggregatorSwap("sell", p.token, legs, minOut, addr, 100) });
+      const h = await hotSend({ to: ARC_AGGREGATOR, data: encodeAggregatorSwap("sell", p.token, legs, minOut, addr, 150) });
       setToast({ ok: true, text: `Selling ${pct}% of ${p.symbol ?? short(p.token)}…`, tx: h });
       const rc = await hotWait(h);
       setToast({ ok: rc.status === 1, text: rc.status === 1 ? `Sold ${pct}% of ${p.symbol ?? short(p.token)}.` : "Sell reverted (slippage?).", tx: h });
@@ -185,7 +187,7 @@ function Trade() {
     const t = byToken.get(k); const tr = trendMap.get(k); const c = clusterMap.get(k);
     const createdTs = t?.createdAt ? new Date(t.createdAt).getTime() / 1000 : tr?.first_ts ?? null;
     return {
-      token: k, symbol: tr?.symbol ?? t?.symbol ?? short(k), name: t?.name ?? tr?.symbol ?? "", logo: t?.logo ?? null, pad: t?.pad ?? "",
+      token: k, symbol: tr?.symbol ?? t?.symbol ?? short(k), name: t?.name ?? tr?.symbol ?? "", logo: t?.logo ?? logos[k] ?? null, pad: t?.pad ?? "",
       age: createdTs, ca: k, mcap: tr?.mcap ?? t?.mcapUsd ?? null, chg: tr?.chg ?? null, athMcap: tr?.ath_mcap ?? null,
       liq: liq.get(k) ?? null, vol: tr?.vol ?? t?.volUsd ?? 0, txs: tr?.txs ?? 0, buys: tr?.buys ?? 0, sells: tr?.sells ?? 0, traders: tr?.traders ?? 0,
       insiders: c?.insiders ?? 0, twitter: t?.twitter ?? null, telegram: t?.telegram ?? null, website: t?.website ?? null,
@@ -206,7 +208,15 @@ function Trade() {
       base.sort((a, b) => key === "age" ? (b.age ?? 0) - (a.age ?? 0) : key === "mcap" ? (b.mcap ?? 0) - (a.mcap ?? 0) : key === "txs" ? b.txs - a.txs : key === "chg" ? (b.chg ?? -1e9) - (a.chg ?? -1e9) : b.vol - a.vol);
     }
     return base;
-  }, [tab, rows, trend, clusters, favs, q, sortKey, byToken, trendMap, clusterMap, liq]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, rows, trend, clusters, favs, q, sortKey, byToken, trendMap, clusterMap, liq, logos]); // eslint-disable-line react-hooks/exhaustive-deps
+  // lazy enrich visible rows: logos (screener index) + holder concentration (arc-scan), cached server-side
+  useEffect(() => {
+    const vis = tableRows.slice(0, 60).map((r) => r.token);
+    const needLogo = vis.filter((t) => !logos[t] && !byToken.get(t)?.logo);
+    if (needLogo.length) void tokenLogos({ data: { tokens: needLogo } }).then((m) => setLogos((o) => ({ ...o, ...m }))).catch(() => null);
+    const needRisk = vis.filter((t) => !risk[t]).slice(0, 40);
+    if (needRisk.length) void holderRisk({ data: { tokens: needRisk } }).then((m) => setRisk((o) => ({ ...o, ...m }))).catch(() => null);
+  }, [tableRows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <main className="arc-site" style={{ minHeight: "100dvh" }}>
@@ -259,12 +269,13 @@ function Trade() {
                       <th style={hd}>Liq</th>
                       <th style={hd}><button className="arc-mono" onClick={() => setSortKey("vol")} style={{ background: "none", border: "none", color: sortKey === "vol" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">{tfLabel(tf)} Vol ⇅</button></th>
                       <th style={hd}><button className="arc-mono" onClick={() => setSortKey("txs")} style={{ background: "none", border: "none", color: sortKey === "txs" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">{tfLabel(tf)} TXs ⇅</button></th>
+                      <th style={hd} title="share of supply held by the 10 largest wallets (LP/launchpad excluded) · holders">Top-10 %</th>
                       <th style={hd}>Insiders</th>
                       <th style={hd} />
                     </tr>
                   </thead>
                   <tbody>
-                    {tableRows.length === 0 && <tr><td className="arc-mono" colSpan={9} style={{ ...cell, color: "var(--arc-muted)" }}>{tab === "favs" ? "No favourites yet — click ☆ on any row." : tab === "insiders" ? "No token with 2+ insiders in the last 24h." : "Loading…"}</td></tr>}
+                    {tableRows.length === 0 && <tr><td className="arc-mono" colSpan={10} style={{ ...cell, color: "var(--arc-muted)" }}>{tab === "favs" ? "No favourites yet — click ☆ on any row." : tab === "insiders" ? "No token with 2+ insiders in the last 24h." : "Loading…"}</td></tr>}
                     {tableRows.map((r) => (
                       <tr key={r.token} style={{ background: favs.has(r.token) ? "rgba(46,124,255,0.05)" : undefined }}>
                         <td style={{ ...cell, paddingRight: 4 }}><button onClick={() => toggleFav(r.token)} style={{ background: "none", border: "none", color: favs.has(r.token) ? "#f5c542" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, padding: 0 }} title="favourite" type="button">{favs.has(r.token) ? "★" : "☆"}</button></td>
@@ -291,6 +302,7 @@ function Trade() {
                         <td className="arc-mono" style={cell}>{r.liq != null && r.liq > 0 ? usd(r.liq) : "—"}</td>
                         <td className="arc-mono" style={{ ...cell, color: "#f5c542" }}>{r.vol > 0 ? usd(r.vol) : "—"}</td>
                         <td className="arc-mono" style={cell}><div>{r.txs > 0 ? r.txs.toLocaleString() : "—"}</div>{r.txs > 0 && <div style={{ fontSize: 11 }}><span style={{ color: UP }}>{r.buys}</span> / <span style={{ color: DOWN }}>{r.sells}</span></div>}</td>
+                        <td className="arc-mono" style={cell}>{(() => { const k = risk[r.token]; if (!k) return <span style={{ color: "var(--arc-muted)" }}>…</span>; const t10 = k.top10; return <><div style={{ color: t10 == null ? "var(--arc-muted)" : t10 >= 50 ? DOWN : t10 >= 30 ? "#f5c542" : UP, fontWeight: 700 }}>{t10 == null ? "—" : `${t10.toFixed(0)}%`}</div><div style={{ color: "var(--arc-muted)", fontSize: 11 }}>{k.holders ? `${k.holders} holders` : ""}{k.top1 != null ? ` · #1 ${k.top1.toFixed(0)}%` : ""}</div></>; })()}</td>
                         <td className="arc-mono" style={{ ...cell, color: r.insiders ? UP : "var(--arc-muted)" }}>{r.insiders || "—"}</td>
                         <td style={{ ...cell, textAlign: "right" }}><BuyBtn symbol={r.symbol} token={r.token} /></td>
                       </tr>
@@ -320,7 +332,7 @@ function Trade() {
               )}
             </div>
             <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginTop: 14 }}>
-              Buys route through ArcAggregator (Uniswap V3 tiers, V4 pools, ArcToolsPad and Warp curves, split when it wins) with a 1% fee, 10% of it to $ARCT stakers. Need TP/SL, limit orders or copy-trade? <a href={SNIPER} rel="noreferrer" style={{ color: "var(--arc-cobalt)" }} target="_blank">Sniper bot</a>. Not financial advice.
+              Buys route through ArcAggregator (Uniswap V3 tiers, V4 pools, ArcToolsPad and Warp curves, split when it wins) with a 1.5% platform fee, 10% of it to $ARCT stakers. Need TP/SL, limit orders or copy-trade? <a href={SNIPER} rel="noreferrer" style={{ color: "var(--arc-cobalt)" }} target="_blank">Sniper bot</a>. Not financial advice.
             </p>
           </div>
 
