@@ -68,10 +68,11 @@ export { pad32, padNum, topicAddr };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function rpc(method: string, params: any[]): Promise<any> {
   let lastErr: unknown = null;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     const url = RPCS[attempt % RPCS.length];
     try {
       const res = await fetch(url, {
+        signal: AbortSignal.timeout(8000),
         body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params }),
         headers: {
           Accept: "application/json",
@@ -81,11 +82,17 @@ export async function rpc(method: string, params: any[]): Promise<any> {
         method: "POST",
       });
       const json = (await res.json()) as { result?: unknown; error?: { message?: string } };
-      if (json.error) throw new Error(json.error.message ?? "rpc error");
+      if (json.error) {
+        const msg = json.error.message ?? "rpc error";
+        // execution errors (revert, out of gas, invalid params) are deterministic: retrying only burns seconds
+        if (!/quota|rate|limit|too many|timeout|502|503|unavailable|busy/i.test(msg)) throw Object.assign(new Error(msg), { permanent: true });
+        throw new Error(msg);
+      }
       return json.result;
     } catch (e) {
+      if ((e as { permanent?: boolean }).permanent) throw e;
       lastErr = e;
-      await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+      await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error("rpc failed");
