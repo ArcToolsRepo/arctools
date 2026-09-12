@@ -65,7 +65,7 @@ function Trade() {
   const [amount, setAmount] = useState(5);
   const [custom, setCustom] = useState("");
   const [slip, setSlip] = useState(5);
-  const [tab, setTab] = useState<"new" | "trending" | "insiders" | "favs" | "holdings">("trending");
+  const [tab, setTab] = useState<"new" | "new15" | "trending" | "insiders" | "favs" | "holdings">("trending");
   const [rows, setRows] = useState<PadToken[]>([]);
   const [movers, setMovers] = useState<Mover[]>([]);
   const [trend, setTrend] = useState<Trend[]>([]);
@@ -208,13 +208,19 @@ function Trade() {
   const tableRows: Row[] = useMemo(() => {
     let base: Row[];
     if (tab === "new") base = rows.map((t) => toRow(t.token)).sort((a, b) => (b.age ?? 0) - (a.age ?? 0)).slice(0, 100);
+    else if (tab === "new15") {
+      // survivors: launched 15 min – 24 h ago, still have liquidity and at least one trade — the post-snipe window
+      const now = Date.now() / 1000;
+      base = rows.map((t) => toRow(t.token)).filter((r) => r.age && now - r.age >= 900 && now - r.age <= 86_400 && (r.liq === null || r.liq > 0))
+        .sort((a, b) => (b.age ?? 0) - (a.age ?? 0)).slice(0, 100);
+    }
     else if (tab === "trending") base = trend.map((t) => toRow(t.token));
     else if (tab === "insiders") base = clusters.map((c) => toRow(c.token));
     else if (tab === "favs") base = [...favs].map((t) => toRow(t));
     else base = [];
     base = base.filter(matches);
-    if (tab !== "new" || sortKey !== "vol") {
-      const key = tab === "new" && sortKey === "vol" ? "age" : sortKey;
+    if ((tab !== "new" && tab !== "new15") || sortKey !== "vol") {
+      const key = (tab === "new" || tab === "new15") && sortKey === "vol" ? "age" : sortKey;
       base.sort((a, b) => key === "age" ? (b.age ?? 0) - (a.age ?? 0) : key === "mcap" ? (b.mcap ?? 0) - (a.mcap ?? 0) : key === "txs" ? b.txs - a.txs : key === "chg" ? (b.chg ?? -1e9) - (a.chg ?? -1e9) : b.vol - a.vol);
     }
     return base;
@@ -256,7 +262,7 @@ function Trade() {
             </div>
             {/* tabs */}
             <div style={{ borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 2, marginBottom: 8 }}>
-              {([["new", "New pair"], ["trending", "Trending"], ["insiders", "Insider picks"], ["favs", `★ Watchlist${favs.size ? ` (${favs.size})` : ""}`], ["holdings", `Holdings${positions.length ? ` (${positions.length})` : ""}`]] as const).map(([k, l]) => (
+              {([["new", "New pair"], ["new15", "New >15m"], ["trending", "Trending"], ["insiders", "Insider picks"], ["favs", `★ Watchlist${favs.size ? ` (${favs.size})` : ""}`], ["holdings", `Holdings${positions.length ? ` (${positions.length})` : ""}`]] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setTab(k)} style={{ background: "transparent", border: "none", borderBottom: "2px solid " + (tab === k ? "var(--arc-up)" : "transparent"), color: tab === k ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, fontWeight: tab === k ? 700 : 400, padding: "8px 14px" }} type="button">{l}</button>
               ))}
               <span style={{ marginLeft: "auto" }}>
@@ -291,7 +297,7 @@ function Trade() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tableRows.length === 0 && <tr><td className="arc-mono" colSpan={10} style={{ ...cell, color: "var(--arc-muted)" }}>{tab === "favs" ? "No favourites yet — click ☆ on any row." : tab === "insiders" ? "No token with 2+ insiders in the last 24h." : "Loading…"}</td></tr>}
+                    {tableRows.length === 0 && <tr><td className="arc-mono" colSpan={10} style={{ ...cell, color: "var(--arc-muted)" }}>{tab === "favs" ? "No favourites yet — click ☆ on any row." : tab === "new15" ? "No launches between 15 min and 24 h old with liquidity right now." : tab === "insiders" ? "No token with 2+ insiders in the last 24h." : "Loading…"}</td></tr>}
                     {tableRows.map((r) => (
                       <tr key={r.token} style={{ background: favs.has(r.token) ? "rgba(46,124,255,0.05)" : undefined }}>
                         <td style={{ ...cell, paddingRight: 4 }}><button onClick={() => toggleFav(r.token)} style={{ background: "none", border: "none", color: favs.has(r.token) ? "#f5c542" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, padding: 0 }} title="favourite" type="button">{favs.has(r.token) ? "★" : "☆"}</button></td>

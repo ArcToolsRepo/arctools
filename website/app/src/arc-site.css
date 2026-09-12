@@ -654,3 +654,13 @@
   .arc-nav__brand { font-size: 16px; }
   .arc-wallet { padding: 8px 12px; font-size: 12px; }
 }
+
+/* toolkit grid on the home page */
+.arc-tools { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.arc-tool { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 18px 18px 16px; border: 1px solid var(--arc-line); background: rgba(255,255,255,0.02); color: var(--arc-ink); text-decoration: none; transition: border-color .15s, background .15s, transform .12s; }
+.arc-tool:hover { border-color: var(--arc-cobalt); background: rgba(46,124,255,0.07); transform: translateY(-2px); }
+.arc-tool h3 { margin: 0; font-size: 17px; font-weight: 600; }
+.arc-tool p { margin: 0; color: var(--arc-muted); font-size: 13.5px; line-height: 1.45; }
+.arc-tool__go { margin-top: auto; padding-top: 6px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--arc-cobalt); }
+@media (max-width: 900px) { .arc-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .arc-tools { grid-template-columns: 1fr; } }

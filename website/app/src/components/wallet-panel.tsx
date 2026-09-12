@@ -25,6 +25,8 @@ export function WalletPanel({ onReady }: { onReady: (addr: string | null) => voi
   const [showKey, setShowKey] = useState<string | null>(null);
   const [wd, setWd] = useState({ to: "", amt: "" });
   const [tab, setTab] = useState<"deposit" | "withdraw" | "keys">("deposit");
+  const [forget, setForget] = useState(false);   // locked-screen path: forget without unlocking (needs typed confirmation)
+  const [forgetTyped, setForgetTyped] = useState("");
   const [topup, setTopup] = useState({ amt: "", bal: null as number | null, busy: false });
   const [browser, setBrowser] = useState<string | null>(null);
   useEffect(() => { setBrowser(getStoredWallet()); return onWalletChange(setBrowser); }, []);
@@ -77,7 +79,12 @@ export function WalletPanel({ onReady }: { onReady: (addr: string | null) => voi
     <div style={{ background: "var(--arc-paper)", border: "1px solid var(--arc-line)", padding: 14 }}>
       <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between" }}>
         <p style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Trading wallet</p>
-        {mode === "open" && <button className="arc-mono" onClick={() => lock()} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "2px 8px" }} type="button">lock</button>}
+        {mode === "open" && (
+          <span style={{ display: "flex", gap: 6 }}>
+            <button className="arc-mono" onClick={() => { setTab("keys"); void startRotate("new"); }} style={{ background: "transparent", border: "1px solid var(--arc-cobalt)", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 11, padding: "2px 8px" }} title="Forget this wallet and generate a fresh one (warns about funds, exports the old key first)" type="button">🔄 new wallet</button>
+            <button className="arc-mono" onClick={() => lock()} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "2px 8px" }} type="button">lock</button>
+          </span>
+        )}
       </div>
       <p style={{ color: "var(--arc-muted)", fontSize: 12, margin: "4px 0 10px" }}>
         {mode === "open" ? "Unlocked. One-click buys sign here, no popups." : "A key generated in this browser, encrypted with your passcode. Deposit USDC to it and trade with one click."}
@@ -95,9 +102,25 @@ export function WalletPanel({ onReady }: { onReady: (addr: string | null) => voi
             {mode !== "import" && <button className="arc-mono" onClick={() => setMode("import")} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "6px 10px" }} type="button">import key</button>}
             {(mode === "import" || mode === "recover") && <button className="arc-mono" onClick={() => setMode(hasWallet() ? "unlock" : "create")} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "6px 10px" }} type="button">back</button>}
             {mode === "unlock" && <button className="arc-mono" onClick={() => setMode("recover")} style={{ background: "transparent", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, textDecoration: "underline" }} type="button">forgot passcode?</button>}
+            {mode === "unlock" && <button className="arc-mono" onClick={() => setForget(true)} style={{ background: "transparent", border: "none", color: DOWN, cursor: "pointer", fontSize: 11, textDecoration: "underline" }} type="button">forget & start a new wallet</button>}
             {hasWallet() && mode !== "unlock" && <button className="arc-mono" onClick={() => setMode("unlock")} style={{ background: "transparent", border: "none", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 11 }} type="button">unlock existing</button>}
           </div>
           {hasWallet() && mode === "unlock" && addr && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>{short(addr)} · balance {bal !== null ? `${bal.toFixed(2)} USDC` : "…"}</p>}
+          {mode === "unlock" && forget && addr && (
+            <div style={{ border: `1px solid ${(bal ?? 0) > 0.001 ? DOWN : "var(--arc-line)"}`, background: (bal ?? 0) > 0.001 ? "rgba(255,80,80,0.06)" : "#0e1118", display: "grid", gap: 8, padding: 10 }}>
+              <p className="arc-mono" style={{ color: (bal ?? 0) > 0.001 ? DOWN : "var(--arc-ink)", fontSize: 12, fontWeight: 700, margin: 0 }}>
+                {(bal ?? 0) > 0.001 ? `This wallet holds ${(bal ?? 0).toFixed(2)} USDC (plus any tokens).` : "This wallet looks empty (tokens not checked)."}
+              </p>
+              <p className="arc-mono" style={{ fontSize: 11, margin: 0 }}>
+                Without the passcode the key cannot be shown. If you know it, unlock first and use 🔄 new wallet — it exports the old key. If you have the recovery code, use "forgot passcode?". Forgetting now deletes the key from this browser for good.
+              </p>
+              <input className="arc-mono" onChange={(e) => setForgetTyped(e.target.value)} placeholder='type FORGET to confirm' style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 12, padding: "8px 10px" }} value={forgetTyped} />
+              <div style={{ display: "flex", gap: 6 }}>
+                <button className="arc-cta" disabled={forgetTyped !== "FORGET"} onClick={() => { forgetWallet(); setForget(false); setForgetTyped(""); setMode("create"); setMsg("Old wallet forgotten — create a new one above."); }} style={{ opacity: forgetTyped === "FORGET" ? 1 : 0.45 }} type="button">Forget & create new</button>
+                <button className="arc-mono" onClick={() => setForget(false)} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "4px 10px" }} type="button">cancel</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
       {mode === "open" && addr && backup && !ack && (
@@ -124,7 +147,7 @@ export function WalletPanel({ onReady }: { onReady: (addr: string | null) => voi
             <button className="arc-mono" onClick={() => { void navigator.clipboard.writeText(addr); setMsg("Address copied."); }} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", cursor: "pointer", fontSize: 11, padding: "3px 8px" }} type="button">{short(addr)} ⧉</button>
           </div>
           <div style={{ display: "flex", gap: 4, margin: "10px 0 8px" }}>
-            {(["deposit", "withdraw", "keys"] as const).map((t) => <button key={t} className="arc-mono" onClick={() => setTab(t)} style={{ background: tab === t ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (tab === t ? "var(--arc-cobalt)" : "var(--arc-line)"), color: tab === t ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "3px 10px" }} type="button">{t}</button>)}
+            {(["deposit", "withdraw", "keys"] as const).map((t) => <button key={t} className="arc-mono" onClick={() => setTab(t)} style={{ background: tab === t ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (tab === t ? "var(--arc-cobalt)" : "var(--arc-line)"), color: tab === t ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "3px 10px" }} type="button">{t === "keys" ? "keys · new wallet" : t}</button>)}
           </div>
           {tab === "deposit" && (
             <div style={{ alignItems: "center", display: "flex", gap: 12 }}>
@@ -143,8 +166,8 @@ export function WalletPanel({ onReady }: { onReady: (addr: string | null) => voi
               </p>
               <div style={{ display: "flex", gap: 6 }}>
                 <input className="arc-mono" inputMode="decimal" onChange={(e) => setTopup({ ...topup, amt: e.target.value })} placeholder="USDC" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", flex: 1, fontSize: 12, padding: "8px 10px" }} value={topup.amt} />
-                {[10, 50, 100].map((n) => <button className="arc-mono" key={n} onClick={() => setTopup({ ...topup, amt: String(n) })} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "0 8px" }} type="button">{n}</button>)}
-                <button className="arc-cta" disabled={topup.busy || !(Number(topup.amt) > 0)} onClick={() => void topUp()} style={{ opacity: topup.busy ? 0.6 : 1 }} type="button">{topup.busy ? "…" : browser ? "Send" : "Connect & send"}</button>
+                {[10, 50, 100].map((n) => <button className="arc-mono" key={n} onClick={() => setTopup({ ...topup, amt: String(n) })} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "0 7px" }} type="button">{n}</button>)}
+                <button className="arc-mono" disabled={topup.busy || !(Number(topup.amt) > 0)} onClick={() => void topUp()} style={{ background: "var(--arc-cobalt)", border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700, opacity: topup.busy || !(Number(topup.amt) > 0) ? 0.5 : 1, padding: "0 12px", whiteSpace: "nowrap" }} type="button">{topup.busy ? "…" : browser ? "Send" : "Connect & send"}</button>
               </div>
               <p style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>Moves native USDC from MetaMask / Rabby straight into the trading wallet (one confirmation, ~0.01 USDC gas).</p>
             </div>
