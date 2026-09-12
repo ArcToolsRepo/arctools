@@ -63,31 +63,21 @@ export function ArcNav({ active }: { active?: string }) {
         <a className="arc-link-tick" data-active={active === "/intel" || undefined} href="/intel">
           Intel
         </a>
-        <a className="arc-link-tick" href="https://t.me/ArcSniper_bot" rel="noreferrer" target="_blank">
-          Bot
-        </a>
-        <a
-          aria-label="ArcTools on X"
-          className="arc-link-tick"
-          href="https://x.com/ArcToolsBackup"
-          rel="noreferrer"
-          style={{ fontSize: 15, textTransform: "none" }}
-          target="_blank"
-          title="X"
-        >
-          𝕏
-        </a>
-        <a
-          aria-label="ArcTools Telegram portal"
-          className="arc-link-tick"
-          href="https://t.me/ArcToolsPortal"
-          rel="noreferrer"
-          style={{ fontSize: 15, textTransform: "none" }}
-          target="_blank"
-          title="Telegram"
-        >
-          ✈︎
-        </a>
+      </div>
+      <div className="arc-nav__socials" aria-label="ArcTools links">
+        {[
+          ["https://t.me/ArcSniper_bot", "🔫", "Sniper bot"],
+          ["https://t.me/ArcToolsBuyBot", "📟", "Buy bot"],
+          ["https://t.me/ARCTrends", "🔥", "Trending channel"],
+          ["https://t.me/ArcToolsInsiders", "👁", "Insider alerts"],
+          ["https://t.me/ArcToolsPortal", "✈︎", "Telegram portal"],
+          ["https://x.com/ArcToolsBackup", "𝕏", "X / Twitter"],
+        ].map(([href, icon, label]) => (
+          <a className="arc-nav__social" href={href} key={href} rel="noreferrer" target="_blank" title={label}>
+            <span aria-hidden className="arc-nav__social-icon">{icon}</span>
+            <span className="arc-nav__social-label">{label}</span>
+          </a>
+        ))}
       </div>
       {wallet ? (
         <button className="arc-wallet arc-mono" onClick={disconnect} title="Disconnect" type="button">
@@ -100,19 +90,29 @@ export function ArcNav({ active }: { active?: string }) {
       )}
     </nav>
     <PadTicker />
-    {active && active !== "/" && <style>{`
+    <style>{`
+      .arc-nav__socials { display: flex; align-items: center; gap: 6px; }
+      .arc-nav__social { display: inline-flex; align-items: center; gap: 8px; color: var(--arc-muted); text-decoration: none; font-size: 13px; padding: 4px 6px; border-radius: 6px; }
+      .arc-nav__social:hover { color: var(--arc-ink); background: rgba(255,255,255,0.05); }
+      .arc-nav__social-label { display: none; }
+      .arc-nav__social-icon { width: 18px; text-align: center; font-size: 14px; }
       @media (min-width: 1024px) {
-        .arc-nav--side { inset: 0 auto 0 0; width: 200px; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 6px; padding: 18px 14px; border-bottom: none; border-right: 1px solid var(--arc-line); overflow-y: auto; }
-        .arc-nav--side .arc-nav__brand { margin-bottom: 14px; }
-        .arc-nav--side .arc-nav__links { flex-direction: column; align-items: stretch !important; gap: 2px !important; flex: 1; }
-        .arc-nav--side .arc-nav__links a { padding: 9px 10px; border-radius: 6px; font-size: 13px; }
-        .arc-nav--side .arc-nav__links a[data-active], .arc-nav--side .arc-nav__links a[style*="underline"] { background: rgba(46,124,255,0.14); color: var(--arc-cobalt); text-decoration: none !important; }
-        .arc-nav--side .arc-wallet { margin-top: 12px; width: 100%; }
-        .arc-site:has(.arc-nav--side) { padding-left: 200px; }
-        .arc-site:has(.arc-nav--side) .arc-section { padding-top: 70px !important; }
-        .arc-site:has(.arc-nav--side) .arc-ticker, .arc-site:has(.arc-nav--side) .pad-ticker { margin-left: 0; }
+        .arc-nav--side { inset: 0 auto 0 0; width: 220px; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 4px; padding: 16px 12px; border-bottom: none; border-right: 1px solid var(--arc-line); overflow-y: auto; background: rgba(10,12,16,0.97); }
+        .arc-nav--side .arc-nav__brand { margin: 2px 6px 14px; }
+        .arc-nav--side .arc-nav__links { flex-direction: column; align-items: stretch !important; gap: 4px !important; }
+        .arc-nav--side .arc-nav__links a { display: flex; align-items: center; padding: 10px 12px; border-radius: 8px; font-size: 12.5px; letter-spacing: 0.06em; color: var(--arc-ink); background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); transition: background .12s, border-color .12s, transform .08s; }
+        .arc-nav--side .arc-nav__links a::after { display: none; }
+        .arc-nav--side .arc-nav__links a:hover { background: rgba(46,124,255,0.10); border-color: rgba(46,124,255,0.35); transform: translateX(2px); }
+        .arc-nav--side .arc-nav__links a[data-active], .arc-nav--side .arc-nav__links a[style*="underline"] { background: rgba(46,124,255,0.18); border-color: var(--arc-cobalt); color: #fff; text-decoration: none !important; box-shadow: inset 3px 0 0 var(--arc-cobalt); }
+        .arc-nav--side .arc-nav__socials { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--arc-line); flex-direction: column; align-items: stretch; gap: 2px; }
+        .arc-nav--side .arc-nav__social { padding: 7px 10px; font-size: 12px; }
+        .arc-nav--side .arc-nav__social-label { display: inline; }
+        .arc-nav--side .arc-wallet { margin-top: 10px; width: 100%; justify-content: center; }
+        .arc-site:has(.arc-nav--side) { padding-left: 220px; }
+        .arc-site:has(.arc-nav--side) .arc-ticker { left: 220px; right: 0; width: auto; top: 0; }
+        .arc-site:has(.arc-nav--side) .arc-section { padding-top: 64px !important; }
       }
-    `}</style>}
+    `}</style>
     </>
   );
 }
