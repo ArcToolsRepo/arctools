@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArcNav } from "@/components/arc-nav";
 import { holderRisk, listTokens, tokenLogos, type PadToken } from "@/lib/arc-api";
 import { padList } from "@/lib/arcpad";
-import { ARC_AGGREGATOR, encodeAggregatorSwap, p32 } from "@/lib/arc-wallet";
+import { ARC_AGGREGATOR, connectWallet, encodeAggregatorSwap, ethCall, getStoredWallet, onWalletChange, p32, sendTx, waitReceipt } from "@/lib/arc-wallet";
 import { hotAddress, hotCall, hotSend, hotWait } from "@/lib/arc-hotwallet";
 import { WalletPanel } from "@/components/wallet-panel";
 import { routeSwap, type RouteResult } from "@/lib/arc-route";
@@ -51,7 +51,17 @@ const hd: React.CSSProperties = { color: "var(--arc-muted)", fontSize: 10, fontW
 
 // ---------------- page ----------------
 function Trade() {
-  const [addr, setAddr] = useState<string | null>(null);
+  const [hotAddr, setHotAddr] = useState<string | null>(null);
+  // who signs: the in-browser trading wallet (one click) or the connected browser wallet (MetaMask/Rabby — confirm each tx)
+  const [signer, setSigner] = useState<"hot" | "browser">("hot");
+  const [browserAddr, setBrowserAddr] = useState<string | null>(null);
+  useEffect(() => { setBrowserAddr(getStoredWallet()); return onWalletChange(setBrowserAddr); }, []);
+  const addr = signer === "hot" ? hotAddr : browserAddr;
+  const setAddr = setHotAddr;
+  const send = async (tx: { to: string; data: string; value?: bigint; gasLimit?: bigint }) =>
+    signer === "hot" ? hotSend(tx) : sendTx({ to: tx.to, data: tx.data, value: tx.value, from: addr! });
+  const wait = async (h: string) => signer === "hot" ? hotWait(h) : waitReceipt(h, 90_000).then((r) => ({ status: Number(r.status) }));
+  const call = async (to: string, data: string) => signer === "hot" ? hotCall(to, data) : ethCall(to, data);
   const [amount, setAmount] = useState(5);
   const [custom, setCustom] = useState("");
   const [slip, setSlip] = useState(5);
@@ -126,7 +136,7 @@ function Trade() {
 
   // ---- one-click buy / sell through the aggregator, signed by the hot wallet
   const buy = async (token: string, symbol: string) => {
-    if (!addr) { setToast({ ok: false, text: "Create or unlock the trading wallet first." }); return; }
+    if (!addr) { setToast({ ok: false, text: signer === "hot" ? "Create or unlock the trading wallet first." : "Connect your browser wallet first." }); return; }
     setBusy(token); setToast(null);
     try {
       const spend = (BigInt(Math.round(buyAmt * 1e6)) * 10n ** 12n * 1000n) / 1015n;
@@ -136,9 +146,9 @@ function Trade() {
       const minOut = (BigInt(r.out) * BigInt(100 - slip)) / 100n;
       const legs = r.legs.map((l) => ({ venue: l.venue, target: l.target, fee: l.fee, key: l.key, amount: l.amount }));
       const value = spend + (spend * 15n) / 1000n;
-      const h = await hotSend({ to: ARC_AGGREGATOR, data: encodeAggregatorSwap("buy", token, legs, minOut, addr, 150), value });
+      const h = await send({ to: ARC_AGGREGATOR, data: encodeAggregatorSwap("buy", token, legs, minOut, addr, 150), value });
       setToast({ ok: true, text: `Buying ${symbol} for ${buyAmt} USDC via ${r.legs.map((l) => l.label).join(" + ")}…`, tx: h });
-      const rc = await hotWait(h);
+      const rc = await wait(h);
       setToast({ ok: rc.status === 1, text: rc.status === 1 ? `Bought ${symbol} for ${buyAmt} USDC.` : `Buy of ${symbol} reverted (slippage?).`, tx: h });
       void loadPositions();
     } catch (e) { setToast({ ok: false, text: (e as Error).message }); }
@@ -148,22 +158,22 @@ function Trade() {
     if (!addr) return;
     setBusy(p.token); setToast(null);
     try {
-      const balHex = await hotCall(p.token, SEL.balanceOf + p32(addr));
+      const balHex = await call(p.token, SEL.balanceOf + p32(addr));
       const bal = BigInt(balHex || "0x0");
       const amt = (bal * BigInt(pct)) / 100n;
       if (amt <= 0n) throw new Error("Nothing to sell.");
       const r = await routeSwap({ data: { token: p.token, side: "sell", amount: amt.toString() } });
       if (r.error || r.legs.length === 0) throw new Error("No route to sell.");
-      const al = BigInt((await hotCall(p.token, SEL.allowance + p32(addr) + p32(ARC_AGGREGATOR))) || "0x0");
+      const al = BigInt((await call(p.token, SEL.allowance + p32(addr) + p32(ARC_AGGREGATOR))) || "0x0");
       if (al < amt) {
         setToast({ ok: true, text: `Approving ${p.symbol ?? short(p.token)}…` });
-        await hotWait(await hotSend({ to: p.token, data: SEL.approve + p32(ARC_AGGREGATOR) + "f".repeat(64), gasLimit: 80_000n }));
+        await wait(await send({ to: p.token, data: SEL.approve + p32(ARC_AGGREGATOR) + "f".repeat(64), gasLimit: 80_000n }));
       }
       const minOut = (BigInt(r.out) * 985n * BigInt(100 - slip)) / 100_000n;   // post-fee native USDC
       const legs = r.legs.map((l) => ({ venue: l.venue, target: l.target, fee: l.fee, key: l.key, amount: l.amount }));
-      const h = await hotSend({ to: ARC_AGGREGATOR, data: encodeAggregatorSwap("sell", p.token, legs, minOut, addr, 150) });
+      const h = await send({ to: ARC_AGGREGATOR, data: encodeAggregatorSwap("sell", p.token, legs, minOut, addr, 150) });
       setToast({ ok: true, text: `Selling ${pct}% of ${p.symbol ?? short(p.token)}…`, tx: h });
-      const rc = await hotWait(h);
+      const rc = await wait(h);
       setToast({ ok: rc.status === 1, text: rc.status === 1 ? `Sold ${pct}% of ${p.symbol ?? short(p.token)}.` : "Sell reverted (slippage?).", tx: h });
       void loadPositions();
     } catch (e) { setToast({ ok: false, text: (e as Error).message }); }
@@ -231,7 +241,13 @@ function Trade() {
             </div>
             {/* quick-buy bar */}
             <div style={{ alignItems: "center", background: "var(--arc-paper)", border: "1px solid var(--arc-line)", display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10, padding: "8px 12px" }}>
-              <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>QUICK BUY</span>
+              <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>SIGN WITH</span>
+              {(["hot", "browser"] as const).map((k) => (
+                <button className="arc-mono" key={k} onClick={() => { setSigner(k); if (k === "browser" && !browserAddr) void connectWallet().then(setBrowserAddr).catch(() => null); }} style={{ background: signer === k ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (signer === k ? "var(--arc-cobalt)" : "var(--arc-line)"), borderRadius: 4, color: signer === k ? "#fff" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "4px 8px" }} title={k === "hot" ? "In-browser trading wallet: one click, no popups" : "MetaMask / Rabby: confirm every transaction"} type="button">
+                  {k === "hot" ? "⚡ trading" : browserAddr && signer === "browser" ? `🦊 ${browserAddr.slice(0, 6)}…` : "🦊 browser"}
+                </button>
+              ))}
+              <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 6 }}>QUICK BUY</span>
               {[1, 5, 20, 100].map((a) => <button key={a} className="arc-mono" onClick={() => { setAmount(a); setCustom(""); }} style={{ background: amount === a && !custom ? "rgba(34,197,128,0.18)" : "transparent", border: "1px solid " + (amount === a && !custom ? UP : "var(--arc-line)"), color: amount === a && !custom ? UP : "var(--arc-ink)", cursor: "pointer", fontSize: 12, padding: "4px 10px" }} type="button">{a} USDC</button>)}
               <input className="arc-mono" inputMode="decimal" onChange={(e) => setCustom(e.target.value)} placeholder="custom" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 12, padding: "4px 8px", width: 80 }} value={custom} />
               <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 8 }}>SLIPPAGE</span>

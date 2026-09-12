@@ -1,3 +1,4 @@
+import { connectWallet, getStoredWallet, nativeBalance, onWalletChange, sendTx, waitReceipt } from "@/lib/arc-wallet";
 import QRCode from "qrcode";
 import { useCallback, useEffect, useState } from "react";
 
@@ -24,6 +25,25 @@ export function WalletPanel({ onReady }: { onReady: (addr: string | null) => voi
   const [showKey, setShowKey] = useState<string | null>(null);
   const [wd, setWd] = useState({ to: "", amt: "" });
   const [tab, setTab] = useState<"deposit" | "withdraw" | "keys">("deposit");
+  const [topup, setTopup] = useState({ amt: "", bal: null as number | null, busy: false });
+  const [browser, setBrowser] = useState<string | null>(null);
+  useEffect(() => { setBrowser(getStoredWallet()); return onWalletChange(setBrowser); }, []);
+  useEffect(() => { if (browser) void nativeBalance(browser).then((b) => setTopup((t) => ({ ...t, bal: b }))).catch(() => null); }, [browser]);
+  const topUp = async () => {
+    const amt = Number(topup.amt);
+    if (!addr || !(amt > 0)) return;
+    setTopup((t) => ({ ...t, busy: true })); setMsg(null);
+    try {
+      const from = browser ?? (await connectWallet());
+      const h = await sendTx({ to: addr, data: "0x", value: BigInt(Math.round(amt * 1e6)) * 10n ** 12n, from });
+      setMsg(`Top-up sent: ${h.slice(0, 14)}…`);
+      await waitReceipt(h, 90_000);
+      setMsg(`Top-up of ${amt} USDC confirmed.`);
+      await refresh();
+      void nativeBalance(from).then((b) => setTopup((t) => ({ ...t, bal: b, amt: "" }))).catch(() => null);
+    } catch (e) { setMsg((e as Error).message.includes("reject") ? "Top-up cancelled in the wallet." : "Top-up failed: " + (e as Error).message.slice(0, 80)); }
+    setTopup((t) => ({ ...t, busy: false }));
+  };
   // "replace wallet" flow: warn about funds on the old key, force a key export, then generate a fresh one
   const [rot, setRot] = useState<null | { positions: number | null; oldKey: string | null; saved: boolean; newPass: string; action: "new" | "remove" }>(null);
   const startRotate = async (action: "new" | "remove") => {
@@ -114,6 +134,19 @@ export function WalletPanel({ onReady }: { onReady: (addr: string | null) => voi
                 <p className="arc-mono" style={{ fontSize: 11, margin: "0 0 6px", wordBreak: "break-all" }}>{addr}</p>
                 <p style={{ color: "var(--arc-muted)", margin: 0 }}>From another chain: <a href="/bridge" style={{ color: "var(--arc-cobalt)" }}>bridge</a> USDC to this address. Gas is USDC too — keep 0.05 spare.</p>
               </div>
+            </div>
+          )}
+          {tab === "deposit" && (
+            <div style={{ borderTop: "1px solid var(--arc-line)", display: "grid", gap: 6, marginTop: 10, paddingTop: 10 }}>
+              <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>
+                TOP UP FROM BROWSER WALLET{browser ? ` · ${browser.slice(0, 6)}…${browser.slice(-4)}${topup.bal !== null ? ` · ${topup.bal.toFixed(2)} USDC` : ""}` : ""}
+              </p>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input className="arc-mono" inputMode="decimal" onChange={(e) => setTopup({ ...topup, amt: e.target.value })} placeholder="USDC" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", flex: 1, fontSize: 12, padding: "8px 10px" }} value={topup.amt} />
+                {[10, 50, 100].map((n) => <button className="arc-mono" key={n} onClick={() => setTopup({ ...topup, amt: String(n) })} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "0 8px" }} type="button">{n}</button>)}
+                <button className="arc-cta" disabled={topup.busy || !(Number(topup.amt) > 0)} onClick={() => void topUp()} style={{ opacity: topup.busy ? 0.6 : 1 }} type="button">{topup.busy ? "…" : browser ? "Send" : "Connect & send"}</button>
+              </div>
+              <p style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>Moves native USDC from MetaMask / Rabby straight into the trading wallet (one confirmation, ~0.01 USDC gas).</p>
             </div>
           )}
           {tab === "withdraw" && (
