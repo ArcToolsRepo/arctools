@@ -27,6 +27,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as TokenCaRouteImport } from './routes/token.$ca'
 import { Route as PadCaRouteImport } from './routes/pad.$ca'
 import { Route as ApiWarmRouteImport } from './routes/api/warm'
+import { Route as ApiTokensRouteImport } from './routes/api/tokens'
 import { Route as ApiTokenpageRouteImport } from './routes/api/tokenpage'
 import { Route as ApiRpcRouteImport } from './routes/api/rpc'
 import { Route as ApiPadLogoCaRouteImport } from './routes/api/pad-logo.$ca'
@@ -122,6 +123,11 @@ const ApiWarmRoute = ApiWarmRouteImport.update({
   path: '/api/warm',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiTokensRoute = ApiTokensRouteImport.update({
+  id: '/api/tokens',
+  path: '/api/tokens',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiTokenpageRoute = ApiTokenpageRouteImport.update({
   id: '/api/tokenpage',
   path: '/api/tokenpage',
@@ -161,6 +167,7 @@ export interface FileRoutesByFullPath {
   '/trade': typeof TradeRoute
   '/api/rpc': typeof ApiRpcRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
+  '/api/tokens': typeof ApiTokensRoute
   '/api/warm': typeof ApiWarmRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
@@ -185,6 +192,7 @@ export interface FileRoutesByTo {
   '/trade': typeof TradeRoute
   '/api/rpc': typeof ApiRpcRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
+  '/api/tokens': typeof ApiTokensRoute
   '/api/warm': typeof ApiWarmRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
@@ -210,6 +218,7 @@ export interface FileRoutesById {
   '/trade': typeof TradeRoute
   '/api/rpc': typeof ApiRpcRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
+  '/api/tokens': typeof ApiTokensRoute
   '/api/warm': typeof ApiWarmRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
@@ -236,6 +245,7 @@ export interface FileRouteTypes {
     | '/trade'
     | '/api/rpc'
     | '/api/tokenpage'
+    | '/api/tokens'
     | '/api/warm'
     | '/pad/$ca'
     | '/token/$ca'
@@ -260,6 +270,7 @@ export interface FileRouteTypes {
     | '/trade'
     | '/api/rpc'
     | '/api/tokenpage'
+    | '/api/tokens'
     | '/api/warm'
     | '/pad/$ca'
     | '/token/$ca'
@@ -284,6 +295,7 @@ export interface FileRouteTypes {
     | '/trade'
     | '/api/rpc'
     | '/api/tokenpage'
+    | '/api/tokens'
     | '/api/warm'
     | '/pad/$ca'
     | '/token/$ca'
@@ -309,6 +321,7 @@ export interface RootRouteChildren {
   TradeRoute: typeof TradeRoute
   ApiRpcRoute: typeof ApiRpcRoute
   ApiTokenpageRoute: typeof ApiTokenpageRoute
+  ApiTokensRoute: typeof ApiTokensRoute
   ApiWarmRoute: typeof ApiWarmRoute
   PadCaRoute: typeof PadCaRoute
   TokenCaRoute: typeof TokenCaRoute
@@ -444,6 +457,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWarmRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/tokens': {
+      id: '/api/tokens'
+      path: '/api/tokens'
+      fullPath: '/api/tokens'
+      preLoaderRoute: typeof ApiTokensRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/tokenpage': {
       id: '/api/tokenpage'
       path: '/api/tokenpage'
@@ -493,6 +513,7 @@ const rootRouteChildren: RootRouteChildren = {
   TradeRoute: TradeRoute,
   ApiRpcRoute: ApiRpcRoute,
   ApiTokenpageRoute: ApiTokenpageRoute,
+  ApiTokensRoute: ApiTokensRoute,
   ApiWarmRoute: ApiWarmRoute,
   PadCaRoute: PadCaRoute,
   TokenCaRoute: TokenCaRoute,

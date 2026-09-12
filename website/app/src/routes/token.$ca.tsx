@@ -19,7 +19,7 @@ import "../arc-site.css";
 function TokenSkeleton() {
   return (
     <main className="arc-site" style={{ minHeight: "100dvh" }}>
-      <ArcNav active="/feed" />
+      <ArcNav active="/trade" />
       <section className="arc-section" style={{ maxWidth: 1360, paddingTop: 118 }}>
         <div style={{ alignItems: "center", display: "flex", gap: 14, marginBottom: 18 }}>
           <div className="arc-skel" style={{ height: 56, width: 56 }} />
@@ -506,7 +506,7 @@ function TokenPage() {
   if (!info) {
     return (
       <main className="arc-site" style={{ minHeight: "100dvh" }}>
-        <ArcNav active="/feed" />
+        <ArcNav active="/trade" />
         <section className="arc-section" style={{ paddingTop: 130 }}>
           <h1 className="arc-h2">Token not found</h1>
           <p className="arc-body">{error ?? "Unknown error."}</p>
@@ -523,7 +523,7 @@ function TokenPage() {
 
   return (
     <main className="arc-site" style={{ minHeight: "100dvh" }}>
-      <ArcNav active="/feed" />
+      <ArcNav active="/trade" />
       <section className="arc-section arc-token" style={{ maxWidth: 1440, paddingTop: 112 }}>
         {/* ---------- header ---------- */}
         <div className="arc-token__head">

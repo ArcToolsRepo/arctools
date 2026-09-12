@@ -1672,7 +1672,7 @@ export const tokenLogos = createServerFn({ method: "POST" })
     const icons = await screenerIcons().catch(() => new Map<string, string>());
     const out: Record<string, string> = {};
     for (const t of want) {
-      const u = icons.get(t);
+      const u = ipfsToHttp(icons.get(t) ?? "");
       if (u) out[t] = u;
     }
     try {
@@ -1720,13 +1720,37 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   // order = priority when the same token appears in several sources
   const order = ["ArcPad", "RadarDex", "Warp", "Tolly", "Archemist", "Arguspad", "UniswapV4", "UniswapV3"];
   const byName = new Map(ALL_PADS.map((p, i) => [p, rest[i]]));
-  const all = [...pad, ...order.flatMap((p) => byName.get(p as typeof ALL_PADS[number]) ?? [])].filter((t) => { const k = t.token.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  // the RadarDex screener (chain-wide top tokens by activity, with icons + socials + mcap): established tokens such as
+  // TOLLY / ARGUS never appear in any launch feed, this is where their metadata comes from
+  const screener: PadToken[] = await memo("radar:screener", 60_000, async () => {
+    const j = (await fetch("https://api.radardex.pro/tokens", { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) }).then((r) => r.json())) as { tokens?: Record<string, unknown>[] };
+    const padOf = (lp: unknown) => ({ argus: "Arguspad", archemist: "Archemist", tolly: "Tolly", arcpad: "ArcPad", warp: "Warp", arctoolspad: "ArcToolsPad" } as Record<string, string>)[String(lp ?? "").toLowerCase()] ?? "RadarDex";
+    return (j.tokens ?? []).filter((t) => /^0x[0-9a-fA-F]{40}$/.test(String(t.address ?? ""))).map((t) => ({
+      createdAt: typeof t.deployTs === "number" ? new Date(Number(t.deployTs) * 1000).toISOString() : (typeof t.firstSeen === "number" ? new Date(Number(t.firstSeen) * 1000).toISOString() : null),
+      logo: ipfsToHttp(String(t.icon ?? t.logoURI ?? "")), mcapUsd: typeof t.mcap === "number" ? Number(t.mcap) : null, name: String(t.name ?? ""), pad: padOf(t.launchpad) || "RadarDex",
+      pool: null, priceUsd: typeof t.price === "number" ? Number(t.price) : null, stage: (t.versions as string[] | undefined)?.includes("v4") ? "V4 pool" : "pool",
+      symbol: String(t.symbol ?? ""), telegram: (t.telegram as string) ?? null, token: String(t.address).toLowerCase(), twitter: (t.twitter as string) ?? null,
+      venueUrl: `/token/${String(t.address).toLowerCase()}`, volUsd: typeof t.volume24 === "number" ? Number(t.volume24) : null, website: (t.website as string) ?? null,
+    }) as PadToken);
+  }, (v) => v.length > 20).catch(() => [] as PadToken[]);
+  const all = [...pad, ...order.flatMap((p) => byName.get(p as typeof ALL_PADS[number]) ?? []), ...screener].filter((t) => { const k = t.token.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
   // keep the payload small (the Terminal shows 100 rows per tab): newest 600 + top 300 by volume, compact fields
   const ts = (t: PadToken) => (t.createdAt ? Date.parse(t.createdAt) : 0);
   const newest = [...all].sort((a, b) => ts(b) - ts(a)).slice(0, 400);
   const busiest = [...all].sort((a, b) => (b.volUsd ?? 0) - (a.volUsd ?? 0)).slice(0, 200);
   const keep = new Map<string, PadToken>();
   for (const t of [...newest, ...busiest]) keep.set(t.token.toLowerCase(), t);
+  // the screener set (chain-wide most active) is always carried whole
+  const scr = new Set(screener.map((t) => t.token.toLowerCase()));
+  for (const t of all) if (scr.has(t.token.toLowerCase())) keep.set(t.token.toLowerCase(), t);
+  // whatever is trending / moving in the last 24 h must carry its metadata into the Terminal rows
+  try {
+    const tr = await memo("trend:1440", 60_000, async () =>
+      (await fetch("https://bot-production-4200.up.railway.app/api/trending?minutes=1440&limit=150", { signal: AbortSignal.timeout(10_000) }).then((r) => r.json())) as { rows?: { token: string }[] },
+    (v) => (v.rows?.length ?? 0) > 0);
+    const want = new Set((tr.rows ?? []).map((r) => r.token.toLowerCase()));
+    for (const t of all) if (want.has(t.token.toLowerCase())) keep.set(t.token.toLowerCase(), t);
+  } catch { /* trending API busy: newest + busiest + screener */ }
   const official = all.find((t) => t.token.toLowerCase() === "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52");
   if (official) keep.set(official.token.toLowerCase(), official);
   return [...keep.values()].sort((a, b) => ts(b) - ts(a)).map((t) => ({

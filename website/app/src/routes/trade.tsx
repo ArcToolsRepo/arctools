@@ -76,6 +76,10 @@ function Trade() {
   // who signs: the in-browser trading wallet (one click) or the connected browser wallet (MetaMask/Rabby — confirm each tx)
   const [signer, setSigner] = useState<"hot" | "browser">("hot");
   const [toastsOn, setToastsOn] = useState(true);
+  // feed-style filters: launchpad / source, market-cap band, min volume (all persisted in the URL-free local state)
+  const [padF, setPadF] = useState<string>("all");
+  const [minMc, setMinMc] = useState(""); const [maxMc, setMaxMc] = useState(""); const [minVol, setMinVol] = useState("");
+  const PADS: [string, string][] = [["all", "All sources"], ["ArcToolsPad", "ArcToolsPad"], ["ArcPad", "ArcPad"], ["RadarDex", "RadarDex"], ["Warp", "Warp"], ["Tolly", "Tolly"], ["Archemist", "Archemist"], ["Arguspad", "Arguspad"], ["UniswapV4", "Uniswap V4"], ["UniswapV3", "Uniswap V3 pools"]];
   useEffect(() => { try { setToastsOn(localStorage.getItem("arctools_toasts") !== "0"); } catch { /* ignore */ } }, []);
   const toggleToasts = () => setToastsOn((v) => { try { localStorage.setItem("arctools_toasts", v ? "0" : "1"); } catch { /* ignore */ } return !v; });
   const [browserAddr, setBrowserAddr] = useState<string | null>(null);
@@ -257,6 +261,11 @@ function Trade() {
     else if (tab === "favs") base = [...favs].map((t) => toRow(t));
     else base = [];
     base = base.filter(matches);
+    if (padF !== "all") base = base.filter((r) => (r.pad || "").toLowerCase() === padF.toLowerCase());
+    const lo = Number(minMc) || 0, hi = Number(maxMc) || 0, mv = Number(minVol) || 0;
+    if (lo) base = base.filter((r) => (r.mcap ?? 0) >= lo);
+    if (hi) base = base.filter((r) => (r.mcap ?? 0) > 0 && (r.mcap ?? 0) <= hi);
+    if (mv) base = base.filter((r) => r.vol >= mv);
     if ((tab !== "new" && tab !== "new15") || sortKey !== "vol") {
       const key = (tab === "new" || tab === "new15") && sortKey === "vol" ? "age" : sortKey;
       base.sort((a, b) => key === "age" ? (b.age ?? 0) - (a.age ?? 0) : key === "mcap" ? (b.mcap ?? 0) - (a.mcap ?? 0) : key === "txs" ? b.txs - a.txs : key === "chg" ? (b.chg ?? -1e9) - (a.chg ?? -1e9) : b.vol - a.vol);
@@ -266,7 +275,7 @@ function Trade() {
       base = [toRow(OFFICIAL_TOKEN), ...base.filter((r) => r.token.toLowerCase() !== OFFICIAL_TOKEN)];
     }
     return base;
-  }, [tab, rows, trend, clusters, favs, q, sortKey, byToken, trendMap, clusterMap, liq, logos]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, rows, trend, clusters, favs, q, sortKey, byToken, trendMap, clusterMap, liq, logos, padF, minMc, maxMc, minVol]); // eslint-disable-line react-hooks/exhaustive-deps
   // lazy enrich visible rows: logos (screener index) + holder concentration (arc-scan), cached server-side
   useEffect(() => {
     const vis = tableRows.slice(0, 60).map((r) => r.token);
@@ -304,6 +313,17 @@ function Trade() {
               <input className="arc-mono" onChange={(e) => setQ(e.target.value)} placeholder="filter / paste CA" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", flex: "1 1 160px", fontSize: 12, marginLeft: "auto", padding: "4px 8px" }} value={q} />
             </div>
             {/* tabs */}
+            <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, margin: "2px 0 8px" }}>
+              {PADS.map(([k, l]) => <button className="arc-mono" key={k} onClick={() => setPadF(k)} style={{ background: padF === k ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (padF === k ? "var(--arc-cobalt)" : "var(--arc-line)"), borderRadius: 999, color: padF === k ? "#fff" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "3px 10px" }} type="button">{l}</button>)}
+              <span style={{ flex: 1 }} />
+              {[["min MC $", minMc, setMinMc], ["max MC $", maxMc, setMaxMc], ["min vol $", minVol, setMinVol]].map(([ph, v, set]) => (
+                <input className="arc-mono" inputMode="numeric" key={ph as string} onChange={(e) => (set as (x: string) => void)(e.target.value.replace(/[^0-9.]/g, ""))} placeholder={ph as string} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-ink)", fontSize: 11, padding: "4px 8px", width: 84 }} value={v as string} />
+              ))}
+              <select className="arc-mono" onChange={(e) => setSortKey(e.target.value as typeof sortKey)} style={{ background: "#0e1118", border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-ink)", fontSize: 11, padding: "4px 6px" }} value={sortKey}>
+                <option value="vol">Sort: volume</option><option value="age">Sort: newest</option><option value="mcap">Sort: market cap</option><option value="txs">Sort: trades</option><option value="chg">Sort: % change</option>
+              </select>
+              {(padF !== "all" || minMc || maxMc || minVol || q) && <button className="arc-mono" onClick={() => { setPadF("all"); setMinMc(""); setMaxMc(""); setMinVol(""); setQ(""); }} style={{ background: "transparent", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, textDecoration: "underline" }} type="button">clear</button>}
+            </div>
             <div style={{ borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 2, marginBottom: 8 }}>
               {([["new", "New pair"], ["new15", "New <15m"], ["trending", "Trending"], ["insiders", "Insider picks"], ["favs", `★ Watchlist${favs.size ? ` (${favs.size})` : ""}`], ["holdings", `Holdings${positions.length ? ` (${positions.length})` : ""}`]] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setTab(k)} style={{ background: "transparent", border: "none", borderBottom: "2px solid " + (tab === k ? "var(--arc-up)" : "transparent"), color: tab === k ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, fontWeight: tab === k ? 700 : 400, padding: "8px 14px" }} type="button">{l}</button>
@@ -341,7 +361,7 @@ function Trade() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tableRows.length === 0 && <tr><td className="arc-mono" colSpan={10} style={{ ...cell, color: "var(--arc-muted)" }}>{tab === "favs" ? "No favourites yet — click ☆ on any row." : tab === "new15" ? "No launch younger than 15 minutes right now — watch New pair." : tab === "insiders" ? "No token with 2+ insiders in the last 24h." : "Loading…"}</td></tr>}
+                    {tableRows.length === 0 && <tr><td className="arc-mono" colSpan={10} style={{ ...cell, color: "var(--arc-muted)" }}>{tab === "favs" ? "No favourites yet — click ☆ on any row." : tab === "new15" ? "No launch younger than 15 minutes right now — watch New pair." : (padF !== "all" || minMc || maxMc || minVol) ? "Nothing matches these filters."  : tab === "insiders" ? "No token with 2+ insiders in the last 24h." : "Loading…"}</td></tr>}
                     {tableRows.map((r) => (
                       <tr className="arc-row-link" key={r.token} onClick={rowClick(r.token)} onMouseEnter={() => { void import("@/lib/arc-api").then((m) => m.tokenPage({ data: { token: r.token } })).catch(() => null); }} style={{ background: r.token.toLowerCase() === OFFICIAL_TOKEN ? "rgba(46,124,255,0.09)" : favs.has(r.token) ? "rgba(46,124,255,0.05)" : undefined, cursor: "pointer" }}>
                         <td style={{ ...cell, paddingRight: 4 }}><button onClick={() => toggleFav(r.token)} style={{ background: "none", border: "none", color: favs.has(r.token) ? "#f5c542" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, padding: 0 }} title="favourite" type="button">{favs.has(r.token) ? "★" : "☆"}</button></td>

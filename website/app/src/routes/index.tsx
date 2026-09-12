@@ -109,7 +109,7 @@ function Index() {
               </span>
             ))}
           </div>
-          <a className="arc-link-tick" href="/feed">All launches</a>
+          <a className="arc-link-tick" href="/trade">All launches</a>
         </div>
       </section>
 
@@ -180,8 +180,8 @@ function Index() {
             ["Insiders", "Top-100 wallets by 30-day PnL and their live activity, plus the rising tier.", "/insiders", "Leaderboard"],
             ["Insider alerts", "Telegram channel: buys, sells, clusters and new entrants of the top wallets.", "https://t.me/ArcToolsInsiders", "Join"],
             ["Intel", "Whales, fresh capital, bridge flows, balance moves, movers and a custom alert builder.", "/intel", "Explore"],
-            ["Token explorer", "Every launch from ten venues with logos, socials, stage badges and candles.", "/feed", "Feed"],
-            ["Token pages", "Chart, trades, holders, insider flags and the unified swap for any contract.", "/feed", "Browse"],
+            ["Token explorer", "Every launch from ten venues inside the Terminal: source chips, market-cap and volume filters.", "/trade", "Explore"],
+            ["Token pages", "Chart, trades, holders, insider flags and the unified swap for any contract.", "/trade", "Browse"],
             ["Scanner", "Rug check: ownership and mint levers, real liquidity, spot price, ticker clones.", "/scan", "Scan"],
             ["Profile", "Equity, holdings with average entry and realized PnL, trade history, deposits.", "/profile", "Profile"],
             ["Portfolio", "Any Arc wallet valued live in USDC, every token priced in one pass.", "/portfolio", "Check"],

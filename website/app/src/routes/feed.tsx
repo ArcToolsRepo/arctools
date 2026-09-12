@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
@@ -15,24 +15,8 @@ import {
 import "../arc-site.css";
 
 export const Route = createFileRoute("/feed")({
-  head: () => ({
-    meta: [
-      { title: "Arc token explorer: every launchpad, live" },
-      {
-        name: "description",
-        content:
-          "All tokens on Arc with market caps, volume, filters and live charts: RadarDex, ArcPad, Warp and fresh Uniswap V3 pools.",
-      },
-    ],
-    links: [
-      { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      {
-        rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap",
-      },
-    ],
-  }),
+  // The explorer lives inside the Terminal now (source chips + filters); old links keep working.
+  beforeLoad: () => { throw redirect({ to: "/trade" }); },
   component: FeedPage,
 });
 
