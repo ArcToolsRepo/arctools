@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
 import { SocialCheck } from "@/components/social-check";
+import { RiskCard, Tags, useWalletLabels } from "@/components/risk";
 import { TokenLogo } from "@/components/token-logo";
 import { TvChart, type Candle } from "@/components/tv-chart";
 import { ARC_V4_ROUTER, SWAP_FEE_ROUTER, tokenPage, venueData, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
@@ -490,6 +491,7 @@ function TokenPage() {
         block: 0, insider_pnl: null, insider_rank: null, price1m: s.price1m, side: s.side, tokens: s.price1m > 0 ? (s.usdc / s.price1m) * 1e6 : 0,
         ts: s.ts, tx: s.tx, usdc: s.usdc, venue: s.venue, wallet: s.wallet,
       }))].sort((a, b) => b.ts - a.ts);
+  const walletLabels = useWalletLabels(effTrades.slice(0, 60).map((t) => t.wallet), ca);
   const effCandles: Candle[] = useMemo(() => {
     if (candles.length >= 5) return candles;
     if (venue?.candles.length) {
@@ -714,6 +716,7 @@ function TokenPage() {
         </div>
 
         {/* ---------- social check: who is behind the token ---------- */}
+        <RiskCard official={ca.toLowerCase() === "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52"} token={ca} />
         <SocialCheck deployer={info.deployer} tg={info.telegram} token={ca} web={info.website} x={info.twitter} />
 
         {/* ---------- tabs ---------- */}
@@ -737,7 +740,8 @@ function TokenPage() {
                       <td style={{ color: "var(--arc-muted)" }}>${(t.price1m / 1e6).toFixed(8)}</td>
                       <td>
                         <a href={`https://arc-scan.org/address/${t.wallet}`} rel="noreferrer" style={{ color: "var(--arc-ink)", textDecoration: "none" }} target="_blank">{t.wallet.slice(0, 6)}…{t.wallet.slice(-4)}</a>
-                        {t.insider_rank && t.insider_rank <= 50 && (
+                        <Tags labels={walletLabels} wallet={t.wallet} />
+                        {t.insider_rank && t.insider_rank <= 50 && !walletLabels[t.wallet.toLowerCase()]?.some((l) => l.kind === "insider") && (
                           <a href="/insiders" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", color: "var(--arc-cobalt)", fontSize: 10, marginLeft: 8, padding: "2px 7px", textDecoration: "none", whiteSpace: "nowrap" }} title={`Insider #${t.insider_rank} · 30d PnL $${fmt(t.insider_pnl ?? 0, 0)}`}>INSIDER #{t.insider_rank}</a>
                         )}
                       </td>

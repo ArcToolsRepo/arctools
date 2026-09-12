@@ -5,7 +5,9 @@ from aiogram.client.default import DefaultBotProperties
 
 from arctools.config import CFG
 from arctools import db, sniper, alerts, feed
+from arctools import orders as _orders, autosnipe as _auto  # noqa: F401 (registers tables before init_db)
 from arctools.ui.handlers import router
+from arctools.ui.pro import router as pro_router
 
 logging.getLogger("web3.manager.RequestManager").setLevel(logging.CRITICAL)  # failover jest obslugiwany w chain.py; ERROR to szum
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -20,6 +22,7 @@ async def main():
     await db.init_db()
     bot = Bot(CFG.bot_token, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher()
+    dp.include_router(pro_router)
     dp.include_router(router)
 
     # bottom command menu (the button next to the message box)
@@ -36,6 +39,8 @@ async def main():
 
     sniper.notify = notify
     alerts.notify = notify
+    _orders.notify = notify
+    _auto.notify = notify
     feed.bot = bot
     sniper.feed_publish = feed.publish_new_token
 
@@ -44,6 +49,7 @@ async def main():
         asyncio.create_task(alerts.alerts_loop(), name="alerts"),
         asyncio.create_task(alerts.tp_loop(), name="tp"),
         asyncio.create_task(alerts.watch_tx_loop(), name="watch_tx"),
+        asyncio.create_task(_orders.orders_loop(), name="orders"),
     ]
     log.info("ArcTools start | chain %s | rpc x%s", CFG.chain_id, len(CFG.rpc_urls))
     try:

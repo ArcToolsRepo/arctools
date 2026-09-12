@@ -129,6 +129,18 @@ async def execute_buy(tg_id: int, token: str, pad: Pad, amount_usdc: float,
                     tokens=float(got), tx=h, ts=int(time.time())))
                 asyncio.create_task(send_fee(acct, fee, "buy"))
                 asyncio.create_task(referral.credit(tg_id, h, fee))
+                # protection: TP / SL / trailing / dump guard from the user's defaults
+                try:
+                    from . import orders as _orders
+                    from sqlalchemy import select as _sel
+                    pos = await db.fetchone(_sel(db.positions).where(
+                        (db.positions.c.tg_id == tg_id) & (db.positions.c.wallet == acct.address) & (db.positions.c.token == token)
+                        & (db.positions.c.status == "open")).order_by(db.positions.c.id.desc()))
+                    protect = await _orders.attach_defaults(tg_id, pos) if pos else []
+                except Exception as e:  # noqa
+                    log.warning("attach protection: %s", e)
+                    protect = []
+                return {"ok": ok, "tx": h, "tokens": got, "wallet": acct.address, "protect": protect}
             return {"ok": ok, "tx": h, "tokens": got, "wallet": acct.address}
         except Exception as e:  # noqa
             log.exception("buy fail")
@@ -269,6 +281,9 @@ async def watcher_loop():
                             info["curve"] = await _v4_key_from_launch(lg, info["token"])
                         log.info("[%s] %s %s", pad.name, kind, info)
                         asyncio.create_task(_fire_armed_snipes(info, pad, kind))
+                        if kind == "created":
+                            from . import autosnipe as _auto
+                            asyncio.create_task(_auto.evaluate_new_token(info["token"], pad.name, info.get("curve")))
                         if feed_publish and kind == "created" and pad.name != "UniswapV3":
                             asyncio.create_task(feed_publish(info["token"], pad.name))
                         elif feed_publish and kind == "created":

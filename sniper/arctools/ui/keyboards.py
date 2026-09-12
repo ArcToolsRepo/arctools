@@ -14,6 +14,7 @@ def main_menu() -> InlineKeyboardMarkup:
         [("🔫 Sniper", "sniper"), ("👛 Wallets", "wallets")],
         [("📡 New pairs", "feed"), ("📊 Portfolio", "portfolio")],
         [("🤖 Copy-trade", "copy"), ("🔔 Alerts", "alerts")],
+        [("🛡 Protection", "prot"), ("⚡ Auto-snipe", "auto")],
         [("🌉 Bridge", "bridge"), ("⚙️ Settings", "settings")],
         [("🤝 Referrals · earn 25% of fees", "ref")],
     ])
@@ -38,16 +39,19 @@ def snipe_card(s: dict, pads: list[str]) -> InlineKeyboardMarkup:
         [(f"🎯 Venue: {s['pad']}", "sn_pad"),
          (MODE_LABEL[s['mode']], "sn_mode")],
         [(f"🔁 Wallets: {len(s['wallet_ids'])}", "sn_wal"), ("🔄 Refresh quote", "sn_quote")],
+        [("🧲 Limit buy (MC target)", "sn_limit")],
         [("✅ BUY / ARM", "sn_arm"), ("❌ Cancel", "sniper")],
     ]
     return kb(rows)
 
 
-def position_card(pos_id: int) -> InlineKeyboardMarkup:
+def position_card(pos_id: int, guard_on: bool = False) -> InlineKeyboardMarkup:
     p = str(pos_id)
     return kb([
         [("💰 Sell 25%", f"sell:{p}:25"), ("💰 50%", f"sell:{p}:50"), ("💰 100%", f"sell:{p}:100")],
-        [("🎯 TP 2x", f"tp:{p}:2"), ("🎯 5x", f"tp:{p}:5"), ("🎯 10x", f"tp:{p}:10"), ("🎯 off", f"tp:{p}:0")],
+        [("🎯 TP 2x", f"tp:{p}:2"), ("🎯 3x", f"tp:{p}:3"), ("🎯 5x", f"tp:{p}:5"), ("🎯 10x", f"tp:{p}:10")],
+        [("🛑 SL −30%", f"sl:{p}:30"), ("🛑 −50%", f"sl:{p}:50"), ("📉 Trail 20%", f"trail:{p}:20"), ("📉 35%", f"trail:{p}:35")],
+        [(("🛡 Dump guard: ON" if guard_on else "🛡 Dump guard: off"), f"guard:{p}:{0 if guard_on else 1}"), ("🧹 Clear orders", f"oclr:{p}")],
         [("🔄 Refresh", f"pos:{p}"), ("🔫 Buy more", f"buymore:{p}")],
         back("portfolio"),
     ])

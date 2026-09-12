@@ -124,20 +124,32 @@ async def watch_tx_loop():
                                 await notify(w["tg_id"],
                                              f"🐋 Whale buy {val_usdc:,.0f} USDC → <code>{to}</code>\n"
                                              f"od <code>{frm}</code> tx <code>{tx['hash'].hex()}</code>")
-                    # copy-trade: buy obserwowanego portfela
-                    if frm in copy_map and to in routers and val_usdc > 0:
+                    # copy-trade: buy obserwowanego portfela (value > 0 = USDC in) / sell (value 0 → mirror sells)
+                    if frm in copy_map and to in routers:
                         for c in copy_map[frm]:
-                            asyncio.create_task(_copy_buy(c, tx))
+                            if val_usdc > 0:
+                                asyncio.create_task(_copy_buy(c, tx, val_usdc))
+                            else:
+                                asyncio.create_task(_copy_sell(c, tx))
             await asyncio.sleep(CFG.poll_interval)
         except Exception as e:  # noqa
             log.warning("watch_tx: %s", e)
             await asyncio.sleep(2)
 
 
-async def _copy_buy(c: dict, src_tx):
-    """Mirror buy: dekoduje token z receiptu (pierwszy Transfer do kupujacego)."""
+async def _copy_buy(c: dict, src_tx, leader_usdc: float = 0.0):
+    """Mirror buy: dekoduje token z receiptu (pierwszy Transfer do kupujacego). Honours the user's copy filters."""
     from . import wallets as W
+    from .autosnipe import get_cpf
     try:
+        f = await get_cpf(c["tg_id"])
+        if float(f.get("min_usd") or 0) > 0 and leader_usdc < float(f["min_usd"]):
+            return
+        if int(f.get("max_open") or 0):
+            from sqlalchemy import select as _sel
+            n_open = len(await db.fetchall(_sel(db.positions.c.id).where((db.positions.c.tg_id == c["tg_id"]) & (db.positions.c.status == "open"))))
+            if n_open >= int(f["max_open"]):
+                return
         rcpt = await CHAIN.w3.eth.get_transaction_receipt(src_tx["hash"])
         token = None
         buyer = (src_tx.get("from") or "").lower()
@@ -156,13 +168,49 @@ async def _copy_buy(c: dict, src_tx):
             return
         from .pads import auto_pad
         amount = c["amount_usdc"] or u["buy_usdc"]
+        if f.get("mode") == "prop" and leader_usdc > 0:
+            amount = max(1.0, round(leader_usdc * float(f.get("pct") or 10) / 100, 2))
         pad, key = await auto_pad(token)
         res = await sniper.execute_buy(c["tg_id"], token, pad, amount,
                                        u["slippage"], u["gas_mode"], [w["id"]], curve=key)
         if notify:
             ok = any(r.get("ok") for r in res)
+            prot = next((r.get("protect") for r in res if r.get("ok")), None) or []
             await notify(c["tg_id"],
-                         f"🤖 Copy-trade za <code>{c['wallet']}</code>: "
-                         f"{'✅ kupiono' if ok else '❌ fail'} <code>{token}</code> ({amount} USDC)")
+                         f"🤖 Copy-trade of <code>{c['wallet']}</code>: "
+                         f"{'✅ bought' if ok else '❌ failed'} <code>{token}</code> ({amount:g} USDC, leader {leader_usdc:,.0f} USDC)"
+                         + (f"\n🛡 {', '.join(prot)}" if prot else ""))
     except Exception as e:  # noqa
         log.warning("copy_buy: %s", e)
+
+
+async def _copy_sell(c: dict, src_tx):
+    """Mirror sell: the leader sent tokens to a router (Transfer FROM leader) and we hold that token → sell 100%."""
+    from .autosnipe import get_cpf
+    from sqlalchemy import select as _sel
+    try:
+        f = await get_cpf(c["tg_id"])
+        if not int(f.get("mirror_sells", 1)):
+            return
+        rcpt = await CHAIN.w3.eth.get_transaction_receipt(src_tx["hash"])
+        leader = (src_tx.get("from") or "").lower()
+        token = None
+        for lg in rcpt["logs"]:
+            topics = [t.hex() if hasattr(t, "hex") else t for t in lg["topics"]]
+            if topics and topics[0].lower() == TRANSFER_TOPIC and len(topics) >= 3:
+                from_addr = "0x" + topics[1][-40:]
+                if from_addr.lower() == leader:
+                    token = lg["address"].lower()
+                    break
+        if not token:
+            return
+        poss = await db.fetchall(_sel(db.positions).where((db.positions.c.tg_id == c["tg_id"]) & (db.positions.c.status == "open")))
+        for p in poss:
+            if (p["token"] or "").lower() != token or (p["amount_tokens"] or 0) <= 0:
+                continue
+            res = await sniper.execute_sell(c["tg_id"], p, 100, "turbo")
+            if notify:
+                await notify(c["tg_id"], f"🪞 Mirror sell: <code>{c['wallet']}</code> sold <b>{p['symbol']}</b> → "
+                             + (f"✅ sold 100% for {res.get('usdc', 0):.2f} USDC" if res.get("ok") else f"❌ sell failed: {res.get('err')}"))
+    except Exception as e:  # noqa
+        log.warning("copy_sell: %s", e)

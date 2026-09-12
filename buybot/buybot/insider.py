@@ -326,6 +326,8 @@ async def v4_bootstrap():
     asyncio.create_task(warm_loop(), name="site-warm")
     from .referrals import init_tables as _ref_init
     await _ref_init()
+    from .risk_score import init as _score_init
+    await _score_init()
     from .watchdog import watchdog_loop
     asyncio.create_task(watchdog_loop(), name="site-watchdog")
     if await db.kv_get("v4_bootstrapped"):

@@ -158,6 +158,8 @@ async def _deployer(s: aiohttp.ClientSession, token: str) -> str | None:
         d = str((j or {}).get("deployer") or "").lower()
         if d.startswith("0x") and len(d) == 42:
             dev = d
+            from .risk_score import remember_dev
+            await remember_dev(token, dev, "radar")
     except Exception:  # noqa
         pass
     if not dev:
@@ -166,6 +168,8 @@ async def _deployer(s: aiohttp.ClientSession, token: str) -> str | None:
             r = await db.fetchone(text("SELECT wallet FROM swaps WHERE token = :t ORDER BY ts ASC, log_index ASC LIMIT 1").bindparams(t=token))
             if r and r["wallet"]:
                 dev = r["wallet"].lower()
+                from .risk_score import remember_dev
+                await remember_dev(token, dev, "first_buyer")
         except Exception:  # noqa
             pass
     _dep_cache[token] = (time.time(), dev)
@@ -228,11 +232,21 @@ async def _risk_one(s: aiohttp.ClientSession, token: str) -> dict:
             log.debug("bundle %s: %s", token, e)
         # what the insiders of the launch did afterwards: dev / bundle sells in the last 24 h
         act = await dev_activity(token, dev, early)
+        rugs = launches = 0
+        if dev:
+            try:
+                from .risk_score import dev_history
+                h = await dev_history(dev)
+                rugs, launches = h["rugs"], h["launches"]
+            except Exception:  # noqa
+                pass
         out = {"holders": int(j.get("holder_count") or len(items)),
                "top10": round(sum(shares[:10]) * 100, 2) if shares else None,
                "top1": round(shares[0] * 100, 2) if shares else None,
                "dev": dev, "dev_pct": dev_pct, "bundle_pct": bundle_pct, "bundlers": bundlers,
-               "bundle_wallets": sorted(early)[:30], **act}
+               "bundle_wallets": sorted(early)[:30], "dev_rugs": rugs, "dev_launches": launches, **act}
+        from .risk_score import score as _score
+        out["score"], out["grade"], out["flags"] = _score(out)
         _risk_cache[token] = (time.time(), out)
     except Exception as e:  # noqa
         log.debug("holder risk %s: %s", token, e)
@@ -251,6 +265,8 @@ async def api_holder_risk(req: web.Request):
 
 
 def register_risk(app: web.Application):
+    from .risk_score import register as _reg_score
+    _reg_score(app)
     app.router.add_get("/api/holder-risk", api_holder_risk)
     app.router.add_get("/api/venue-tokens", api_venue_tokens)
     app.router.add_get("/api/wallet-feed", api_wallet_feed)

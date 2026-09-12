@@ -571,9 +571,14 @@ async def render_position(p: dict) -> tuple[str, object]:
            f"💵 Entry: {p['cost_usdc']:.2f} USDC\n"
            f"💰 Value now: {cur_s}\n"
            f"♻️ Realized: {p['realized_usdc']:.2f} USDC\n"
-           f"📈 PnL: <b>{pnl:+.2f} USDC ({pct_pnl:+.1f}%)</b>\n"
-           f"🎯 TP: {tp}")
-    return txt, position_card(p["id"])
+           f"📈 PnL: <b>{pnl:+.2f} USDC ({pct_pnl:+.1f}%)</b>")
+    from .. import orders as _orders
+    ords = await _orders.position_orders(p["id"])
+    if p["tp_mult"]:
+        txt += f"\n🎯 TP (legacy): {tp}"
+    txt += "\n\n<b>Active orders</b>\n" + ("\n".join(_orders.describe(o) for o in ords) if ords else "none — set TP / SL / trailing / dump guard below")
+    guard_on = any(o["kind"] == "guard" for o in ords)
+    return txt, position_card(p["id"], guard_on)
 
 
 @router.callback_query(F.data == "portfolio")
@@ -630,9 +635,13 @@ async def sell_cb(cb: CallbackQuery):
 @router.callback_query(F.data.startswith("tp:"))
 async def tp_cb(cb: CallbackQuery):
     _, pid, mult = cb.data.split(":")
-    await db.execute(update(db.positions).where(
-        (db.positions.c.id == int(pid)) & (db.positions.c.tg_id == cb.from_user.id)
-    ).values(tp_mult=float(mult)))
+    p = await portfolio.position(int(pid))
+    if not p or p["tg_id"] != cb.from_user.id:
+        return await cb.answer("Position not found", show_alert=True)
+    from .. import orders as _orders
+    await db.execute(update(db.positions).where(db.positions.c.id == int(pid)).values(tp_mult=0.0))
+    if mult != "0":
+        await _orders.add_order(cb.from_user.id, "tp", p["token"], p["symbol"], float(mult), p["id"])
     await cb.answer(f"TP = {mult}x" if mult != "0" else "TP off")
     cb2 = cb.model_copy(update={"data": f"pos:{pid}"})
     await pos_card(cb2)
@@ -728,9 +737,9 @@ async def copy_menu(cb: CallbackQuery, state: FSMContext):
         amt = f"{c['amount_usdc']:g} USDC" if c["amount_usdc"] else "default amount"
         lines.append(f"{st} <code>{c['wallet']}</code> ({amt})")
         rows.append([(f"{st} {short(c['wallet'])}", f"cp_tog:{c['id']}"), ("🗑", f"cp_del:{c['id']}")])
-    rows.append([("➕ Add wallet", "cp_add")])
+    rows.append([("➕ Add wallet", "cp_add"), ("🎛 Filters", "cpf")])
     rows.append(back())
-    await edit(cb, "🤖 <b>Copy-trade</b>\nMirrors the buys of tracked wallets (your active wallet, turbo gas).\n"
+    await edit(cb, "🤖 <b>Copy-trade</b>\nMirrors the buys of tracked wallets (your active wallet, turbo gas). Filters: min size, max open, proportional sizing, mirror sells.\n"
                + ("\n".join(lines) or ""), kb(rows))
 
 
