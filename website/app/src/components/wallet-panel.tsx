@@ -24,6 +24,17 @@ export function WalletPanel({ onReady }: { onReady: (addr: string | null) => voi
   const [showKey, setShowKey] = useState<string | null>(null);
   const [wd, setWd] = useState({ to: "", amt: "" });
   const [tab, setTab] = useState<"deposit" | "withdraw" | "keys">("deposit");
+  // "replace wallet" flow: warn about funds on the old key, force a key export, then generate a fresh one
+  const [rot, setRot] = useState<null | { positions: number | null; oldKey: string | null; saved: boolean; newPass: string; action: "new" | "remove" }>(null);
+  const startRotate = async (action: "new" | "remove") => {
+    let positions: number | null = null;
+    try {
+      const r = await fetch(`https://bot-production-4200.up.railway.app/api/positions?wallet=${addr}`).then((x) => x.json());
+      positions = Array.isArray(r?.positions) ? r.positions.filter((q: { qty?: number }) => (q.qty ?? 0) > 0).length : 0;
+    } catch { /* unknown */ }
+    setRot({ positions, oldKey: null, saved: false, newPass: "", action });
+    setMsg(null);
+  };
   const addr = hotAddress();
 
   const refresh = useCallback(async () => {
@@ -123,7 +134,55 @@ export function WalletPanel({ onReady }: { onReady: (addr: string | null) => voi
               </div>
               {showKey && <p className="arc-mono" style={{ background: "#0e1118", border: "1px solid var(--arc-line)", fontSize: 11, margin: 0, padding: 8, wordBreak: "break-all" }}>{showKey}</p>}
               <p style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>The key lives only in this browser. Back it up: clearing site data deletes it and the funds with it. Import it in MetaMask/Rabby any time. Forgot the passcode? Lock and use "forgot passcode?" with your recovery code.</p>
-              <button className="arc-mono" onClick={() => { if (confirm("Remove the wallet from this browser? Make sure the key is backed up.")) forgetWallet(); }} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: DOWN, cursor: "pointer", fontSize: 11, padding: "4px 8px", width: "fit-content" }} type="button">remove from this device</button>
+              {!rot && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  <button className="arc-mono" onClick={() => void startRotate("new")} style={{ background: "transparent", border: "1px solid var(--arc-cobalt)", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 11, padding: "4px 8px" }} type="button">generate a new wallet</button>
+                  <button className="arc-mono" onClick={() => void startRotate("remove")} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: DOWN, cursor: "pointer", fontSize: 11, padding: "4px 8px" }} type="button">remove from this device</button>
+                </div>
+              )}
+              {rot && (() => {
+                const hasFunds = (bal ?? 0) > 0.001 || (rot.positions ?? 0) > 0;
+                const canGo = rot.saved || !hasFunds;
+                return (
+                  <div style={{ border: `1px solid ${hasFunds ? DOWN : "var(--arc-line)"}`, background: hasFunds ? "rgba(255,80,80,0.06)" : "#0e1118", display: "grid", gap: 8, padding: 10 }}>
+                    <p className="arc-mono" style={{ color: hasFunds ? DOWN : "var(--arc-ink)", fontSize: 12, fontWeight: 700, margin: 0 }}>
+                      {rot.action === "new" ? "Replace the trading wallet" : "Remove the trading wallet"} — {hasFunds ? "the current wallet is NOT empty" : "the current wallet looks empty"}
+                    </p>
+                    <p className="arc-mono" style={{ fontSize: 11, margin: 0 }}>
+                      {short(addr!)} holds <strong>{(bal ?? 0).toFixed(2)} USDC</strong>{rot.positions === null ? " and an unknown number of tokens" : rot.positions > 0 ? ` and ${rot.positions} token position${rot.positions === 1 ? "" : "s"}` : " and no tracked tokens"}.
+                      {hasFunds ? " Once the key is gone from this browser, the funds are gone with it — save the private key (or withdraw first)." : " If you ever sent anything unusual to it, save the key anyway."}
+                    </p>
+                    {!rot.oldKey ? (
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <input className="arc-mono" onChange={(e) => setPass(e.target.value)} placeholder="passcode to reveal the OLD key" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", flex: 1, fontSize: 12, padding: "8px 10px" }} type="password" value={pass} />
+                        <button className="arc-mono" onClick={() => void act(async () => setRot({ ...rot, oldKey: await exportKey(pass) }))} style={{ background: "transparent", border: "1px solid var(--arc-cobalt)", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 11, padding: "0 10px" }} type="button">reveal old key</button>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="arc-mono" style={{ background: "#0e1118", border: "1px solid var(--arc-line)", fontSize: 11, margin: 0, padding: 8, wordBreak: "break-all" }}>{rot.oldKey}</p>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button className="arc-mono" onClick={() => void navigator.clipboard.writeText(rot.oldKey!).then(() => setMsg("Old key copied"))} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", cursor: "pointer", fontSize: 11, padding: "4px 8px" }} type="button">copy</button>
+                          <button className="arc-mono" onClick={() => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([`ArcTools trading wallet (OLD)\naddress: ${addr}\nprivate key: ${rot.oldKey}\n`], { type: "text/plain" })); a.download = `arctools-old-wallet-${addr!.slice(2, 8)}.txt`; a.click(); }} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", cursor: "pointer", fontSize: 11, padding: "4px 8px" }} type="button">download .txt</button>
+                        </div>
+                      </>
+                    )}
+                    <label className="arc-mono" style={{ alignItems: "center", display: "flex", fontSize: 11, gap: 8 }}>
+                      <input checked={rot.saved} onChange={(e) => setRot({ ...rot, saved: e.target.checked })} type="checkbox" />
+                      I saved the old private key{hasFunds ? "" : " or I accept the wallet is empty"}
+                    </label>
+                    {rot.action === "new" && (
+                      <input className="arc-mono" onChange={(e) => setRot({ ...rot, newPass: e.target.value })} placeholder="passcode for the NEW wallet (min 6 chars)" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 12, padding: "8px 10px" }} type="password" value={rot.newPass} />
+                    )}
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button className="arc-cta" disabled={!canGo || (rot.action === "new" && rot.newPass.length < 6)} onClick={() => void act(async () => {
+                        if (rot.action === "remove") { forgetWallet(); setRot(null); setMode("create"); setMsg("Wallet removed from this browser."); return; }
+                        const np = rot.newPass; forgetWallet(); const c = await createWallet(np); setRot(null); setPass(""); setShowKey(null); setBackup(c); setAck(false);
+                      })} style={{ opacity: canGo ? 1 : 0.45 }} type="button">{rot.action === "new" ? "Generate new wallet & forget old" : "Remove wallet"}</button>
+                      <button className="arc-mono" onClick={() => setRot(null)} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "4px 10px" }} type="button">cancel</button>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>
