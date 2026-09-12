@@ -1763,6 +1763,8 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   // the screener set (chain-wide most active) is always carried whole
   const scr = new Set(screener.map((t) => t.token.toLowerCase()));
   const scrMeta = new Map(screener.map((t) => [t.token.toLowerCase(), t]));
+  // full (uncompacted) list for the client-side explorer / pagination — same compact field shape
+  fullListCache = { ts: Date.now(), v: all.map(compactToken) };
   for (const t of all) if (scr.has(t.token.toLowerCase())) keep.set(t.token.toLowerCase(), t);
   // whatever is trending / moving in the last 24 h must carry its metadata into the Terminal rows
   try {
@@ -1774,11 +1776,20 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   } catch { /* trending API busy: newest + busiest + screener */ }
   const official = all.find((t) => t.token.toLowerCase() === "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52");
   if (official) keep.set(official.token.toLowerCase(), official);
-  return [...keep.values()].sort((a, b) => ts(b) - ts(a)).map((t) => ({
-    createdAt: t.createdAt, logo: t.logo, mcapUsd: t.mcapUsd, name: (t.name ?? "").slice(0, 40), pad: t.pad, pool: t.pool, priceUsd: t.priceUsd, stage: t.stage ?? null,
-    symbol: (t.symbol ?? "").slice(0, 16), telegram: t.telegram, token: t.token, twitter: t.twitter, venueUrl: t.venueUrl, volUsd: t.volUsd, website: t.website,
-    og: t.og || scrMeta.get(t.token.toLowerCase())?.og || false, dexes: t.dexes?.length ? t.dexes : (scrMeta.get(t.token.toLowerCase())?.dexes ?? []),
-  }) as PadToken);
+  function compactToken(t: PadToken): PadToken {
+    return {
+      createdAt: t.createdAt, logo: t.logo, mcapUsd: t.mcapUsd, name: (t.name ?? "").slice(0, 40), pad: t.pad, pool: t.pool, priceUsd: t.priceUsd, stage: t.stage ?? null,
+      symbol: (t.symbol ?? "").slice(0, 16), telegram: t.telegram, token: t.token, twitter: t.twitter, venueUrl: t.venueUrl, volUsd: t.volUsd, website: t.website,
+      og: t.og || scrMeta.get(t.token.toLowerCase())?.og || false, dexes: t.dexes?.length ? t.dexes : (scrMeta.get(t.token.toLowerCase())?.dexes ?? []),
+    } as PadToken;
+  }
+  return [...keep.values()].sort((a, b) => ts(b) - ts(a)).map(compactToken);
+}
+let fullListCache: { ts: number; v: PadToken[] } | null = null;
+/** Every token we know (all sources, no compaction) — served to the client after first paint for paging / source chips. */
+export async function listFullTokens(): Promise<PadToken[]> {
+  if (fullListCache && Date.now() - fullListCache.ts < 30_000) return fullListCache.v;
+  return memo("list:__full", 30_000, async () => { await listAllTokensImpl(); return fullListCache?.v ?? []; }, (v) => v.length > 100);
 }
 export const listAllTokens = createServerFn({ method: "POST" })
   .handler((): Promise<PadToken[]> => memo("list:__all", 15_000, listAllTokensImpl, (v) => v.length > 50));

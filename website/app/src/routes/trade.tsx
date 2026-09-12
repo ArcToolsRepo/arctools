@@ -78,6 +78,8 @@ function Trade() {
   const [toastsOn, setToastsOn] = useState(true);
   // feed-style filters: launchpad / source, market-cap band, min volume (all persisted in the URL-free local state)
   const [padF, setPadF] = useState<string>("all");
+  const PAGE = 50;
+  const [page, setPage] = useState(1);
   const [minMc, setMinMc] = useState(""); const [maxMc, setMaxMc] = useState(""); const [minVol, setMinVol] = useState("");
   const PADS: [string, string][] = [["all", "All sources"], ["ArcToolsPad", "ArcToolsPad"], ["ArcPad", "ArcPad"], ["RadarDex", "RadarDex"], ["Warp", "Warp"], ["Tolly", "Tolly"], ["Archemist", "Archemist"], ["Arguspad", "Arguspad"], ["UniswapV4", "Uniswap V4"], ["UniswapV3", "Uniswap V3 pools"], ["DYORSwap", "DYORSwap · V2"], ["UBI.fun", "UBI.fun"]];
   useEffect(() => { try { setToastsOn(localStorage.getItem("arctools_toasts") !== "0"); } catch { /* ignore */ } }, []);
@@ -143,7 +145,7 @@ function Trade() {
     let alive = true;
     const load = async () => {
       try {
-        const all = await listAllTokens();
+        const all = await fetch("/api/tokens?full=1").then((r) => r.json()).then((j: { tokens?: PadToken[] }) => (j.tokens?.length ?? 0) > 100 ? j.tokens! : null).catch(() => null) ?? await listAllTokens();
         if (alive) setRows(all);
       } catch { /* ignore */ }
       fetch(`${API}/api/movers?minutes=1440`).then((r) => r.json()).then((j) => alive && setMovers(j.rows ?? [])).catch(() => null);
@@ -246,15 +248,16 @@ function Trade() {
       price: tr?.p1 ? tr.p1 / 1e6 : t?.priceUsd ?? null,
     };
   };
+  useEffect(() => { setPage(1); }, [tab, padF, q, sortKey, minMc, maxMc, minVol]);
   const matches = (r: Row) => !q || `${r.name} ${r.symbol} ${r.token}`.toLowerCase().includes(q.toLowerCase());
   const tableRows: Row[] = useMemo(() => {
     let base: Row[];
-    if (tab === "new") base = rows.map((t) => toRow(t.token)).sort((a, b) => (b.age ?? 0) - (a.age ?? 0)).slice(0, 100);
+    if (tab === "new") base = rows.map((t) => toRow(t.token)).sort((a, b) => (b.age ?? 0) - (a.age ?? 0));
     else if (tab === "new15") {
       // freshest launches: under 15 minutes old — the snipe window
       const now = Date.now() / 1000;
       base = rows.map((t) => toRow(t.token)).filter((r) => r.age && now - r.age < 900)
-        .sort((a, b) => (b.age ?? 0) - (a.age ?? 0)).slice(0, 100);
+        .sort((a, b) => (b.age ?? 0) - (a.age ?? 0));
     }
     else if (tab === "trending") base = trend.map((t) => toRow(t.token));
     else if (tab === "insiders") base = clusters.map((c) => toRow(c.token));
@@ -285,15 +288,17 @@ function Trade() {
     }
     return base;
   }, [tab, rows, trend, clusters, favs, q, sortKey, byToken, trendMap, clusterMap, liq, logos, padF, minMc, maxMc, minVol]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pages = Math.max(1, Math.ceil(tableRows.length / PAGE));
+  const pageRows = useMemo(() => tableRows.slice((Math.min(page, pages) - 1) * PAGE, Math.min(page, pages) * PAGE), [tableRows, page, pages]);
   // lazy enrich visible rows: logos (screener index) + holder concentration (arc-scan), cached server-side
   useEffect(() => {
-    const vis = tableRows.slice(0, 60).map((r) => r.token);
+    const vis = pageRows.map((r) => r.token);
     const needLogo = vis.filter((t) => !logos[t] && !byToken.get(t)?.logo);
     if (needLogo.length) void tokenLogos({ data: { tokens: needLogo } }).then((m) => setLogos((o) => ({ ...o, ...m }))).catch(() => null);
     fetchLiq(vis);
     const needRisk = vis.filter((t) => !risk[t]).slice(0, 40);
     if (needRisk.length) void holderRisk({ data: { tokens: needRisk } }).then((m) => setRisk((o) => ({ ...o, ...m }))).catch(() => null);
-  }, [tableRows]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pageRows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <main className="arc-site" style={{ minHeight: "100dvh" }}>
@@ -354,7 +359,7 @@ function Trade() {
 
             <div style={{ overflowX: "auto" }}>
               {tab !== "holdings" && (
-                <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                <><table style={{ borderCollapse: "collapse", width: "100%" }}>
                   <thead>
                     <tr>
                       <th style={{ ...hd, width: 26 }} />
@@ -372,7 +377,7 @@ function Trade() {
                   </thead>
                   <tbody>
                     {tableRows.length === 0 && <tr><td className="arc-mono" colSpan={11} style={{ ...cell, color: "var(--arc-muted)" }}>{tab === "favs" ? "No favourites yet — click ☆ on any row." : tab === "new15" ? "No launch younger than 15 minutes right now — watch New pair." : (padF !== "all" || minMc || maxMc || minVol) ? "Nothing matches these filters."  : tab === "insiders" ? "No token with 2+ insiders in the last 24h." : "Loading…"}</td></tr>}
-                    {tableRows.map((r) => (
+                    {pageRows.map((r) => (
                       <tr className="arc-row-link" key={r.token} onClick={rowClick(r.token)} onMouseEnter={() => { void import("@/lib/arc-api").then((m) => m.tokenPage({ data: { token: r.token } })).catch(() => null); }} style={{ background: r.token.toLowerCase() === OFFICIAL_TOKEN ? "rgba(46,124,255,0.09)" : favs.has(r.token) ? "rgba(46,124,255,0.05)" : undefined, cursor: "pointer" }}>
                         <td style={{ ...cell, paddingRight: 4 }}><button onClick={() => toggleFav(r.token)} style={{ background: "none", border: "none", color: favs.has(r.token) ? "#f5c542" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, padding: 0 }} title="favourite" type="button">{favs.has(r.token) ? "★" : "☆"}</button></td>
                         <td style={{ ...cell, minWidth: 250 }}>
@@ -406,6 +411,17 @@ function Trade() {
                     ))}
                   </tbody>
                 </table>
+                {tableRows.length > PAGE && (
+                  <div className="arc-mono" style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", padding: "12px 0 4px" }}>
+                    <button className="arc-mono" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: page <= 1 ? "var(--arc-line)" : "var(--arc-ink)", cursor: page <= 1 ? "default" : "pointer", fontSize: 12, padding: "5px 10px" }} type="button">← prev</button>
+                    {Array.from({ length: pages }, (_, i) => i + 1).filter((n) => n === 1 || n === pages || Math.abs(n - page) <= 2).reduce<(number | "…")[]>((acc, n) => { const last = acc[acc.length - 1]; if (typeof last === "number" && n - last > 1) acc.push("…"); acc.push(n); return acc; }, []).map((n, i) => n === "…" ? <span key={`e${i}`} style={{ color: "var(--arc-muted)", padding: "0 4px" }}>…</span> : (
+                      <button className="arc-mono" key={n} onClick={() => setPage(n)} style={{ background: n === page ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (n === page ? "var(--arc-cobalt)" : "var(--arc-line)"), borderRadius: 4, color: n === page ? "#fff" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, minWidth: 32, padding: "5px 8px" }} type="button">{n}</button>
+                    ))}
+                    <button className="arc-mono" disabled={page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: page >= pages ? "var(--arc-line)" : "var(--arc-ink)", cursor: page >= pages ? "default" : "pointer", fontSize: 12, padding: "5px 10px" }} type="button">next →</button>
+                    <span style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 8 }}>{tableRows.length} tokens · page {page}/{pages}</span>
+                  </div>
+                )}
+              </>
               )}
               {tab === "holdings" && (
                 <table style={{ borderCollapse: "collapse", width: "100%" }}>
