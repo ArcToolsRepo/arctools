@@ -1322,15 +1322,15 @@ async function listTokensImpl(pad: string): Promise<PadToken[]> {
       const res = (await fetch(`${INSIDER_API}/api/v4launches?limit=100`, { headers: { Accept: "application/json" } })
         .then((r) => r.json())
         .catch(() => ({}))) as {
-        pools?: { token: string; hooks: string | null; symbol: string | null; block: number | null; swaps: number; vol24: number; price1m: number | null; last_ts: number }[];
+        pools?: { token: string; hooks: string | null; symbol: string | null; block: number | null; swaps: number; vol24: number; price1m: number | null; last_ts: number; created_ts?: number | null; supply?: number | null }[];
       };
       const seen = new Set<string>();
       return (res.pools ?? [])
         .filter((p) => p.token && !seen.has(p.token) && seen.add(p.token))
         .map((p) => ({
-          createdAt: p.block ? new Date(Date.now() - Math.max(0, (headBlockGuess() - p.block)) * 630).toISOString() : null,
+          createdAt: p.created_ts ? new Date(p.created_ts * 1000).toISOString() : p.block ? new Date(Date.now() - Math.max(0, (headBlockGuess() - p.block)) * 630).toISOString() : null,
           logo: null,
-          mcapUsd: null,
+          mcapUsd: p.price1m && p.supply ? (p.price1m / 1e6) * p.supply : null,
           name: p.symbol ?? p.token.slice(0, 8),
           pad: V4_HOOK_PADS[(p.hooks ?? "").toLowerCase()] ?? "UniswapV4",
           stage: "V4 pool",

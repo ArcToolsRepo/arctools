@@ -393,8 +393,8 @@ function FeedPage() {
         });
         if (tab === "Top") {
           const [radar, arcpad, tolly, pad, arch, argus] = await Promise.all([
-            listTokens({ data: { pad: "RadarDex" } }),
-            listTokens({ data: { pad: "ArcPad" } }),
+            listTokens({ data: { pad: "RadarDex" } }).catch(() => [] as PadToken[]),
+            listTokens({ data: { pad: "ArcPad" } }).catch(() => [] as PadToken[]),
             listTokens({ data: { pad: "Tolly" } }).catch(() => [] as PadToken[]),
             padList().catch(() => []),
             listTokens({ data: { pad: "Archemist" } }).catch(() => [] as PadToken[]),
@@ -425,7 +425,7 @@ function FeedPage() {
           const pad = await padList();
           res = pad.map(padToPadToken);
         } else {
-          res = await listTokens({ data: { pad: tab === "Uniswap V4" ? "UniswapV4" : tab } });
+          res = await listTokens({ data: { pad: tab === "Uniswap V4" ? "UniswapV4" : tab } }).catch(() => [] as PadToken[]);
         }
         if (!alive) return;
         if (notify && known.current.size > 0 && typeof Notification !== "undefined") {

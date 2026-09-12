@@ -15,6 +15,7 @@ import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as RewardsRouteImport } from './routes/rewards'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as LaunchpadRouteImport } from './routes/launchpad'
+import { Route as IntelRouteImport } from './routes/intel'
 import { Route as InsidersRouteImport } from './routes/insiders'
 import { Route as FeedRouteImport } from './routes/feed'
 import { Route as DiagRouteImport } from './routes/diag'
@@ -54,6 +55,11 @@ const PortfolioRoute = PortfolioRouteImport.update({
 const LaunchpadRoute = LaunchpadRouteImport.update({
   id: '/launchpad',
   path: '/launchpad',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IntelRoute = IntelRouteImport.update({
+  id: '/intel',
+  path: '/intel',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InsidersRoute = InsidersRouteImport.update({
@@ -114,6 +120,7 @@ export interface FileRoutesByFullPath {
   '/diag': typeof DiagRoute
   '/feed': typeof FeedRoute
   '/insiders': typeof InsidersRoute
+  '/intel': typeof IntelRoute
   '/launchpad': typeof LaunchpadRoute
   '/portfolio': typeof PortfolioRoute
   '/rewards': typeof RewardsRoute
@@ -132,6 +139,7 @@ export interface FileRoutesByTo {
   '/diag': typeof DiagRoute
   '/feed': typeof FeedRoute
   '/insiders': typeof InsidersRoute
+  '/intel': typeof IntelRoute
   '/launchpad': typeof LaunchpadRoute
   '/portfolio': typeof PortfolioRoute
   '/rewards': typeof RewardsRoute
@@ -151,6 +159,7 @@ export interface FileRoutesById {
   '/diag': typeof DiagRoute
   '/feed': typeof FeedRoute
   '/insiders': typeof InsidersRoute
+  '/intel': typeof IntelRoute
   '/launchpad': typeof LaunchpadRoute
   '/portfolio': typeof PortfolioRoute
   '/rewards': typeof RewardsRoute
@@ -171,6 +180,7 @@ export interface FileRouteTypes {
     | '/diag'
     | '/feed'
     | '/insiders'
+    | '/intel'
     | '/launchpad'
     | '/portfolio'
     | '/rewards'
@@ -189,6 +199,7 @@ export interface FileRouteTypes {
     | '/diag'
     | '/feed'
     | '/insiders'
+    | '/intel'
     | '/launchpad'
     | '/portfolio'
     | '/rewards'
@@ -207,6 +218,7 @@ export interface FileRouteTypes {
     | '/diag'
     | '/feed'
     | '/insiders'
+    | '/intel'
     | '/launchpad'
     | '/portfolio'
     | '/rewards'
@@ -226,6 +238,7 @@ export interface RootRouteChildren {
   DiagRoute: typeof DiagRoute
   FeedRoute: typeof FeedRoute
   InsidersRoute: typeof InsidersRoute
+  IntelRoute: typeof IntelRoute
   LaunchpadRoute: typeof LaunchpadRoute
   PortfolioRoute: typeof PortfolioRoute
   RewardsRoute: typeof RewardsRoute
@@ -280,6 +293,13 @@ declare module '@tanstack/react-router' {
       path: '/launchpad'
       fullPath: '/launchpad'
       preLoaderRoute: typeof LaunchpadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/intel': {
+      id: '/intel'
+      path: '/intel'
+      fullPath: '/intel'
+      preLoaderRoute: typeof IntelRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/insiders': {
@@ -362,6 +382,7 @@ const rootRouteChildren: RootRouteChildren = {
   DiagRoute: DiagRoute,
   FeedRoute: FeedRoute,
   InsidersRoute: InsidersRoute,
+  IntelRoute: IntelRoute,
   LaunchpadRoute: LaunchpadRoute,
   PortfolioRoute: PortfolioRoute,
   RewardsRoute: RewardsRoute,

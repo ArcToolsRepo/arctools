@@ -431,16 +431,53 @@ async def api_v4launches(request: web.Request) -> web.Response:
         "WHERE p.token IS NOT NULL AND p.fee IS NOT NULL ORDER BY p.block DESC NULLS LAST LIMIT :l").bindparams(l=limit))
     out = []
     now = int(time.time())
+    head = None
+    try:
+        head = int(await db.kv_get("insider_cursor") or 0) or None
+    except Exception:  # noqa
+        pass
     for r in rows:
         d = dict(r)
         st = await db.fetchone(text(
-            "SELECT COUNT(*) AS n, SUM(CASE WHEN ts > :d THEN usdc ELSE 0 END) AS vol24, MAX(ts) AS last, "
+            "SELECT COUNT(*) AS n, SUM(CASE WHEN ts > :d THEN usdc ELSE 0 END) AS vol24, MAX(ts) AS last, MIN(ts) AS first, "
             "(SELECT price1m FROM swaps WHERE token = :t AND price1m > 0 ORDER BY ts DESC LIMIT 1) AS price1m "
             "FROM swaps WHERE token = :t").bindparams(t=d["token"], d=now - 86400))
+        first = int(st["first"] or 0) if st else 0
+        # creation time: first indexed swap, else block distance from the live cursor (~0.63 s/block on Arc)
+        created = first or (int(now - (head - int(d["block"])) * 0.63) if (head and d.get("block")) else None)
         d.update({"swaps": int(st["n"] or 0), "vol24": float(st["vol24"] or 0), "last_ts": int(st["last"] or 0),
-                  "price1m": float(st["price1m"]) if st and st["price1m"] else None})
+                  "price1m": float(st["price1m"]) if st and st["price1m"] else None, "created_ts": created})
         out.append(d)
+    # symbols + supply for rows that lack them (relay calls, cached in token_symbols / memory)
+    async def _fill(d):
+        if not d.get("symbol"):
+            try:
+                d["symbol"] = await _symbol(d["token"]) or None
+            except Exception:  # noqa
+                pass
+        d["supply"] = await _total_supply(d["token"])
+    await asyncio.gather(*[_fill(d) for d in out])
     return web.json_response({"pools": out}, headers=API_CORS)
+
+
+_supply_cache: dict[str, tuple[float, float]] = {}
+
+
+async def _total_supply(token: str) -> float | None:
+    c = _supply_cache.get(token)
+    if c and time.time() - c[1] < 6 * 3600:
+        return c[0]
+    try:
+        async with _aiohttp.ClientSession() as s:
+            async with s.post(RELAY_RPC, json={"id": 1, "jsonrpc": "2.0", "method": "eth_call",
+                                              "params": [{"data": "0x18160ddd", "to": token}, "latest"]},
+                              timeout=_aiohttp.ClientTimeout(total=8)) as r:
+                res = (await r.json()).get("result")
+        sup = int(res, 16) / 1e18 if res and res != "0x" else None
+        _supply_cache[token] = (sup, time.time())
+        return sup
+    except Exception:  # noqa
+        return None
 
 
 async def repair_pools_once() -> list[str]:
@@ -1057,6 +1094,11 @@ async def start_api():
     app.router.add_get("/api/token-stats", api_token_stats)
     app.router.add_get("/api/v4pool", api_v4pool)
     app.router.add_get("/api/v4launches", api_v4launches)
+    from .watchlist import api_whales, api_movers, api_insider_activity, api_wallet_watch_count
+    app.router.add_get("/api/whales", api_whales)
+    app.router.add_get("/api/movers", api_movers)
+    app.router.add_get("/api/insider-activity", api_insider_activity)
+    app.router.add_get("/api/watchers", api_wallet_watch_count)
     from .bridge_watch import api_bridge
     app.router.add_get("/api/bridge", api_bridge)
     app.router.add_get("/health", api_health)

@@ -47,11 +47,15 @@ async def start(m: Message):
         raw = payload[6:]
         chat_id = int("-" + raw[1:]) if raw.startswith("n") else int(raw)
         return await open_boost_dm(m, chat_id)
+    if payload.startswith("watch_"):
+        from .watchlist import add_watch
+        return await add_watch(m, "0x" + payload[6:])
     await m.answer(
         "📟 <b>ArcBuyBot</b> — buy alerts for Arc (chain 5042)\n\n"
         "1. Add me to your token's group and make me admin.\n"
         "2. In the group, send <code>/add 0xTOKEN</code> (admins only).\n"
-        "3. I detect buys on Uniswap V3, DYORSwap and WarpDex and post them live.",
+        "3. I detect buys on Uniswap V3, V4, ArcToolsPad, DYORSwap and WarpDex and post them live.\n\n"
+        "👁 <b>Wallet watch:</b> <code>/watch 0x…</code> — DM on every buy and sell of any wallet on Arc.",
         parse_mode="HTML",
         reply_markup=kb([
             [("➕ Add me to your group", "help_add")],

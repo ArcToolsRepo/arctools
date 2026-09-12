@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 
 from buybot.config import CFG
-from buybot import bridge_watch, insider_alerts, db, insider, social, watcher, trending
+from buybot import bridge_watch, insider_alerts, watchlist, db, insider, social, watcher, trending
 from buybot.handlers import router
 
 logging.getLogger("web3.manager.RequestManager").setLevel(logging.CRITICAL)  # failover jest obslugiwany w chain.py; ERROR to szum
@@ -18,6 +18,7 @@ async def main():
     bot = Bot(CFG.bot_token, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher()
     dp.include_router(router)
+    dp.include_router(watchlist.router)
 
     me = await bot.get_me()
     CFG.bot_username = me.username
@@ -45,6 +46,7 @@ async def main():
     social.bot = bot
     insider_alerts.bot = bot
     bridge_watch.bot = bot
+    watchlist.bot = bot
     await insider.start_api()
     tasks = [
         asyncio.create_task(watcher.watcher_loop(), name="watcher"),
@@ -55,6 +57,7 @@ async def main():
         asyncio.create_task(social.registry_loop(), name="social-registry"),
         asyncio.create_task(insider_alerts.alerts_loop(), name="insider-alerts"),
         asyncio.create_task(bridge_watch.watch_loop(), name="bridge-watch"),
+        asyncio.create_task(watchlist.alerts_loop(), name="watchlist"),
     ]
     log.info("ArcBuyBot start as @%s | rpc x%s | trend channel %s",
              me.username, len(CFG.rpc_urls), CFG.trend_channel_id or "-")
