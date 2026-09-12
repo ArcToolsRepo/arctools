@@ -119,7 +119,29 @@ export function encodeCreateTokenV3(p: CreateParamsV3): string {
 
 type Eth = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> };
 
+// ---- EIP-6963: every injected wallet announces itself; we remember the one the user picked ----
+type Announced = { info: { uuid: string; name: string; icon: string; rdns: string }; provider: Eth };
+const announced = new Map<string, Announced>();
+let listening = false;
+function listenProviders() {
+  if (listening || typeof window === "undefined") return;
+  listening = true;
+  window.addEventListener("eip6963:announceProvider", (e: Event) => {
+    const d = (e as CustomEvent<Announced>).detail;
+    if (d?.info?.rdns) announced.set(d.info.rdns, d);
+  });
+  window.dispatchEvent(new Event("eip6963:requestProvider"));
+}
+export function listWallets(): { rdns: string; name: string; icon: string }[] {
+  listenProviders();
+  return [...announced.values()].map((a) => ({ rdns: a.info.rdns, name: a.info.name, icon: a.info.icon }));
+}
+function chosenRdns(): string | null { try { return localStorage.getItem("arctools_wallet_rdns"); } catch { return null; } }
+
 export function getEth(): Eth | null {
+  listenProviders();
+  const r = chosenRdns();
+  if (r && announced.has(r)) return announced.get(r)!.provider;
   const w = window as unknown as { ethereum?: Eth };
   return w.ethereum ?? null;
 }
@@ -134,6 +156,17 @@ export function setStoredWallet(addr: string | null) {
   try {
     window.dispatchEvent(new CustomEvent(WALLET_EVENT, { detail: addr }));
   } catch { /* ssr guard */ }
+}
+
+/** Full disconnect: forget the address, revoke the site's account permission in the wallet (MetaMask / Rabby honour
+ *  wallet_revokePermissions), and forget which extension was chosen — the next Connect shows the pickers again. */
+export async function disconnectWallet(): Promise<void> {
+  const eth = getEth();
+  setStoredWallet(null);
+  try { localStorage.removeItem("arctools_wallet_rdns"); } catch { /* ignore */ }
+  if (eth) {
+    try { await eth.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] }); } catch { /* not supported: fine */ }
+  }
 }
 
 export function getStoredWallet(): string | null {
@@ -151,10 +184,36 @@ export function onWalletChange(cb: (addr: string | null) => void): () => void {
   return () => window.removeEventListener(WALLET_EVENT, h);
 }
 
-export async function connectWallet(): Promise<string> {
-  const eth = getEth();
+/** Ask the user which wallet extension to use when more than one is installed (EIP-6963). Resolves the chosen rdns. */
+let pickerHook: ((opts: { rdns: string; name: string; icon: string }[]) => Promise<string | null>) | null = null;
+export function setWalletPicker(fn: typeof pickerHook) { pickerHook = fn; }
+
+export async function connectWallet(opts: { forcePicker?: boolean } = {}): Promise<string> {
+  listenProviders();
+  await new Promise((r) => setTimeout(r, 60));   // let extensions answer requestProvider
+  const wallets = listWallets();
+  let eth: Eth | null = null;
+  if (wallets.length > 1 && (opts.forcePicker || !chosenRdns() || !announced.has(chosenRdns()!))) {
+    const pick = pickerHook ? await pickerHook(wallets) : wallets[0].rdns;
+    if (!pick) throw new Error("Connection cancelled.");
+    try { localStorage.setItem("arctools_wallet_rdns", pick); } catch { /* ignore */ }
+    eth = announced.get(pick)?.provider ?? null;
+  } else if (wallets.length === 1) {
+    try { localStorage.setItem("arctools_wallet_rdns", wallets[0].rdns); } catch { /* ignore */ }
+    eth = announced.get(wallets[0].rdns)?.provider ?? getEth();
+  } else {
+    eth = getEth();
+  }
   if (!eth) throw new Error("No wallet found. Install MetaMask / Rabby and retry.");
-  const accts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
+  // after a disconnect the permission was revoked, so this opens the account chooser instead of silently reusing the last account
+  let accts: string[] = [];
+  try {
+    await eth.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] });
+  } catch (e) {
+    if ((e as { code?: number }).code === 4001) throw new Error("Connection cancelled.");
+    /* wallets without wallet_requestPermissions fall through to eth_requestAccounts */
+  }
+  accts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
   try {
     await eth.request({
       method: "wallet_switchEthereumChain",

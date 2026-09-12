@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { connectWallet, getStoredWallet, onWalletChange, setStoredWallet } from "@/lib/arc-wallet";
+import { connectWallet, disconnectWallet, getStoredWallet, onWalletChange, setStoredWallet, setWalletPicker } from "@/lib/arc-wallet";
 import { PadTicker } from "./pad-ticker";
 
 /** Shared site nav: tool links, launchpad, rewards, wallet connect. */
@@ -20,8 +20,14 @@ export function ArcNav({ active }: { active?: string }) {
     }
   };
 
-  const disconnect = () => {
-    setStoredWallet(null);
+  // picker for the case of several installed wallet extensions (MetaMask + Rabby + …)
+  const [picker, setPicker] = useState<{ opts: { rdns: string; name: string; icon: string }[]; resolve: (r: string | null) => void } | null>(null);
+  useEffect(() => { setWalletPicker((opts) => new Promise((resolve) => setPicker({ opts, resolve }))); return () => setWalletPicker(null); }, []);
+  const disconnect = async () => {
+    // full disconnect (permission revoked in the extension), then straight back into the connect flow so the
+    // user picks the wallet / account they actually want
+    await disconnectWallet();
+    try { await connectWallet({ forcePicker: true }); } catch { /* user closed the chooser: stays disconnected */ }
   };
 
   const links = [
@@ -82,8 +88,21 @@ export function ArcNav({ active }: { active?: string }) {
           </a>
         ))}
       </div>
+      {picker && (
+        <div onClick={() => { picker.resolve(null); setPicker(null); }} style={{ alignItems: "center", background: "rgba(0,0,0,0.6)", display: "flex", inset: 0, justifyContent: "center", position: "fixed", zIndex: 100 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#0e1118", border: "1px solid var(--arc-line)", borderRadius: 12, minWidth: 280, padding: 16 }}>
+            <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: "0 0 10px", textTransform: "uppercase" }}>Choose a wallet</p>
+            {picker.opts.map((o) => (
+              <button className="arc-mono" key={o.rdns} onClick={() => { picker.resolve(o.rdns); setPicker(null); }} style={{ alignItems: "center", background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 8, color: "var(--arc-ink)", cursor: "pointer", display: "flex", fontSize: 13, gap: 10, marginBottom: 6, padding: "10px 12px", width: "100%" }} type="button">
+                <img alt="" height={22} src={o.icon} width={22} /> {o.name}
+              </button>
+            ))}
+            <button className="arc-mono" onClick={() => { picker.resolve(null); setPicker(null); }} style={{ background: "transparent", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, marginTop: 4 }} type="button">cancel</button>
+          </div>
+        </div>
+      )}
       {wallet ? (
-        <button className="arc-wallet arc-mono" onClick={disconnect} title="Disconnect" type="button">
+        <button className="arc-wallet arc-mono" onClick={() => void disconnect()} title="Disconnect and pick another wallet" type="button">
           {wallet.slice(0, 6)}…{wallet.slice(-4)} ✕
         </button>
       ) : (
