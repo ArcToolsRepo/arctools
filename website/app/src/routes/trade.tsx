@@ -25,6 +25,10 @@ export const Route = createFileRoute("/trade")({
 });
 
 type Mover = { token: string; n: number; vol: number; p1: number; chg: number; symbol: string | null };
+type Trend = { token: string; symbol: string | null; txs: number; vol: number; buys: number; sells: number; traders: number; p1: number | null; chg: number | null; first_ts: number | null; ath: number | null; txs_all: number; supply: number | null; mcap: number | null; ath_mcap: number | null };
+type Row = { token: string; symbol: string; name: string; logo: string | null; pad: string; age: number | null; ca: string; mcap: number | null; chg: number | null; athMcap: number | null; liq: number | null; vol: number; txs: number; buys: number; sells: number; traders: number; insiders: number; twitter: string | null; telegram: string | null; website: string | null; price: number | null };
+const FAV_KEY = "arctools_favs";
+const loadFavs = (): Set<string> => { try { return new Set(JSON.parse(localStorage.getItem(FAV_KEY) ?? "[]")); } catch { return new Set(); } };
 type Cluster = { token: string; symbol: string | null; insiders: number; usd: number; ranks: string; last_ts: number };
 type Position = { token: string; symbol: string | null; net: number; avg: number; price: number | null; value: number | null; unrealized: number | null; realized: number; cost: number; n: number; last_ts: number };
 
@@ -40,6 +44,7 @@ const ago = (iso: string | null | number) => {
 const priceStr = (p: number | null) => (p == null ? "—" : p >= 1 ? `$${p.toFixed(4)}` : `$${p.toFixed(Math.max(2, -Math.floor(Math.log10(p)) + 3))}`);
 
 const SEL = { balanceOf: "0x70a08231", allowance: "0xdd62ed3e", approve: "0x095ea7b3" };
+const tfLabel = (m: number) => (m < 60 ? `${m}m` : `${m / 60}h`);
 const UP = "var(--arc-up)", DOWN = "var(--arc-down, #f0534f)";
 const cell: React.CSSProperties = { borderTop: "1px solid var(--arc-line)", fontSize: 13, padding: "9px 10px 9px 0", verticalAlign: "middle", whiteSpace: "nowrap" };
 const hd: React.CSSProperties = { color: "var(--arc-muted)", fontSize: 10, fontWeight: 400, padding: "0 10px 8px 0", textAlign: "left", textTransform: "uppercase" };
@@ -50,9 +55,28 @@ function Trade() {
   const [amount, setAmount] = useState(5);
   const [custom, setCustom] = useState("");
   const [slip, setSlip] = useState(5);
-  const [tab, setTab] = useState<"new" | "trending" | "insiders" | "holdings">("new");
+  const [tab, setTab] = useState<"new" | "trending" | "insiders" | "favs" | "holdings">("trending");
   const [rows, setRows] = useState<PadToken[]>([]);
   const [movers, setMovers] = useState<Mover[]>([]);
+  const [trend, setTrend] = useState<Trend[]>([]);
+  const [tf, setTf] = useState(60);
+  const [favs, setFavs] = useState<Set<string>>(new Set());
+  const [liq, setLiq] = useState<Map<string, number>>(new Map());
+  const [sortKey, setSortKey] = useState<"age" | "mcap" | "vol" | "txs" | "chg">("vol");
+  useEffect(() => { setFavs(loadFavs()); }, []);
+  const toggleFav = (t: string) => setFavs((f) => { const n = new Set(f); if (n.has(t)) n.delete(t); else n.add(t); try { localStorage.setItem(FAV_KEY, JSON.stringify([...n])); } catch { /* ignore */ } return n; });
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetch(`${API}/api/trending?minutes=${tf}&limit=120`).then((r) => r.json()).then((j) => alive && setTrend(j.rows ?? [])).catch(() => null);
+    void load();
+    const id = setInterval(load, 15_000);
+    return () => { alive = false; clearInterval(id); };
+  }, [tf]);
+  useEffect(() => {
+    fetch("https://api.radardex.pro/tokens").then((r) => r.json()).then((j: { tokens?: { address?: string; liquidityUsdc?: number }[] }) => {
+      setLiq(new Map((j.tokens ?? []).filter((t) => t.address).map((t) => [t.address!.toLowerCase(), Number(t.liquidityUsdc ?? 0)])));
+    }).catch(() => null);
+  }, []);
   const [clusters, setClusters] = useState<Cluster[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -149,22 +173,40 @@ function Trade() {
       {busy === token ? "…" : `⚡ ${buyAmt} USDC`}
     </button>
   );
-  const Socials = ({ t }: { t: PadToken }) => (
-    <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>
-      {t.twitter && <a href={t.twitter} rel="noreferrer" style={{ color: "var(--arc-muted)", marginRight: 6 }} target="_blank">𝕏</a>}
-      {t.telegram && <a href={t.telegram} rel="noreferrer" style={{ color: "var(--arc-muted)", marginRight: 6 }} target="_blank">✈︎</a>}
-      {t.website && <a href={t.website} rel="noreferrer" style={{ color: "var(--arc-muted)" }} target="_blank">web</a>}
-    </span>
-  );
   const Logo = ({ t }: { t: { logo?: string | null; symbol: string } }) => (
     <span style={{ alignItems: "center", background: "#0e1118", border: "1px solid var(--arc-line)", borderRadius: 6, display: "inline-flex", height: 30, justifyContent: "center", marginRight: 8, overflow: "hidden", verticalAlign: "middle", width: 30 }}>
       {t.logo ? <img alt="" height={30} src={t.logo} style={{ objectFit: "cover" }} width={30} /> : <span className="arc-mono" style={{ fontSize: 12 }}>{t.symbol.slice(0, 1)}</span>}
     </span>
   );
 
-  const filtered = rows.filter((r) => !q || `${r.name} ${r.symbol} ${r.token}`.toLowerCase().includes(q.toLowerCase()));
-  const newest = [...filtered].sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()).slice(0, 80);
-  const trending = movers.filter((m) => !q || `${m.symbol ?? ""} ${m.token}`.toLowerCase().includes(q.toLowerCase())).sort((a, b) => b.vol - a.vol).slice(0, 60);
+  const trendMap = useMemo(() => new Map(trend.map((t) => [t.token.toLowerCase(), t])), [trend]);
+  const toRow = (token: string): Row => {
+    const k = token.toLowerCase();
+    const t = byToken.get(k); const tr = trendMap.get(k); const c = clusterMap.get(k);
+    const createdTs = t?.createdAt ? new Date(t.createdAt).getTime() / 1000 : tr?.first_ts ?? null;
+    return {
+      token: k, symbol: tr?.symbol ?? t?.symbol ?? short(k), name: t?.name ?? tr?.symbol ?? "", logo: t?.logo ?? null, pad: t?.pad ?? "",
+      age: createdTs, ca: k, mcap: tr?.mcap ?? t?.mcapUsd ?? null, chg: tr?.chg ?? null, athMcap: tr?.ath_mcap ?? null,
+      liq: liq.get(k) ?? null, vol: tr?.vol ?? t?.volUsd ?? 0, txs: tr?.txs ?? 0, buys: tr?.buys ?? 0, sells: tr?.sells ?? 0, traders: tr?.traders ?? 0,
+      insiders: c?.insiders ?? 0, twitter: t?.twitter ?? null, telegram: t?.telegram ?? null, website: t?.website ?? null,
+      price: tr?.p1 ? tr.p1 / 1e6 : t?.priceUsd ?? null,
+    };
+  };
+  const matches = (r: Row) => !q || `${r.name} ${r.symbol} ${r.token}`.toLowerCase().includes(q.toLowerCase());
+  const tableRows: Row[] = useMemo(() => {
+    let base: Row[];
+    if (tab === "new") base = rows.map((t) => toRow(t.token)).sort((a, b) => (b.age ?? 0) - (a.age ?? 0)).slice(0, 100);
+    else if (tab === "trending") base = trend.map((t) => toRow(t.token));
+    else if (tab === "insiders") base = clusters.map((c) => toRow(c.token));
+    else if (tab === "favs") base = [...favs].map((t) => toRow(t));
+    else base = [];
+    base = base.filter(matches);
+    if (tab !== "new" || sortKey !== "vol") {
+      const key = tab === "new" && sortKey === "vol" ? "age" : sortKey;
+      base.sort((a, b) => key === "age" ? (b.age ?? 0) - (a.age ?? 0) : key === "mcap" ? (b.mcap ?? 0) - (a.mcap ?? 0) : key === "txs" ? b.txs - a.txs : key === "chg" ? (b.chg ?? -1e9) - (a.chg ?? -1e9) : b.vol - a.vol);
+    }
+    return base;
+  }, [tab, rows, trend, clusters, favs, q, sortKey, byToken, trendMap, clusterMap, liq]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <main className="arc-site" style={{ minHeight: "100dvh" }}>
@@ -188,9 +230,12 @@ function Trade() {
             </div>
             {/* tabs */}
             <div style={{ borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 2, marginBottom: 8 }}>
-              {([["new", "New pairs"], ["trending", "Trending 24h"], ["insiders", "Insider picks"], ["holdings", `Holdings${positions.length ? ` (${positions.length})` : ""}`]] as const).map(([k, l]) => (
-                <button key={k} onClick={() => setTab(k)} style={{ background: "transparent", border: "none", borderBottom: "2px solid " + (tab === k ? "var(--arc-cobalt)" : "transparent"), color: tab === k ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 14, fontWeight: tab === k ? 700 : 400, padding: "8px 14px" }} type="button">{l}</button>
+              {([["new", "New pair"], ["trending", "Trending"], ["insiders", "Insider picks"], ["favs", `★ Watchlist${favs.size ? ` (${favs.size})` : ""}`], ["holdings", `Holdings${positions.length ? ` (${positions.length})` : ""}`]] as const).map(([k, l]) => (
+                <button key={k} onClick={() => setTab(k)} style={{ background: "transparent", border: "none", borderBottom: "2px solid " + (tab === k ? "var(--arc-up)" : "transparent"), color: tab === k ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, fontWeight: tab === k ? 700 : 400, padding: "8px 14px" }} type="button">{l}</button>
               ))}
+              <span style={{ marginLeft: "auto" }}>
+                {[1, 5, 60, 360, 1440].map((m) => <button key={m} className="arc-mono" onClick={() => setTf(m)} style={{ background: tf === m ? "rgba(255,255,255,0.08)" : "transparent", border: "1px solid " + (tf === m ? "var(--arc-line)" : "transparent"), borderRadius: 4, color: tf === m ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, marginLeft: 2, padding: "4px 9px" }} type="button">{tfLabel(m)}</button>)}
+              </span>
             </div>
             {/* paste CA quick action */}
             {/^0x[0-9a-fA-F]{40}$/.test(q.trim()) && !byToken.has(q.trim().toLowerCase()) && (
@@ -203,56 +248,53 @@ function Trade() {
             )}
 
             <div style={{ overflowX: "auto" }}>
-              {tab === "new" && (
+              {tab !== "holdings" && (
                 <table style={{ borderCollapse: "collapse", width: "100%" }}>
-                  <thead><tr><th style={hd}>token</th><th style={hd}>pad</th><th style={hd}>age</th><th style={hd}>MC</th><th style={hd}>vol 24h</th><th style={hd}>insiders</th><th style={hd}>links</th><th style={hd} /></tr></thead>
+                  <thead>
+                    <tr>
+                      <th style={{ ...hd, width: 26 }} />
+                      <th style={hd}>Token / <button className="arc-mono" onClick={() => setSortKey("age")} style={{ background: "none", border: "none", color: sortKey === "age" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">Age ⇅</button></th>
+                      <th style={hd}><button className="arc-mono" onClick={() => setSortKey("mcap")} style={{ background: "none", border: "none", color: sortKey === "mcap" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">MC ⇅</button></th>
+                      <th style={hd}>ATH MC</th>
+                      <th style={hd}>Liq</th>
+                      <th style={hd}><button className="arc-mono" onClick={() => setSortKey("vol")} style={{ background: "none", border: "none", color: sortKey === "vol" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">{tfLabel(tf)} Vol ⇅</button></th>
+                      <th style={hd}><button className="arc-mono" onClick={() => setSortKey("txs")} style={{ background: "none", border: "none", color: sortKey === "txs" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">{tfLabel(tf)} TXs ⇅</button></th>
+                      <th style={hd}>Insiders</th>
+                      <th style={hd} />
+                    </tr>
+                  </thead>
                   <tbody>
-                    {newest.map((t) => { const c = clusterMap.get(t.token.toLowerCase()); return (
-                      <tr key={t.token}>
-                        <td style={cell}><a href={`/token/${t.token}`} style={{ color: "var(--arc-ink)", textDecoration: "none" }}><Logo t={t} /><strong>{t.symbol}</strong> <span style={{ color: "var(--arc-muted)", fontSize: 12 }}>{t.name.slice(0, 22)}</span></a></td>
-                        <td className="arc-mono" style={{ ...cell, color: "var(--arc-muted)", fontSize: 11 }}>{t.pad}</td>
-                        <td className="arc-mono" style={{ ...cell, color: "var(--arc-muted)" }}>{ago(t.createdAt)}</td>
-                        <td className="arc-mono" style={cell}>{usd(t.mcapUsd)}</td>
-                        <td className="arc-mono" style={cell}>{usd(t.volUsd)}</td>
-                        <td className="arc-mono" style={{ ...cell, color: c ? UP : "var(--arc-muted)" }}>{c ? `${c.insiders} · ${usd(c.usd)}` : "—"}</td>
-                        <td style={cell}><Socials t={t} /></td>
-                        <td style={{ ...cell, textAlign: "right" }}><BuyBtn symbol={t.symbol} token={t.token} /></td>
-                      </tr>); })}
-                  </tbody>
-                </table>
-              )}
-              {tab === "trending" && (
-                <table style={{ borderCollapse: "collapse", width: "100%" }}>
-                  <thead><tr><th style={hd}>token</th><th style={hd}>24h</th><th style={hd}>price</th><th style={hd}>vol 24h</th><th style={hd}>trades</th><th style={hd}>insiders</th><th style={hd} /></tr></thead>
-                  <tbody>
-                    {trending.map((m) => { const t = byToken.get(m.token.toLowerCase()); const c = clusterMap.get(m.token.toLowerCase()); const sym = m.symbol ?? t?.symbol ?? short(m.token); return (
-                      <tr key={m.token}>
-                        <td style={cell}><a href={`/token/${m.token}`} style={{ color: "var(--arc-ink)", textDecoration: "none" }}><Logo t={{ logo: t?.logo, symbol: sym }} /><strong>{sym}</strong> {t && <span style={{ color: "var(--arc-muted)", fontSize: 11 }}>{t.pad}</span>}</a></td>
-                        <td className="arc-mono" style={{ ...cell, color: m.chg >= 0 ? UP : DOWN, fontWeight: 700 }}>{m.chg >= 0 ? "+" : ""}{m.chg.toFixed(1)}%</td>
-                        <td className="arc-mono" style={cell}>{priceStr(m.p1 / 1e6)}</td>
-                        <td className="arc-mono" style={cell}>{usd(m.vol)}</td>
-                        <td className="arc-mono" style={{ ...cell, color: "var(--arc-muted)" }}>{m.n}</td>
-                        <td className="arc-mono" style={{ ...cell, color: c ? UP : "var(--arc-muted)" }}>{c ? `${c.insiders}` : "—"}</td>
-                        <td style={{ ...cell, textAlign: "right" }}><BuyBtn symbol={sym} token={m.token} /></td>
-                      </tr>); })}
-                  </tbody>
-                </table>
-              )}
-              {tab === "insiders" && (
-                <table style={{ borderCollapse: "collapse", width: "100%" }}>
-                  <thead><tr><th style={hd}>token</th><th style={hd}>insiders</th><th style={hd}>ranks</th><th style={hd}>bought</th><th style={hd}>last</th><th style={hd}>MC</th><th style={hd} /></tr></thead>
-                  <tbody>
-                    {clusters.map((c) => { const t = byToken.get(c.token.toLowerCase()); const sym = c.symbol ?? t?.symbol ?? short(c.token); return (
-                      <tr key={c.token}>
-                        <td style={cell}><a href={`/token/${c.token}`} style={{ color: "var(--arc-ink)", textDecoration: "none" }}><Logo t={{ logo: t?.logo, symbol: sym }} /><strong>{sym}</strong></a></td>
-                        <td className="arc-mono" style={{ ...cell, color: UP, fontWeight: 700 }}>{c.insiders}</td>
-                        <td className="arc-mono" style={{ ...cell, color: "var(--arc-muted)" }}>#{c.ranks.split(",").slice(0, 5).join(" #")}</td>
-                        <td className="arc-mono" style={cell}>{usd(c.usd)}</td>
-                        <td className="arc-mono" style={{ ...cell, color: "var(--arc-muted)" }}>{ago(c.last_ts)}</td>
-                        <td className="arc-mono" style={cell}>{usd(t?.mcapUsd ?? null)}</td>
-                        <td style={{ ...cell, textAlign: "right" }}><BuyBtn symbol={sym} token={c.token} /></td>
-                      </tr>); })}
-                    {clusters.length === 0 && <tr><td className="arc-mono" colSpan={7} style={{ ...cell, color: "var(--arc-muted)" }}>No token with 2+ insiders in the last 24h.</td></tr>}
+                    {tableRows.length === 0 && <tr><td className="arc-mono" colSpan={9} style={{ ...cell, color: "var(--arc-muted)" }}>{tab === "favs" ? "No favourites yet — click ☆ on any row." : tab === "insiders" ? "No token with 2+ insiders in the last 24h." : "Loading…"}</td></tr>}
+                    {tableRows.map((r) => (
+                      <tr key={r.token} style={{ background: favs.has(r.token) ? "rgba(46,124,255,0.05)" : undefined }}>
+                        <td style={{ ...cell, paddingRight: 4 }}><button onClick={() => toggleFav(r.token)} style={{ background: "none", border: "none", color: favs.has(r.token) ? "#f5c542" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, padding: 0 }} title="favourite" type="button">{favs.has(r.token) ? "★" : "☆"}</button></td>
+                        <td style={{ ...cell, minWidth: 250 }}>
+                          <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
+                            <a href={`/token/${r.token}`} style={{ textDecoration: "none" }}><span style={{ alignItems: "center", background: "#0e1118", border: "1px solid var(--arc-line)", borderRadius: 8, display: "inline-flex", height: 38, justifyContent: "center", overflow: "hidden", width: 38 }}>{r.logo ? <img alt="" height={38} src={r.logo} style={{ objectFit: "cover" }} width={38} /> : <span className="arc-mono" style={{ fontSize: 14 }}>{r.symbol.slice(0, 1)}</span>}</span></a>
+                            <div style={{ lineHeight: 1.25 }}>
+                              <div><a href={`/token/${r.token}`} style={{ color: "var(--arc-ink)", fontWeight: 700, textDecoration: "none" }}>{r.symbol}</a> <span style={{ color: "var(--arc-muted)", fontSize: 12 }}>{r.name.slice(0, 18)}</span>
+                                {r.twitter && <a href={r.twitter} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 6 }} target="_blank">𝕏</a>}
+                                {r.telegram && <a href={r.telegram} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 4 }} target="_blank">✈︎</a>}
+                                {r.website && <a href={r.website} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 4 }} target="_blank">🌐</a>}
+                              </div>
+                              <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>
+                                <span style={{ color: UP }}>{r.age ? ago(r.age) : "—"}</span> · {short(r.ca)}
+                                <button className="arc-mono" onClick={() => void navigator.clipboard.writeText(r.token)} style={{ background: "none", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "0 4px" }} title="copy CA" type="button">⧉</button>
+                                {r.pad && <span style={{ border: "1px solid var(--arc-line)", borderRadius: 3, fontSize: 9, marginLeft: 4, padding: "0 4px" }}>{r.pad}</span>}
+                                {r.traders > 0 && <span style={{ marginLeft: 6 }} title="traders in window">👥{r.traders}</span>}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="arc-mono" style={cell}><div style={{ color: "var(--arc-cobalt)", fontWeight: 700 }}>{usd(r.mcap)}</div>{r.chg != null && <div style={{ color: r.chg >= 0 ? UP : DOWN, fontSize: 11 }}>{r.chg >= 0 ? "+" : ""}{r.chg.toFixed(1)}%</div>}</td>
+                        <td className="arc-mono" style={{ ...cell, color: "var(--arc-cobalt)" }}>{usd(r.athMcap)}</td>
+                        <td className="arc-mono" style={cell}>{r.liq != null && r.liq > 0 ? usd(r.liq) : "—"}</td>
+                        <td className="arc-mono" style={{ ...cell, color: "#f5c542" }}>{r.vol > 0 ? usd(r.vol) : "—"}</td>
+                        <td className="arc-mono" style={cell}><div>{r.txs > 0 ? r.txs.toLocaleString() : "—"}</div>{r.txs > 0 && <div style={{ fontSize: 11 }}><span style={{ color: UP }}>{r.buys}</span> / <span style={{ color: DOWN }}>{r.sells}</span></div>}</td>
+                        <td className="arc-mono" style={{ ...cell, color: r.insiders ? UP : "var(--arc-muted)" }}>{r.insiders || "—"}</td>
+                        <td style={{ ...cell, textAlign: "right" }}><BuyBtn symbol={r.symbol} token={r.token} /></td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               )}

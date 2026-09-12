@@ -461,12 +461,20 @@ async def api_v4launches(request: web.Request) -> web.Response:
 
 
 _supply_cache: dict[str, tuple[float, float]] = {}
+_supply_sem = asyncio.Semaphore(6)
 
 
 async def _total_supply(token: str) -> float | None:
     c = _supply_cache.get(token)
-    if c and time.time() - c[1] < 6 * 3600:
+    if c and c[0] is not None and time.time() - c[1] < 6 * 3600:
         return c[0]
+    if c and c[0] is None and time.time() - c[1] < 120:
+        return None
+    async with _supply_sem:
+        return await _total_supply_fetch(token)
+
+
+async def _total_supply_fetch(token: str) -> float | None:
     try:
         async with _aiohttp.ClientSession() as s:
             async with s.post(RELAY_RPC, json={"id": 1, "jsonrpc": "2.0", "method": "eth_call",
@@ -1098,6 +1106,8 @@ async def start_api():
     app.router.add_get("/api/positions", api_positions)
     from .watchlist import api_wallet_trades
     app.router.add_get("/api/wallet-trades", api_wallet_trades)
+    from .watchlist import api_trending
+    app.router.add_get("/api/trending", api_trending)
     app.router.add_get("/api/whales", api_whales)
     app.router.add_get("/api/movers", api_movers)
     app.router.add_get("/api/insider-activity", api_insider_activity)

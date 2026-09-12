@@ -317,3 +317,48 @@ async def api_wallet_trades(request: web.Request) -> web.Response:
     out = [dict(r) for r in rows]
     await _fill_symbols(out)
     return web.json_response({"wallet": w, "trades": out, "summary": dict(agg) if agg else {}, "stats": [dict(x) for x in st]}, headers=API_CORS)
+
+
+async def api_trending(request: web.Request) -> web.Response:
+    """GMGN-style trending: per token in the window — volume, buys/sells, traders, price change, last price, ATH price,
+    first trade time, supply (for MC). Sorted by window volume."""
+    from .insider import _total_supply
+    mins = min(1440, max(1, int(request.query.get("minutes", "60"))))
+    limit = min(150, int(request.query.get("limit", "80")))
+    sort = request.query.get("sort", "vol")
+    now = int(time.time())
+    rows = await db.fetchall(text("""
+        WITH w AS (
+          SELECT token, ts, log_index, side, usdc, wallet, price1m,
+                 ROW_NUMBER() OVER (PARTITION BY token ORDER BY ts ASC, log_index ASC) AS rn_first,
+                 ROW_NUMBER() OVER (PARTITION BY token ORDER BY ts DESC, log_index DESC) AS rn_last
+          FROM swaps WHERE ts > :since AND usdc >= 0.2
+        ), agg AS (
+          SELECT token, COUNT(*) AS txs, SUM(usdc) AS vol,
+                 SUM(CASE WHEN side='buy' THEN 1 ELSE 0 END) AS buys, SUM(CASE WHEN side='sell' THEN 1 ELSE 0 END) AS sells,
+                 COUNT(DISTINCT wallet) AS traders,
+                 MAX(CASE WHEN rn_first = 1 THEN price1m END) AS p0, MAX(CASE WHEN rn_last = 1 THEN price1m END) AS p1
+          FROM w GROUP BY token
+        ), life AS (
+          SELECT token, MIN(ts) AS first_ts, MAX(price1m) AS ath, COUNT(*) AS txs_all FROM swaps WHERE price1m > 0 AND usdc >= 0.5 GROUP BY token
+        )
+        SELECT a.token, sym.symbol, a.txs, a.vol, a.buys, a.sells, a.traders, a.p0, a.p1,
+               CASE WHEN a.p0 > 0 THEN (a.p1 - a.p0) / a.p0 * 100 ELSE NULL END AS chg,
+               l.first_ts, l.ath, l.txs_all
+        FROM agg a LEFT JOIN token_symbols sym ON sym.token = a.token LEFT JOIN life l ON l.token = a.token
+        ORDER BY a.vol DESC LIMIT :l""").bindparams(since=now - mins * 60, l=limit))
+    out = [dict(r) for r in rows]
+    async def fill(d):
+        d["supply"] = await _total_supply(d["token"])
+        px = float(d["p1"] or 0) / 1e6
+        d["mcap"] = (px * d["supply"]) if (d["supply"] and px > 0) else None
+        d["ath_mcap"] = (float(d["ath"]) / 1e6 * d["supply"]) if (d["supply"] and d.get("ath")) else None
+    await asyncio.gather(*[fill(d) for d in out])
+    await _fill_symbols(out)
+    if sort == "mcap":
+        out.sort(key=lambda d: -(d.get("mcap") or 0))
+    elif sort == "chg":
+        out.sort(key=lambda d: -(d.get("chg") or -1e9))
+    elif sort == "txs":
+        out.sort(key=lambda d: -(d.get("txs") or 0))
+    return web.json_response({"minutes": mins, "rows": out}, headers=API_CORS)
