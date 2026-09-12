@@ -137,7 +137,7 @@ function Profile() {
     <main className="arc-site" style={{ minHeight: "100dvh" }}>
       <ArcNav active="/profile" />
       <section className="arc-section" style={{ maxWidth: 1360, paddingTop: 118 }}>
-        <div style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr) 340px" }}>
+        <div className="arc-2col" style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr) 340px" }}>
           <div>
             <h1 style={{ fontSize: 26, margin: "0 0 4px" }}>Profile</h1>
             <p style={{ color: "var(--arc-muted)", fontSize: 13, margin: "0 0 14px" }}>Your trading wallet: what is in it, what it is worth, what it did. {addr && <span className="arc-mono">{addr}</span>}</p>
@@ -244,7 +244,7 @@ function Profile() {
             )}
           </div>
 
-          <div style={{ display: "grid", gap: 12, height: "fit-content", position: "sticky", top: 96 }}>
+          <div className="arc-aside" style={{ display: "grid", gap: 12, height: "fit-content", position: "sticky", top: 96 }}>
             <WalletPanel onReady={() => void load()} />
             {toast && (
               <div style={{ background: "var(--arc-paper)", border: "1px solid " + (toast.ok ? UP : DOWN), fontSize: 13, padding: 12 }}>

@@ -247,7 +247,7 @@ function Intel() {
           {/* WHALE FEED */}
           {show("whales") && <div style={card}>
             <Title right={<>{[100, 250, 1000, 5000].map((m) => <Pill key={m} on={whaleMin === m} onClick={() => setWhaleMin(m)}>≥${m}</Pill>)}{[15, 60, 360, 1440].map((m) => <Pill key={m} on={whaleWin === m} onClick={() => setWhaleWin(m)}>{m < 60 ? `${m}m` : `${m / 60}h`}</Pill>)}</>} caption="Every swap above the threshold, newest first. A rank badge means the wallet is in the top-100 by 30-day PnL. Click a wallet to inspect it.">WHALE FEED · biggest swaps, live</Title>
-            <div style={{ maxHeight: 560, overflow: "auto" }}>
+            <div className="arc-scroll" style={{ maxHeight: 560, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead><tr><th style={th}>age</th><th style={th}>side</th><th style={th}>USDC</th><th style={th}>token</th><th style={th}>wallet</th><th style={th}>venue</th><th style={th} /></tr></thead>
                 <tbody>
@@ -274,7 +274,7 @@ function Intel() {
           {/* WHALES BY BALANCE */}
           {show("rich") && <div style={card}>
             <Title right={rich?.snapshot_ts ? <span style={{ color: "var(--arc-muted)" }}>snapshot {ago(rich.snapshot_ts)} ago</span> : null} caption="Who holds the most USDC among wallets that ever traded on Arc. Δ snap = change since the last 10-minute snapshot.">WHALES BY BALANCE · native USDC held by wallets the index knows</Title>
-            <div style={{ maxHeight: 560, overflow: "auto" }}>
+            <div className="arc-scroll" style={{ maxHeight: 560, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead><tr><th style={th}>#</th><th style={th}>wallet</th><th style={th}>USDC</th><th style={th}>Δ snap</th><th style={th}>30d PnL</th><th style={th}>swaps</th><th style={th}>last</th><th style={th} /></tr></thead>
                 <tbody>
@@ -299,7 +299,7 @@ function Intel() {
           {/* INSIDER CLUSTERS */}
           {show("clusters") && <div style={card}>
             <Title right={<>{[30, 120, 360, 1440].map((m) => <Pill key={m} on={clusterWin === m} onClick={() => setClusterWin(m)}>{m < 60 ? `${m}m` : `${m / 60}h`}</Pill>)}</>} caption="When two or more ranked wallets buy the same token in the same window, it is the strongest signal this index produces.">INSIDER CLUSTERS · tokens several top-100 wallets bought together</Title>
-            <div style={{ maxHeight: 460, overflow: "auto" }}>
+            <div className="arc-scroll" style={{ maxHeight: 460, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead><tr><th style={th}>token</th><th style={th}>insiders</th><th style={th}>ranks</th><th style={th}>bought</th><th style={th}>last</th><th style={th} /></tr></thead>
                 <tbody>
@@ -322,7 +322,7 @@ function Intel() {
           {/* FRESH WALLETS */}
           {show("fresh") && <div style={card}>
             <Title right={<>{[50, 100, 500, 2000].map((m) => <Pill key={m} on={freshMin === m} onClick={() => setFreshMin(m)}>≥${m}</Pill>)}</>} caption="Wallets that had never traded on Arc before, sorted by the size of their first buy. Big first buys from new wallets are usually not retail.">FRESH WALLETS · first ever swap on Arc in the last 24h</Title>
-            <div style={{ maxHeight: 460, overflow: "auto" }}>
+            <div className="arc-scroll" style={{ maxHeight: 460, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead><tr><th style={th}>age</th><th style={th}>wallet</th><th style={th}>first buy</th><th style={th}>token</th><th style={th}>since</th><th style={th} /></tr></thead>
                 <tbody>
@@ -344,7 +344,7 @@ function Intel() {
           {/* MOVERS */}
           {show("movers") && <div style={card}>
             <Title right={<>{[15, 60, 360, 1440].map((m) => <Pill key={m} on={moverWin === m} onClick={() => setMoverWin(m)}>{m < 60 ? `${m}m` : `${m / 60}h`}</Pill>)}</>} caption="Price change from the first to the last trade in the window. Needs at least 3 trades and $50 of volume to appear.">TOP MOVERS</Title>
-            <div style={{ maxHeight: 460, overflow: "auto" }}>
+            <div className="arc-scroll" style={{ maxHeight: 460, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead><tr><th style={th}>token</th><th style={th}>change</th><th style={th}>price</th><th style={th}>vol</th><th style={th}>trades</th></tr></thead>
                 <tbody>
@@ -365,7 +365,7 @@ function Intel() {
           {/* INSIDER ACTIVITY */}
           {show("insiders") && <div style={card}>
             <Title right={<><a href="/insiders" style={{ color: "var(--arc-cobalt)" }}>leaderboard</a> · <a href="https://t.me/ArcToolsInsiders" rel="noreferrer" style={{ color: "var(--arc-cobalt)" }} target="_blank">channel</a></>} caption="Latest trades of the leaderboard wallets. Copy sends the wallet to the sniper as a copy-trade target.">INSIDER ACTIVITY · top-100 by 30d PnL</Title>
-            <div style={{ maxHeight: 460, overflow: "auto" }}>
+            <div className="arc-scroll" style={{ maxHeight: 460, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead><tr><th style={th}>age</th><th style={th}>#</th><th style={th}>side</th><th style={th}>USDC</th><th style={th}>token</th><th style={th}>30d PnL</th><th style={th} /></tr></thead>
                 <tbody>
@@ -388,7 +388,7 @@ function Intel() {
           {/* BALANCE MOVES */}
           {show("moves") && <div style={card}>
             <Title caption="USDC that entered or left a wallet between snapshots without a swap: exchanges, bridges, OTC. Positive = money arrived and has not been used yet.">BALANCE MOVES 24h · deposits & withdrawals that never touched a DEX</Title>
-            <div style={{ maxHeight: 460, overflow: "auto" }}>
+            <div className="arc-scroll" style={{ maxHeight: 460, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead><tr><th style={th}>age</th><th style={th}>wallet</th><th style={th}>Δ USDC</th><th style={th}>now</th><th style={th}>swaps</th><th style={th} /></tr></thead>
                 <tbody>
@@ -412,7 +412,7 @@ function Intel() {
           {show("bridge") && <div style={card}>
             <Title caption="Money crossing into Arc through Circle CCTP, with the chain it came from. Alerts for large inflows go to @ArcToolsInsiders.">BRIDGE WATCH · Circle CCTP into Arc</Title>
             {bridge && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, margin: "0 0 8px" }}>24h: <span style={{ color: "var(--arc-ink)" }}>{usd(bridge.in24)}</span> in · {usd(bridge.out24)} out · {bridge.n_in24} inflows from {bridge.wallets_in24} wallets</p>}
-            <div style={{ maxHeight: 460, overflow: "auto" }}>
+            <div className="arc-scroll" style={{ maxHeight: 460, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead><tr><th style={th}>age</th><th style={th}>dir</th><th style={th}>USDC</th><th style={th}>from</th><th style={th}>wallet</th><th style={th} /></tr></thead>
                 <tbody>

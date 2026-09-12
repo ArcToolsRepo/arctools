@@ -24,7 +24,7 @@ def check(name, cond, detail=""):
 
 
 # ---------- 1. site routes
-routes = ["/", "/feed", "/scanner", "/portfolio", "/bridge", "/launchpad", "/rewards", "/insiders",
+routes = ["/", "/feed", "/scan", "/portfolio", "/bridge", "/launchpad", "/rewards", "/insiders",
           "/token/0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52", "/token/0xbd88cf25a230f971adbf31efa30ed0d1bd3338be",
           "/token/0x3c95caa29142faeb82eb559f794eba7c15f3f4bb", "/pad/0x3c95caa29142faeb82eb559f794eba7c15f3f4bb",
           "/token/0x0000000000000000000000000000000000000001", "/api/pad-logo/0x3c95caa29142faeb82eb559f794eba7c15f3f4bb",

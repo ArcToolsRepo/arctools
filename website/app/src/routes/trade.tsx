@@ -222,7 +222,7 @@ function Trade() {
     <main className="arc-site" style={{ minHeight: "100dvh" }}>
       <ArcNav active="/trade" />
       <section className="arc-section" style={{ maxWidth: 1360, paddingTop: 118 }}>
-        <div style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr) 340px" }}>
+        <div className="arc-2col" style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr) 340px" }}>
           {/* LEFT: terminal */}
           <div>
             <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
@@ -337,7 +337,7 @@ function Trade() {
           </div>
 
           {/* RIGHT: wallet + toast */}
-          <div style={{ display: "grid", gap: 12, height: "fit-content", position: "sticky", top: 96 }}>
+          <div className="arc-aside" style={{ display: "grid", gap: 12, height: "fit-content", position: "sticky", top: 96 }}>
             <WalletPanel onReady={setAddr} />
             {toast && (
               <div style={{ background: "var(--arc-paper)", border: "1px solid " + (toast.ok ? UP : DOWN), fontSize: 13, padding: 12 }}>

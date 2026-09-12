@@ -57,20 +57,23 @@ async def relay(request: web.Request) -> web.Response:
             status=403, headers=CORS)
     payload = json.dumps(body)
     last_status, last_text = 502, "no upstream"
-    for up in UPSTREAMS:
-        try:
-            async with session.post(up, data=payload,
-                                    headers={"Content-Type": "application/json"}) as r:
-                text = await r.text()
-                if r.status == 200 and '"error"' not in text[:200].replace(" ", ""):
-                    return web.Response(text=text, content_type="application/json", headers=CORS)
-                # 200 with rpc error object: still return it unless quota/rate
-                low = text[:300].lower()
-                if r.status == 200 and not any(s in low for s in ("quota", "rate limit", "-32005", "-32600")):
-                    return web.Response(text=text, content_type="application/json", headers=CORS)
-                last_status, last_text = r.status, text[:300]
-        except Exception as e:  # noqa
-            last_status, last_text = 502, str(e)[:200]
+    # 3 rounds over all upstreams with growing backoff: arc-scan rate-limits in short bursts, Infura has quota blips
+    for attempt in range(3):
+        for up in UPSTREAMS:
+            try:
+                async with session.post(up, data=payload,
+                                        headers={"Content-Type": "application/json"}) as r:
+                    text = await r.text()
+                    if r.status == 200 and '"error"' not in text[:200].replace(" ", ""):
+                        return web.Response(text=text, content_type="application/json", headers=CORS)
+                    # 200 with rpc error object: still return it unless quota/rate
+                    low = text[:300].lower()
+                    if r.status == 200 and not any(s in low for s in ("quota", "rate limit", "-32005", "-32600", "too many")):
+                        return web.Response(text=text, content_type="application/json", headers=CORS)
+                    last_status, last_text = r.status, text[:300]
+            except Exception as e:  # noqa
+                last_status, last_text = 502, str(e)[:200]
+        await asyncio.sleep(0.25 * (attempt + 1))
     return web.Response(text=last_text or "upstream failed",
                         status=last_status if last_status >= 400 else 502, headers=CORS)
 
