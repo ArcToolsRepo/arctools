@@ -1,5 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { TokenLogo } from "@/components/token-logo";
 
 import { ArcNav } from "@/components/arc-nav";
 import "../arc-site.css";
@@ -18,7 +20,7 @@ const usd = (n: number | null | undefined) => n == null ? "—" : `${n < 0 ? "-"
 const ago = (ts: number) => { const s = Math.max(0, Date.now() / 1000 - ts); return s < 60 ? `${s | 0}s` : s < 3600 ? `${(s / 60) | 0}m` : s < 86400 ? `${(s / 3600) | 0}h` : `${(s / 86400) | 0}d`; };
 
 type Stat = { range: string; pnl_total: number | null; pnl_realized: number | null; winrate: number | null; trades: number | null; closed: number | null; volume: number | null; best_symbol: string | null; best_pnl: number | null; rank?: number | null };
-type Trade = { ts: number; tx?: string; token: string; symbol: string | null; side: string; usdc: number; venue: string };
+type Trade = { ts: number; tx?: string; log_index?: number; wallet?: string; token: string; symbol: string | null; side: string; usdc: number; venue: string; fresh?: boolean };
 type Pos = { token: string; symbol: string | null; net: number; cost: number; value: number | null; pnl: number | null };
 type Card = { wallet: string; stats: Stat[]; trades: Trade[]; positions: Pos[]; watchers: number; loading: boolean };
 
@@ -56,6 +58,43 @@ function Wallets() {
   useEffect(() => { wallets.forEach((w) => { if (!cards[w]) void refresh(w); }); }, [wallets, cards, refresh]);
   useEffect(() => { const id = setInterval(() => wallets.forEach((w) => void refresh(w)), 30_000); return () => clearInterval(id); }, [wallets, refresh]);
 
+  // ---- live: every 3 s ask the index for new swaps of the watched wallets; new fills pop as cards and slide into the lists
+  const [live, setLive] = useState<(Trade & { key: string; shownAt: number })[]>([]);
+  const [tick, setTick] = useState<number | null>(null);
+  const since = useRef<number>(Math.floor(Date.now() / 1000) - 30);
+  const seen = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!wallets.length) return;
+    let alive = true;
+    const poll = async () => {
+      if (document.hidden) return;
+      try {
+        const j = (await fetch(`${API}/api/wallet-feed?wallets=${wallets.join(",")}&since=${since.current}`).then((r) => r.json())) as { rows?: Trade[]; now?: number };
+        if (!alive) return;
+        setTick(j.now ?? Math.floor(Date.now() / 1000));
+        const fresh = (j.rows ?? []).map((t) => ({ ...t, key: `${t.tx}:${t.log_index}`, shownAt: Date.now(), fresh: true })).filter((t) => !seen.current.has(t.key));
+        if (!fresh.length) return;
+        fresh.forEach((t) => seen.current.add(t.key));
+        since.current = Math.max(since.current, ...fresh.map((t) => t.ts)) - 5;
+        setLive((l) => [...fresh.slice().reverse(), ...l].slice(0, 4));
+        setCards((c) => {
+          const n = { ...c };
+          for (const t of fresh) {
+            const w = (t.wallet ?? "").toLowerCase(); const card = n[w]; if (!card) continue;
+            n[w] = { ...card, trades: [t, ...card.trades.filter((x) => `${x.tx}:${x.log_index}` !== t.key)].slice(0, 8) };
+          }
+          return n;
+        });
+        // positions / PnL change with every fill: refresh those wallets shortly after
+        setTimeout(() => { [...new Set(fresh.map((t) => (t.wallet ?? "").toLowerCase()))].forEach((w) => void refresh(w)); }, 1500);
+      } catch { /* index busy: next tick */ }
+    };
+    void poll();
+    const id = setInterval(poll, 3000);
+    const gc = setInterval(() => setLive((l) => l.filter((x) => Date.now() - x.shownAt < 8000)), 500);
+    return () => { alive = false; clearInterval(id); clearInterval(gc); };
+  }, [wallets, refresh]);
+
   const add = () => {
     const a = input.trim().toLowerCase();
     if (!isAddr(a)) { setErr("That is not a wallet address (0x + 40 hex chars)."); return; }
@@ -69,7 +108,7 @@ function Wallets() {
       <ArcNav active="/wallets" />
       <section className="arc-section" style={{ maxWidth: 1100, paddingTop: 112 }}>
         <p className="arc-eyebrow">WALLET WATCHLIST</p>
-        <h1 className="arc-h2" style={{ fontSize: 30 }}>Follow the wallets that matter</h1>
+        <h1 className="arc-h2" style={{ fontSize: 30 }}>Follow the wallets that matter {wallets.length > 0 && <span className="arc-mono" style={{ background: "rgba(34,197,128,0.12)", border: "1px solid var(--arc-up)", borderRadius: 999, color: "var(--arc-up)", fontSize: 11, marginLeft: 10, padding: "3px 10px", verticalAlign: "middle" }} title={tick ? `index time ${new Date(tick * 1000).toLocaleTimeString()}` : ""}>● live · 3 s</span>}</h1>
         <p className="arc-body" style={{ maxWidth: 720 }}>
           Paste any Arc address. You get its 30-day record from our chain-wide swap index, open positions and last trades here — and one tap sends every future swap of that wallet to your Telegram through the buy bot.
         </p>
@@ -130,7 +169,7 @@ function Wallets() {
                   <div>
                     <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: "0 0 6px", textTransform: "uppercase" }}>Last trades</p>
                     {c?.trades.length ? c.trades.slice(0, 6).map((t, i) => (
-                      <div className="arc-mono" key={i} style={{ alignItems: "baseline", display: "flex", fontSize: 12, gap: 8, justifyContent: "space-between", padding: "3px 0", whiteSpace: "nowrap" }}>
+                      <div className={t.fresh ? "arc-mono arc-fresh" : "arc-mono"} key={`${t.tx ?? i}:${t.log_index ?? 0}`} style={{ alignItems: "baseline", display: "flex", fontSize: 12, gap: 8, justifyContent: "space-between", padding: "3px 4px", whiteSpace: "nowrap" }}>
                         <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}><span style={{ color: t.side === "buy" ? "var(--arc-up)" : "#f0534f", display: "inline-block", width: 36 }}>{t.side.toUpperCase()}</span> <Link params={{ ca: t.token }} preload="intent" style={{ color: "var(--arc-ink)", fontWeight: 700, textDecoration: "none" }} to="/token/$ca">{t.symbol ?? short(t.token)}</Link> <Link params={{ ca: t.token }} preload="intent" style={{ color: "var(--arc-cobalt)", fontSize: 11, textDecoration: "none" }} to="/token/$ca">chart ↗</Link></span>
                         <span style={{ color: "var(--arc-muted)", flex: "none" }}>{usd(t.usdc)} · {ago(t.ts)}{t.tx && <> · <a href={`https://arc-scan.org/tx/${t.tx}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)", textDecoration: "none" }} target="_blank" title={t.tx}>tx ↗</a></>}</span>
                       </div>
@@ -142,6 +181,20 @@ function Wallets() {
           })}
         </div>
       </section>
+          {live.length > 0 && (
+        <div className="arc-toasts" style={{ bottom: 14, display: "flex", flexDirection: "column", gap: 6, maxWidth: "calc(100vw - 28px)", pointerEvents: "none", position: "fixed", right: 14, width: 270, zIndex: 60 }}>
+          {live.map((t) => { const up = t.side === "buy"; const col = up ? "var(--arc-up)" : "#f0534f"; return (
+            <Link className="arc-toast" key={t.key} params={{ ca: t.token }} style={{ alignItems: "center", background: "rgba(10,14,22,0.94)", border: "1px solid rgba(255,255,255,0.08)", borderLeft: `3px solid ${col}`, borderRadius: 10, boxShadow: "0 6px 22px rgba(0,0,0,0.4)", color: "var(--arc-ink)", display: "flex", gap: 8, padding: "7px 10px", pointerEvents: "auto", textDecoration: "none" }} to="/token/$ca">
+              <TokenLogo radius={14} size={28} src={null} symbol={t.symbol ?? "?"} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{short(t.wallet ?? "")} <span style={{ color: col }}>{up ? "bought" : "sold"}</span> {t.symbol ?? short(t.token)}</div>
+                <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{t.venue.toUpperCase()} · now</div>
+              </div>
+              <div className="arc-mono" style={{ color: col, fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>{usd(t.usdc)}</div>
+            </Link>
+          ); })}
+        </div>
+      )}
     </main>
   );
 }

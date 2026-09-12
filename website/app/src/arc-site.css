@@ -674,3 +674,6 @@
 @keyframes arc-toast-in { from { opacity: 0; transform: translateX(16px) scale(.98); } to { opacity: 1; transform: none; } }
 
 .arc-toasts { right: 14px; }
+
+.arc-fresh { animation: arc-fresh 6s ease-out both; border-radius: 4px; }
+@keyframes arc-fresh { 0% { background: rgba(34,197,128,0.28); } 100% { background: transparent; } }

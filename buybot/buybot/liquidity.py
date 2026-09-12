@@ -227,6 +227,7 @@ async def api_holder_risk(req: web.Request):
 def register_risk(app: web.Application):
     app.router.add_get("/api/holder-risk", api_holder_risk)
     app.router.add_get("/api/venue-tokens", api_venue_tokens)
+    app.router.add_get("/api/wallet-feed", api_wallet_feed)
 
 
 async def api_venue_tokens(req: web.Request):
@@ -253,3 +254,20 @@ async def api_venue_tokens(req: web.Request):
     await asyncio.gather(*[fill(d) for d in out])
     return web.json_response({"venue": venue, "rows": out},
                              headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=30"})
+
+
+async def api_wallet_feed(req: web.Request):
+    """GET /api/wallet-feed?wallets=0x..,0x..&since=<unix> — swaps of those wallets since `since` (max 60 wallets, 2 h back).
+    Cheap indexed query; the Wallets page polls it every few seconds for live buy/sell cards."""
+    from sqlalchemy import bindparam
+    ws = [w.strip().lower() for w in req.query.get("wallets", "").split(",") if w.strip().startswith("0x") and len(w.strip()) == 42][:60]
+    if not ws:
+        return web.json_response({"rows": []}, headers={"Access-Control-Allow-Origin": "*"})
+    since = max(int(req.query.get("since", "0") or 0), int(time.time()) - 7200)
+    rows = await db.fetchall(text(
+        "SELECT s.tx, s.log_index, s.ts, s.wallet, s.token, s.side, s.usdc, s.tokens, s.price1m, s.venue, sym.symbol "
+        "FROM swaps s LEFT JOIN token_symbols sym ON sym.token = s.token "
+        "WHERE s.ts > :since AND s.wallet IN :ws ORDER BY s.ts DESC, s.log_index DESC LIMIT 100"
+    ).bindparams(bindparam("ws", value=ws, expanding=True)).bindparams(since=since))
+    return web.json_response({"rows": [dict(r) for r in rows], "now": int(time.time())},
+                             headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-store"})

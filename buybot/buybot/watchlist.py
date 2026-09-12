@@ -168,7 +168,7 @@ async def alerts_loop():
         except Exception as e:  # noqa
             log.warning("watchlist loop: %s", e)
             await asyncio.sleep(5)
-        await asyncio.sleep(4)
+        await asyncio.sleep(2)
 
 
 async def _send_alert(tg_id: int, sw: dict):
