@@ -31,6 +31,7 @@ import { Route as PadCaRouteImport } from './routes/pad.$ca'
 import { Route as ApiWarmRouteImport } from './routes/api/warm'
 import { Route as ApiTokensRouteImport } from './routes/api/tokens'
 import { Route as ApiTokenpageRouteImport } from './routes/api/tokenpage'
+import { Route as ApiSearchRouteImport } from './routes/api/search'
 import { Route as ApiRpcRouteImport } from './routes/api/rpc'
 import { Route as ApiRefCreditRouteImport } from './routes/api/ref-credit'
 import { Route as ApiPadLogoCaRouteImport } from './routes/api/pad-logo.$ca'
@@ -146,6 +147,11 @@ const ApiTokenpageRoute = ApiTokenpageRouteImport.update({
   path: '/api/tokenpage',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSearchRoute = ApiSearchRouteImport.update({
+  id: '/api/search',
+  path: '/api/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiRpcRoute = ApiRpcRouteImport.update({
   id: '/api/rpc',
   path: '/api/rpc',
@@ -187,6 +193,7 @@ export interface FileRoutesByFullPath {
   '/wallets': typeof WalletsRoute
   '/api/ref-credit': typeof ApiRefCreditRoute
   '/api/rpc': typeof ApiRpcRoute
+  '/api/search': typeof ApiSearchRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
   '/api/warm': typeof ApiWarmRoute
@@ -215,6 +222,7 @@ export interface FileRoutesByTo {
   '/wallets': typeof WalletsRoute
   '/api/ref-credit': typeof ApiRefCreditRoute
   '/api/rpc': typeof ApiRpcRoute
+  '/api/search': typeof ApiSearchRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
   '/api/warm': typeof ApiWarmRoute
@@ -244,6 +252,7 @@ export interface FileRoutesById {
   '/wallets': typeof WalletsRoute
   '/api/ref-credit': typeof ApiRefCreditRoute
   '/api/rpc': typeof ApiRpcRoute
+  '/api/search': typeof ApiSearchRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
   '/api/warm': typeof ApiWarmRoute
@@ -274,6 +283,7 @@ export interface FileRouteTypes {
     | '/wallets'
     | '/api/ref-credit'
     | '/api/rpc'
+    | '/api/search'
     | '/api/tokenpage'
     | '/api/tokens'
     | '/api/warm'
@@ -302,6 +312,7 @@ export interface FileRouteTypes {
     | '/wallets'
     | '/api/ref-credit'
     | '/api/rpc'
+    | '/api/search'
     | '/api/tokenpage'
     | '/api/tokens'
     | '/api/warm'
@@ -330,6 +341,7 @@ export interface FileRouteTypes {
     | '/wallets'
     | '/api/ref-credit'
     | '/api/rpc'
+    | '/api/search'
     | '/api/tokenpage'
     | '/api/tokens'
     | '/api/warm'
@@ -359,6 +371,7 @@ export interface RootRouteChildren {
   WalletsRoute: typeof WalletsRoute
   ApiRefCreditRoute: typeof ApiRefCreditRoute
   ApiRpcRoute: typeof ApiRpcRoute
+  ApiSearchRoute: typeof ApiSearchRoute
   ApiTokenpageRoute: typeof ApiTokenpageRoute
   ApiTokensRoute: typeof ApiTokensRoute
   ApiWarmRoute: typeof ApiWarmRoute
@@ -524,6 +537,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTokenpageRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/search': {
+      id: '/api/search'
+      path: '/api/search'
+      fullPath: '/api/search'
+      preLoaderRoute: typeof ApiSearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/rpc': {
       id: '/api/rpc'
       path: '/api/rpc'
@@ -575,6 +595,7 @@ const rootRouteChildren: RootRouteChildren = {
   WalletsRoute: WalletsRoute,
   ApiRefCreditRoute: ApiRefCreditRoute,
   ApiRpcRoute: ApiRpcRoute,
+  ApiSearchRoute: ApiSearchRoute,
   ApiTokenpageRoute: ApiTokenpageRoute,
   ApiTokensRoute: ApiTokensRoute,
   ApiWarmRoute: ApiWarmRoute,

@@ -7,6 +7,7 @@ import { ARC_AGGREGATOR, connectWallet, encodeAggregatorSwap, ethCall, getStored
 import { hotAddress, hotCall, hotSend, hotWait } from "@/lib/arc-hotwallet";
 import { TokenLogo } from "@/components/token-logo";
 import { TradeToasts } from "@/components/trade-toasts";
+import { ChainSearch } from "@/components/chain-search";
 import { creditRef } from "@/lib/arc-ref";
 import { WalletPanel } from "@/components/wallet-panel";
 import { routeSwap, type RouteResult } from "@/lib/arc-route";
@@ -327,7 +328,7 @@ function Trade() {
               <input className="arc-mono" inputMode="decimal" onChange={(e) => setCustom(e.target.value)} placeholder="custom" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 12, padding: "4px 8px", width: 80 }} value={custom} />
               <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 8 }}>SLIPPAGE</span>
               {[1, 5, 15, 30].map((s) => <button key={s} className="arc-mono" onClick={() => setSlip(s)} style={{ background: slip === s ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (slip === s ? "var(--arc-cobalt)" : "var(--arc-line)"), color: slip === s ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "3px 8px" }} type="button">{s}%</button>)}
-              <input className="arc-mono" onChange={(e) => setQ(e.target.value)} placeholder="filter / paste CA" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", flex: "1 1 160px", fontSize: 12, marginLeft: "auto", padding: "4px 8px" }} value={q} />
+              <input className="arc-mono" onChange={(e) => setQ(e.target.value)} placeholder="search any Arc token · name / symbol / CA" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", flex: "1 1 160px", fontSize: 12, marginLeft: "auto", padding: "4px 8px" }} value={q} />
             </div>
             {/* tabs */}
             <div className="arc-filters" style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, margin: "2px 0 8px" }}>
@@ -352,6 +353,10 @@ function Trade() {
                 <button className="arc-mono" onClick={toggleToasts} style={{ background: toastsOn ? "rgba(34,197,128,0.12)" : "transparent", border: "1px solid " + (toastsOn ? "var(--arc-up)" : "var(--arc-line)"), borderRadius: 4, color: toastsOn ? "var(--arc-up)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, marginLeft: 8, padding: "3px 8px" }} title="Live buy/sell pop-ups for the tokens on screen" type="button">{toastsOn ? "🔔 live" : "🔕 live"}</button>
               </span>
             </div>
+            {/* chain-wide search: every ERC-20 on Arc by name / symbol / address (shows when the query is not an address; addresses use the quick action below) */}
+            {q.trim().length >= 2 && !/^0x[0-9a-fA-F]{40}$/.test(q.trim()) && (
+              <ChainSearch q={q} hide={new Set(tableRows.map((r) => r.token.toLowerCase()))} renderBuy={(h) => <BuyBtn symbol={h.symbol ?? short(h.token)} token={h.token} />} />
+            )}
             {/* paste CA quick action */}
             {/^0x[0-9a-fA-F]{40}$/.test(q.trim()) && !byToken.has(q.trim().toLowerCase()) && (
               <div style={{ alignItems: "center", background: "var(--arc-paper)", border: "1px solid var(--arc-cobalt)", display: "flex", gap: 10, marginBottom: 8, padding: "8px 12px" }}>

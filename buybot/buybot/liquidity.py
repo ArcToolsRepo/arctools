@@ -172,9 +172,36 @@ async def _deployer(s: aiohttp.ClientSession, token: str) -> str | None:
     return dev
 
 
+async def _bundle_wallets(token: str, dev: str | None) -> set[str]:
+    rows = await db.fetchall(text("SELECT wallet, MIN(ts) AS t0 FROM swaps WHERE token = :t AND side = 'buy' GROUP BY wallet").bindparams(t=token))
+    if not rows:
+        return set()
+    first = min(int(r["t0"]) for r in rows)
+    return {r["wallet"].lower() for r in rows if int(r["t0"]) <= first + 2 and r["wallet"].lower() != dev}
+
+
+async def dev_activity(token: str, dev: str | None, bundle: set[str]) -> dict:
+    """Sells by the deployer and by launch-block buyers in the last 24 h (usd, count, last ts)."""
+    out = {"dev_sold_usd": 0.0, "dev_sells": 0, "dev_last_sell": None, "bundle_sold_usd": 0.0, "bundle_sells": 0, "bundle_last_sell": None, "bundle_sellers": 0}
+    since = int(time.time()) - 86400
+    try:
+        if dev:
+            r = await db.fetchone(text("SELECT COALESCE(SUM(usdc),0) AS u, COUNT(*) AS n, MAX(ts) AS t FROM swaps WHERE token = :t AND wallet = :w AND side = 'sell' AND ts > :s")
+                                  .bindparams(t=token, w=dev, s=since))
+            out.update(dev_sold_usd=round(float(r["u"] or 0), 2), dev_sells=int(r["n"] or 0), dev_last_sell=int(r["t"]) if r["t"] else None)
+        if bundle:
+            from sqlalchemy import bindparam
+            r = await db.fetchone(text("SELECT COALESCE(SUM(usdc),0) AS u, COUNT(*) AS n, MAX(ts) AS t, COUNT(DISTINCT wallet) AS w FROM swaps WHERE token = :t AND wallet IN :ws AND side = 'sell' AND ts > :s")
+                                  .bindparams(bindparam("ws", value=sorted(bundle), expanding=True)).bindparams(t=token, s=since))
+            out.update(bundle_sold_usd=round(float(r["u"] or 0), 2), bundle_sells=int(r["n"] or 0), bundle_last_sell=int(r["t"]) if r["t"] else None, bundle_sellers=int(r["w"] or 0))
+    except Exception as e:  # noqa
+        log.debug("dev activity %s: %s", token, e)
+    return out
+
+
 async def _risk_one(s: aiohttp.ClientSession, token: str) -> dict:
     c = _risk_cache.get(token)
-    if c and time.time() - c[0] < 300:
+    if c and time.time() - c[0] < 60:
         return c[1]
     out = {"holders": 0, "top10": None, "top1": None, "dev": None, "dev_pct": None, "bundle_pct": None, "bundlers": 0}
     try:
@@ -192,21 +219,20 @@ async def _risk_one(s: aiohttp.ClientSession, token: str) -> dict:
         dev = await _deployer(s, token)
         dev_pct = round(share_of.get(dev, 0.0) * 100, 2) if dev else None
         # --- bundle: wallets whose FIRST buy landed within 2 s (~4 Arc blocks) of the token's first swap
-        bundle_pct, bundlers = None, 0
+        bundle_pct, bundlers, early = None, 0, set()
         try:
-            rows = await db.fetchall(text(
-                "SELECT wallet, MIN(ts) AS t0 FROM swaps WHERE token = :t AND side = 'buy' GROUP BY wallet").bindparams(t=token))
-            if rows:
-                first = min(int(r["t0"]) for r in rows)
-                early = {r["wallet"].lower() for r in rows if int(r["t0"]) <= first + 2 and r["wallet"].lower() != dev}
-                bundlers = len(early)
-                bundle_pct = round(sum(share_of.get(w, 0.0) for w in early) * 100, 2)
+            early = await _bundle_wallets(token, dev)
+            bundlers = len(early)
+            bundle_pct = round(sum(share_of.get(w, 0.0) for w in early) * 100, 2)
         except Exception as e:  # noqa
             log.debug("bundle %s: %s", token, e)
+        # what the insiders of the launch did afterwards: dev / bundle sells in the last 24 h
+        act = await dev_activity(token, dev, early)
         out = {"holders": int(j.get("holder_count") or len(items)),
                "top10": round(sum(shares[:10]) * 100, 2) if shares else None,
                "top1": round(shares[0] * 100, 2) if shares else None,
-               "dev": dev, "dev_pct": dev_pct, "bundle_pct": bundle_pct, "bundlers": bundlers}
+               "dev": dev, "dev_pct": dev_pct, "bundle_pct": bundle_pct, "bundlers": bundlers,
+               "bundle_wallets": sorted(early)[:30], **act}
         _risk_cache[token] = (time.time(), out)
     except Exception as e:  # noqa
         log.debug("holder risk %s: %s", token, e)
@@ -228,6 +254,71 @@ def register_risk(app: web.Application):
     app.router.add_get("/api/holder-risk", api_holder_risk)
     app.router.add_get("/api/venue-tokens", api_venue_tokens)
     app.router.add_get("/api/wallet-feed", api_wallet_feed)
+    app.router.add_get("/api/search", api_search)
+
+
+_search_cache: dict[str, tuple[float, list]] = {}
+
+
+async def api_search(req: web.Request):
+    """GET /api/search?q=<symbol|name|0xaddress> — every ERC-20 on Arc: own swap index (symbol match, with 24h stats)
+    merged with arc-scan's chain-wide token search. Cached 60 s per query."""
+    q = (req.query.get("q") or "").strip()[:64]
+    if len(q) < 2:
+        return web.json_response({"q": q, "rows": []}, headers={"Access-Control-Allow-Origin": "*"})
+    key = q.lower()
+    c = _search_cache.get(key)
+    if c and time.time() - c[0] < 60:
+        return web.json_response({"q": q, "rows": c[1]}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=30"})
+    since = int(time.time()) - 86400
+    is_addr = key.startswith("0x") and len(key) == 42
+    rows: dict[str, dict] = {}
+    # 1) own index — anything that ever traded on Arc through the venues we index
+    try:
+        if is_addr:
+            idx = await db.fetchall(text(
+                "SELECT s.token, sym.symbol, COUNT(*) AS txs, COALESCE(SUM(s.usdc),0) AS vol, MAX(s.ts) AS last_ts, MIN(s.venue) AS venue "
+                "FROM swaps s LEFT JOIN token_symbols sym ON sym.token = s.token WHERE s.token = :t GROUP BY s.token, sym.symbol").bindparams(t=key))
+        else:
+            idx = await db.fetchall(text(
+                "SELECT s.token, sym.symbol, COUNT(*) AS txs, COALESCE(SUM(CASE WHEN s.ts > :since THEN s.usdc ELSE 0 END),0) AS vol, MAX(s.ts) AS last_ts, MIN(s.venue) AS venue "
+                "FROM swaps s JOIN token_symbols sym ON sym.token = s.token WHERE LOWER(sym.symbol) LIKE :p "
+                "GROUP BY s.token, sym.symbol ORDER BY vol DESC, txs DESC LIMIT 25").bindparams(p="%" + key + "%", since=since))
+        for r in idx:
+            d = dict(r); d["token"] = d["token"].lower(); d["source"] = "index"; d["vol"] = round(float(d["vol"] or 0), 2)
+            rows[d["token"]] = d
+    except Exception as e:  # noqa
+        log.debug("search idx %s: %s", q, e)
+    # 2) arc-scan chain-wide search (tokens only) — catches tokens that never traded on an indexed venue
+    try:
+        async with aiohttp.ClientSession() as s_:
+            async with s_.get("https://api.arc-scan.org/v1/search", params={"q": q}, timeout=aiohttp.ClientTimeout(total=8),
+                              headers={"User-Agent": "ArcTools/1.0"}) as r:
+                if r.status == 200:
+                    j = await r.json()
+                    for it in (j.get("results") or [])[:40]:
+                        if it.get("type") != "token":
+                            continue
+                        a = (it.get("sub") or "").lower()
+                        if not (a.startswith("0x") and len(a) == 42):
+                            continue
+                        d = rows.setdefault(a, {"token": a, "symbol": None, "txs": 0, "vol": 0.0, "last_ts": None, "venue": None, "source": "chain"})
+                        d["symbol"] = d.get("symbol") or it.get("label")
+                        d["lookalike"] = bool(it.get("unverified_lookalike"))
+    except Exception as e:  # noqa
+        log.debug("search arc-scan %s: %s", q, e)
+    if is_addr and key not in rows:
+        # unknown to both: still return the address so the UI can probe it on-chain
+        rows[key] = {"token": key, "symbol": None, "txs": 0, "vol": 0.0, "last_ts": None, "venue": None, "source": "unknown"}
+    out = sorted(rows.values(), key=lambda d: (-(d.get("vol") or 0), -(d.get("txs") or 0), (d.get("symbol") or "").lower() != key))
+    # exact symbol matches first
+    out.sort(key=lambda d: 0 if (d.get("symbol") or "").lower() == key else 1)
+    out = out[:30]
+    _search_cache[key] = (time.time(), out)
+    if len(_search_cache) > 2000:
+        for k in list(_search_cache)[:1000]:
+            _search_cache.pop(k, None)
+    return web.json_response({"q": q, "rows": out}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=30"})
 
 
 async def api_venue_tokens(req: web.Request):

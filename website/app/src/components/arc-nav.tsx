@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { connectWallet, disconnectWallet, getStoredWallet, onWalletChange, setStoredWallet, setWalletPicker } from "@/lib/arc-wallet";
 import { bindRef, captureRef } from "@/lib/arc-ref";
@@ -91,9 +92,9 @@ export function ArcNav({ active }: { active?: string }) {
           </a>
         ))}
       </div>
-      {picker && (
-        <div onClick={() => { picker.resolve(null); setPicker(null); }} style={{ alignItems: "center", background: "rgba(0,0,0,0.6)", display: "flex", inset: 0, justifyContent: "center", position: "fixed", zIndex: 100 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#0e1118", border: "1px solid var(--arc-line)", borderRadius: 12, minWidth: 280, padding: 16 }}>
+      {picker && typeof document !== "undefined" && createPortal(
+        <div onClick={() => { picker.resolve(null); setPicker(null); }} style={{ alignItems: "center", background: "rgba(0,0,0,0.6)", display: "flex", inset: 0, justifyContent: "center", position: "fixed", zIndex: 1000 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#0e1118", border: "1px solid var(--arc-line)", borderRadius: 12, boxShadow: "0 20px 60px rgba(0,0,0,0.6)", maxWidth: "calc(100vw - 32px)", padding: 18, width: 320 }}>
             <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: "0 0 10px", textTransform: "uppercase" }}>Choose a wallet</p>
             {picker.opts.map((o) => (
               <button className="arc-mono" key={o.rdns} onClick={() => { picker.resolve(o.rdns); setPicker(null); }} style={{ alignItems: "center", background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 8, color: "var(--arc-ink)", cursor: "pointer", display: "flex", fontSize: 13, gap: 10, marginBottom: 6, padding: "10px 12px", width: "100%" }} type="button">
@@ -103,7 +104,7 @@ export function ArcNav({ active }: { active?: string }) {
             <button className="arc-mono" onClick={() => { picker.resolve(null); setPicker(null); }} style={{ background: "transparent", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, marginTop: 4 }} type="button">cancel</button>
           </div>
         </div>
-      )}
+      , document.body)}
       {wallet ? (
         <button className="arc-wallet arc-mono" onClick={() => void disconnect()} title="Disconnect and pick another wallet" type="button">
           {wallet.slice(0, 6)}…{wallet.slice(-4)} ✕
