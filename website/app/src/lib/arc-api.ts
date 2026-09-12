@@ -95,7 +95,8 @@ export async function rpc(method: string, params: any[]): Promise<any> {
 
 const memoStore = new Map<string, { ts: number; v: unknown }>();
 const memoInflight = new Map<string, Promise<unknown>>();
-const KV_MAX_STALE_MS = 6 * 60 * 60 * 1000;   // serve a KV value up to 6 h old while a refresh runs
+const KV_MAX_STALE_MS = 6 * 60 * 60 * 1000;
+const MEMO_HARD_TIMEOUT_MS = 25_000;   // serve a KV value up to 6 h old while a refresh runs
 
 function kv() { return memoKV(); }
 
@@ -109,12 +110,9 @@ export async function memo<T>(key: string, ttlMs: number, fn: () => Promise<T>, 
   const hit = memoStore.get(key);
   if (hit && now - hit.ts < ttlMs) return hit.v as T;
   const inflight = memoInflight.get(key);
-  if (inflight) {
-    if (hit) return hit.v as T;
-    return inflight as Promise<T>;
-  }
+  if (inflight && hit) return hit.v as T;
   const store = kv();
-  // tier 2: shared KV
+  // tier 2: shared KV (also consulted before joining a slow in-flight compute)
   if (!hit && store) {
     try {
       const raw = await store.get(`memo:${key}`, "text");
@@ -122,19 +120,21 @@ export async function memo<T>(key: string, ttlMs: number, fn: () => Promise<T>, 
         const rec = JSON.parse(raw) as { ts: number; v: T };
         memoStore.set(key, rec);
         if (now - rec.ts < ttlMs) return rec.v;
-        // stale: refresh in background, answer now
-        keepAlive(refresh());
+        // stale: refresh in background (unless one is already running), answer now
+        if (!memoInflight.get(key)) keepAlive(refresh());
         return rec.v;
       }
     } catch { /* KV unavailable: fall through */ }
   }
+  if (inflight) return inflight as Promise<T>;
   if (hit) { keepAlive(refresh()); return hit.v as T; }
   return refresh();
 
   async function refresh(): Promise<T> {
     const p = (async () => {
       try {
-        const v = await fn();
+        // hard ceiling: a hung upstream must never pin the in-flight slot (and every joiner) forever
+        const v = await Promise.race([fn(), new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`memo timeout: ${key}`)), MEMO_HARD_TIMEOUT_MS))]);
         // transient failures (RPC down, upstream 5xx) must never be remembered — the next visitor recomputes
         if (cacheIf && !cacheIf(v)) return v;
         const rec = { ts: Date.now(), v };
