@@ -104,7 +104,7 @@ function kv() { return memoKV(); }
  *  answers from KV in a few ms instead of recomputing 9 upstreams. Stale-while-revalidate on both
  *  tiers: once the TTL expires exactly ONE caller recomputes, everyone else gets the previous value
  *  instantly, so tail latency never depends on upstream speed. /api/warm keeps KV fresh in background. */
-export async function memo<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
+export async function memo<T>(key: string, ttlMs: number, fn: () => Promise<T>, cacheIf?: (v: T) => boolean): Promise<T> {
   const now = Date.now();
   const hit = memoStore.get(key);
   if (hit && now - hit.ts < ttlMs) return hit.v as T;
@@ -135,6 +135,8 @@ export async function memo<T>(key: string, ttlMs: number, fn: () => Promise<T>):
     const p = (async () => {
       try {
         const v = await fn();
+        // transient failures (RPC down, upstream 5xx) must never be remembered — the next visitor recomputes
+        if (cacheIf && !cacheIf(v)) return v;
         const rec = { ts: Date.now(), v };
         memoStore.set(key, rec);
         if (store) {
@@ -460,7 +462,12 @@ export const tokenPage = createServerFn({ method: "POST" })
       const res = await multicall(calls, 20);
       const name = decodeString(res[0]);
       const symbol = decodeString(res[1]);
-      if ((!name || name === "?") && (!symbol || symbol === "?")) return { error: "No token contract at this address on Arc." };
+      if ((!name || name === "?") && (!symbol || symbol === "?")) {
+        const code = (await rpc("eth_getCode", [token, "latest"]).catch(() => null)) as string | null;
+        if (code === null) throw new Error("RPC unavailable — retry");          // transient: not cached, client retries
+        if (code === "0x" || code === "0x0") return { error: "No token contract at this address on Arc." };
+        return { error: "Contract does not expose an ERC-20 name/symbol." };
+      }
       const decimals = Number(toNum(res[2])) || 18;
       const supply = Number(toNum(res[3]) / BigInt(10) ** BigInt(Math.max(0, decimals - 6))) / 1e6;
 
@@ -706,7 +713,7 @@ export const tokenPage = createServerFn({ method: "POST" })
         venueUrl,
         website: normSocial("web", padSocial.website || (meta.website as string) || null),
       };
-    }),
+    }, (v) => !("error" in v) || v.error === "That is not a contract address."),
   );
 
 /**
@@ -1225,7 +1232,7 @@ export const listTokens = createServerFn({ method: "POST" })
         telegram: normSocial("tg", t.telegram),
         twitter: normSocial("x", t.twitter),
         website: normSocial("web", t.website),
-      }))));
+      })), (v) => v.length > 0));
 
 /**
  * Cross-pad logo source. No single index covers Arc: the RadarDex screener
@@ -1706,4 +1713,4 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   }) as PadToken);
 }
 export const listAllTokens = createServerFn({ method: "POST" })
-  .handler((): Promise<PadToken[]> => memo("list:__all", 15_000, listAllTokensImpl));
+  .handler((): Promise<PadToken[]> => memo("list:__all", 15_000, listAllTokensImpl, (v) => v.length > 50));

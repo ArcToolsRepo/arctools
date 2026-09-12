@@ -16,7 +16,7 @@ export const Route = createFileRoute("/api/warm")({
         if (auth && url.searchParams.get("k") !== auth) return new Response("forbidden", { status: 403 });
         const t0 = Date.now();
         const [all, trend] = await Promise.all([
-          memo("list:__all", 1, listAllTokensImpl),      // ttl 1 ms: force a recompute, write KV
+          memo("list:__all", 1, listAllTokensImpl, (v) => v.length > 50),      // ttl 1 ms: force a recompute, write KV
           fetch("https://bot-production-4200.up.railway.app/api/trending?minutes=60&limit=40").then((r) => r.json()).then((j) => (j.rows ?? []) as { token: string }[]).catch(() => [] as { token: string }[]),
           screenerIcons().catch(() => null),
         ]);
