@@ -714,3 +714,22 @@
 @media (min-width: 1024px) and (max-width: 1560px) { .arc-tablewrap table td, .arc-tablewrap table th { font-size: 12px !important; padding-right: 5px !important; } .arc-tokcell { min-width: 210px !important; } }
 
 @media (min-width: 1024px) { .arc-tablewrap { overflow-x: hidden !important; } .arc-tablewrap table { table-layout: auto; } }
+
+.arc-sysstatus { left: 232px; }
+@media (max-width: 1023px) { .arc-sysstatus { left: 10px; bottom: 8px !important; } .arc-toasts { bottom: 40px !important; } }
+
+/* ---- phones: home rail as chips, footer stacked, token trades table compact, nav scroll hint ---- */
+@media (max-width: 760px) {
+  .arc-rail__inner { padding: 14px 16px; gap: 10px; }
+  .arc-rail__venues { gap: 6px; font-size: 12px; letter-spacing: 0.02em; }
+  .arc-rail__tick { display: none; }
+  .arc-rail__venue { padding: 4px 10px; border: 1px solid var(--arc-line); border-radius: 999px; }
+  .arc-rail__venue:first-child { padding-left: 10px; }
+  .arc-footer { flex-direction: column; align-items: flex-start; padding: 28px 16px 64px; gap: 14px; }
+  .arc-footer__links { gap: 10px 14px; }
+  .arc-footer__links a { font-size: 13px; }
+  .arc-token__table { font-size: 11px; }
+  .arc-token__table th, .arc-token__table td { padding: 6px 6px; }
+  .arc-token__table th:last-child, .arc-token__table td:last-child { display: none; } /* tx link column: tap the row → explorer via wallet */
+  .arc-nav__links { -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 28px), transparent); }
+}

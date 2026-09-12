@@ -255,6 +255,8 @@ def register_risk(app: web.Application):
     app.router.add_get("/api/venue-tokens", api_venue_tokens)
     app.router.add_get("/api/wallet-feed", api_wallet_feed)
     app.router.add_get("/api/search", api_search)
+    from .watchdog import api_status
+    app.router.add_get("/api/status", api_status)
 
 
 _search_cache: dict[str, tuple[float, list]] = {}

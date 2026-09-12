@@ -31,6 +31,8 @@ UA = {"User-Agent": "Mozilla/5.0 (compatible; ArcToolsWatchdog/1.0)", "Accept-En
 
 _fail_streak: dict[str, int] = {}
 _last_alert: dict[str, float] = {}
+# last round, exposed on /api/status for the site footer ("System: Running")
+LAST: dict = {"ts": 0, "ok": None, "checks": {}, "rounds": 0}
 _healed: dict[str, int] = {}
 
 
@@ -180,6 +182,19 @@ async def watchdog_loop():
                     await _tg(f"🔴 <b>ArcTools watchdog</b>: <code>{name}</code> failing for {_fail_streak[name]} rounds\n{detail}\n"
                               f"self-heal attempts: {_healed.get(name, 0)}")
             log.info("watchdog: %s", {k: ("ok" if v[0] else "FAIL") for k, v in res.items()})
+            LAST.update(ts=int(now), ok=all(v[0] for v in res.values()), rounds=LAST["rounds"] + 1,
+                        checks={k: {"ok": v[0], "detail": v[1][:160], "streak": _fail_streak.get(k, 0)} for k, v in res.items()})
         except Exception as e:  # noqa
             log.warning("watchdog loop: %s", e)
         await asyncio.sleep(EVERY)
+
+
+async def api_status(req):
+    """GET /api/status — last watchdog round (pages, tokens API, relay, index lag, own API). Used by the site footer."""
+    from aiohttp import web
+    age = int(time.time() - LAST["ts"]) if LAST["ts"] else None
+    state = "starting" if LAST["ok"] is None else ("running" if LAST["ok"] else "degraded")
+    if age is not None and age > EVERY * 4:
+        state = "stale"
+    return web.json_response({"state": state, "ts": LAST["ts"], "age_s": age, "every_s": EVERY, "rounds": LAST["rounds"], "checks": LAST["checks"]},
+                             headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=30"})

@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SystemStatus } from "@/components/system-status";
 import {
   Outlet,
   Link,
@@ -209,6 +210,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
+      <SystemStatus />
     </QueryClientProvider>
   );
 }
