@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
@@ -525,6 +525,9 @@ function TokenPage() {
     <main className="arc-site" style={{ minHeight: "100dvh" }}>
       <ArcNav active="/trade" />
       <section className="arc-section arc-token" style={{ maxWidth: 1440, paddingTop: 112 }}>
+        <Link className="arc-mono" preload="intent" style={{ alignItems: "center", background: "rgba(255,255,255,0.03)", border: "1px solid var(--arc-line)", borderRadius: 8, color: "var(--arc-ink)", display: "inline-flex", fontSize: 12, gap: 8, letterSpacing: "0.04em", marginBottom: 12, padding: "7px 12px", textDecoration: "none" }} to="/trade">
+          <span aria-hidden style={{ color: "var(--arc-up)", fontSize: 15, lineHeight: 1 }}>←</span> Back to Terminal
+        </Link>
         {/* ---------- header ---------- */}
         <div className="arc-token__head">
           <div style={{ alignItems: "center", display: "flex", gap: 14, minWidth: 0 }}>

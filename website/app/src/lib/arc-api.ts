@@ -1692,6 +1692,20 @@ export const tokenLogos = createServerFn({ method: "POST" })
     } catch {
       /* D1 unavailable */
     }
+    // last resort for raw pools (Uniswap V4/V3, DYORSwap, RadarDex launches): RadarDex per-token metadata
+    // (icon, else the project's X avatar). Cached 6 h per token, negatives included, so this costs one call per token per shift.
+    const still = want.filter((t) => !out[t]).slice(0, 24);
+    await Promise.all(still.map(async (t) => {
+      const u = await memo(`logo:radar:${t}`, 6 * 3600_000, async () => {
+        try {
+          const r = await fetch(`https://api.radardex.pro/token/${t}`, { headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; ArcToolsSite/1.0)" }, signal: AbortSignal.timeout(5000) });
+          if (!r.ok) return "";
+          const j = (await r.json()) as { icon?: string; logoURI?: string; twitter?: string };
+          return ipfsToHttp(String(j.icon ?? j.logoURI ?? "")) || xAvatar(j.twitter) || "";
+        } catch { return ""; }
+      }).catch(() => "");
+      if (u) out[t] = u;
+    }));
     return out;
   });
 
