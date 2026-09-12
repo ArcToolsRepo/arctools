@@ -324,6 +324,8 @@ async def v4_bootstrap():
     await warm_supply_cache()
     from .warm import warm_loop
     asyncio.create_task(warm_loop(), name="site-warm")
+    from .watchdog import watchdog_loop
+    asyncio.create_task(watchdog_loop(), name="site-watchdog")
     if await db.kv_get("v4_bootstrapped"):
         return
     head = await CHAIN._bn()

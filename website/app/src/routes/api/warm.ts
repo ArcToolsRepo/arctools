@@ -15,6 +15,16 @@ export const Route = createFileRoute("/api/warm")({
         const auth = bindings().WARM_AUTH;
         if (auth && url.searchParams.get("k") !== auth) return new Response("forbidden", { status: 403 });
         const t0 = Date.now();
+        // self-heal hook: ?purge=lists drops the cached token lists / screener / trend so the next compute is fresh;
+        // ?purge=token:<ca> drops one token page (used by the watchdog when a page looks broken)
+        const purge = url.searchParams.get("purge");
+        if (purge) {
+          const kv = bindings().KV;
+          const keys = purge === "lists" ? ["memo:list:__all", "memo:list:__full", "memo:radar:screener", "memo:trend:1440", "memo:v2:tokens", ...["RadarDex", "ArcPad", "Warp", "Tolly", "UniswapV3", "Archemist", "UniswapV4", "Arguspad"].map((p) => `memo:list:${p}`)]
+            : purge.startsWith("token:") ? [`memo:tokenpage:${purge.slice(6).toLowerCase()}`] : [];
+          if (kv) await Promise.all(keys.map((k) => kv.delete(k).catch(() => null)));
+          return Response.json({ ok: true, purged: keys.length }, { headers: { "Cache-Control": "no-store" } });
+        }
         const [all, trend] = await Promise.all([
           memo("list:__all", 1, listAllTokensImpl, (v) => v.length > 50),      // ttl 1 ms: force a recompute, write KV
           fetch("https://bot-production-4200.up.railway.app/api/trending?minutes=60&limit=40").then((r) => r.json()).then((j) => (j.rows ?? []) as { token: string }[]).catch(() => [] as { token: string }[]),

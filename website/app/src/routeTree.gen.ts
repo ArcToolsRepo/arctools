@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WalletsRouteImport } from './routes/wallets'
 import { Route as TradeRouteImport } from './routes/trade'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ScanRouteImport } from './routes/scan'
@@ -33,6 +34,11 @@ import { Route as ApiRpcRouteImport } from './routes/api/rpc'
 import { Route as ApiPadLogoCaRouteImport } from './routes/api/pad-logo.$ca'
 import { Route as ApiLogoIpfsCidRouteImport } from './routes/api/logo.ipfs.$cid'
 
+const WalletsRoute = WalletsRouteImport.update({
+  id: '/wallets',
+  path: '/wallets',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TradeRoute = TradeRouteImport.update({
   id: '/trade',
   path: '/trade',
@@ -165,6 +171,7 @@ export interface FileRoutesByFullPath {
   '/scan': typeof ScanRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/trade': typeof TradeRoute
+  '/wallets': typeof WalletsRoute
   '/api/rpc': typeof ApiRpcRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
@@ -190,6 +197,7 @@ export interface FileRoutesByTo {
   '/scan': typeof ScanRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/trade': typeof TradeRoute
+  '/wallets': typeof WalletsRoute
   '/api/rpc': typeof ApiRpcRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
@@ -216,6 +224,7 @@ export interface FileRoutesById {
   '/scan': typeof ScanRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/trade': typeof TradeRoute
+  '/wallets': typeof WalletsRoute
   '/api/rpc': typeof ApiRpcRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
@@ -243,6 +252,7 @@ export interface FileRouteTypes {
     | '/scan'
     | '/sitemap.xml'
     | '/trade'
+    | '/wallets'
     | '/api/rpc'
     | '/api/tokenpage'
     | '/api/tokens'
@@ -268,6 +278,7 @@ export interface FileRouteTypes {
     | '/scan'
     | '/sitemap.xml'
     | '/trade'
+    | '/wallets'
     | '/api/rpc'
     | '/api/tokenpage'
     | '/api/tokens'
@@ -293,6 +304,7 @@ export interface FileRouteTypes {
     | '/scan'
     | '/sitemap.xml'
     | '/trade'
+    | '/wallets'
     | '/api/rpc'
     | '/api/tokenpage'
     | '/api/tokens'
@@ -319,6 +331,7 @@ export interface RootRouteChildren {
   ScanRoute: typeof ScanRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TradeRoute: typeof TradeRoute
+  WalletsRoute: typeof WalletsRoute
   ApiRpcRoute: typeof ApiRpcRoute
   ApiTokenpageRoute: typeof ApiTokenpageRoute
   ApiTokensRoute: typeof ApiTokensRoute
@@ -331,6 +344,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/wallets': {
+      id: '/wallets'
+      path: '/wallets'
+      fullPath: '/wallets'
+      preLoaderRoute: typeof WalletsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/trade': {
       id: '/trade'
       path: '/trade'
@@ -511,6 +531,7 @@ const rootRouteChildren: RootRouteChildren = {
   ScanRoute: ScanRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TradeRoute: TradeRoute,
+  WalletsRoute: WalletsRoute,
   ApiRpcRoute: ApiRpcRoute,
   ApiTokenpageRoute: ApiTokenpageRoute,
   ApiTokensRoute: ApiTokensRoute,

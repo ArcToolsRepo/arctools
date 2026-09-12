@@ -262,7 +262,7 @@ function Intel() {
                         {r.rank && <span style={{ background: "rgba(46,124,255,0.15)", border: "1px solid var(--arc-cobalt)", borderRadius: 3, color: "var(--arc-cobalt)", fontSize: 9, marginLeft: 6, padding: "0 4px" }}>#{r.rank}</span>}
                       </td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.venue}</td>
-                      <td style={td}><a className="arc-mono" href={`${BOT}?start=watch_${r.wallet.slice(2)}`} rel="noreferrer" style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} target="_blank">watch</a></td>
+                      <td style={td}><a className="arc-mono" href={`/wallets?add=${r.wallet}`} style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} >watch</a></td>
                     </tr>
                   ))}
                   {whales && whales.rows.length === 0 && <tr><td colSpan={7} className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>Quiet: no swaps ≥ ${whaleMin} in this window.</td></tr>}
@@ -287,7 +287,7 @@ function Intel() {
                       <td className="arc-mono" style={{ ...td, color: (r.pnl_total ?? 0) >= 0 ? UP : DOWN }}>{r.pnl_total != null ? `${r.pnl_total >= 0 ? "+" : "−"}${usd(Math.abs(r.pnl_total))}` : "—"}</td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.swaps}</td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.last_trade ? ago(r.last_trade) : "—"}</td>
-                      <td style={td}><a className="arc-mono" href={`${BOT}?start=watch_${r.wallet.slice(2)}`} rel="noreferrer" style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} target="_blank">watch</a></td>
+                      <td style={td}><a className="arc-mono" href={`/wallets?add=${r.wallet}`} style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} >watch</a></td>
                     </tr>
                   ))}
                   {rich && rich.rows.length === 0 && <tr><td colSpan={8} className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>First balance snapshot is running — back in a few minutes.</td></tr>}
@@ -333,7 +333,7 @@ function Intel() {
                       <td className="arc-mono" style={{ ...td, fontWeight: 700 }}>{usd(r.usdc)}</td>
                       <td style={td}><a href={`/token/${r.token}`} style={{ color: "var(--arc-ink)" }}>${r.symbol ?? short(r.token)}</a></td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.swaps} swaps · {usd(r.bought ?? 0)}</td>
-                      <td style={td}><a className="arc-mono" href={`${BOT}?start=watch_${r.wallet.slice(2)}`} rel="noreferrer" style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} target="_blank">watch</a></td>
+                      <td style={td}><a className="arc-mono" href={`/wallets?add=${r.wallet}`} style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} >watch</a></td>
                     </tr>
                   ))}
                 </tbody>
@@ -399,7 +399,7 @@ function Intel() {
                       <td className="arc-mono" style={{ ...td, color: r.delta >= 0 ? UP : DOWN, fontWeight: 700 }}>{r.delta >= 0 ? "+" : "−"}{usd(Math.abs(r.delta))}</td>
                       <td className="arc-mono" style={td}>{usd(r.balance)}</td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.swaps}</td>
-                      <td style={td}><a className="arc-mono" href={`${BOT}?start=watch_${r.wallet.slice(2)}`} rel="noreferrer" style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} target="_blank">watch</a></td>
+                      <td style={td}><a className="arc-mono" href={`/wallets?add=${r.wallet}`} style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} >watch</a></td>
                     </tr>
                   ))}
                   {moves && moves.rows.length === 0 && <tr><td colSpan={6} className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>No balance move ≥ $1,000 between snapshots yet (snapshots every 10 min).</td></tr>}
@@ -423,7 +423,7 @@ function Intel() {
                       <td className="arc-mono" style={{ ...td, fontWeight: 700 }}>{usd(r.amount)}</td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.source ?? "—"}</td>
                       <td className="arc-mono" style={td}><button className="arc-mono" onClick={() => setQ(r.recipient)} style={{ background: "none", border: "none", color: "var(--arc-ink)", cursor: "pointer", fontSize: 12, padding: 0 }} type="button">{short(r.recipient)}</button></td>
-                      <td style={td}><a className="arc-mono" href={`${BOT}?start=watch_${r.recipient.slice(2)}`} rel="noreferrer" style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} target="_blank">watch</a></td>
+                      <td style={td}><a className="arc-mono" href={`${BOT}?start=watch_${r.recipient.slice(2)}`} rel="noreferrer" style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} >watch</a></td>
                     </tr>
                   ))}
                 </tbody>
