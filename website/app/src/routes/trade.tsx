@@ -58,6 +58,10 @@ const cell: React.CSSProperties = { borderTop: "1px solid var(--arc-line)", font
 const hd: React.CSSProperties = { color: "var(--arc-muted)", fontSize: 10, fontWeight: 400, padding: "0 10px 8px 0", textAlign: "left", textTransform: "uppercase" };
 
 // ---------------- page ----------------
+/** The official ArcTools token — pinned on top of every Terminal tab, same as on the feed. */
+const OFFICIAL_TOKEN = "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52";
+const OFFICIAL_META: PadToken = { createdAt: "2026-09-09T10:12:53.699Z", logo: "https://i.ibb.co/xSh1WBWy/hf-20260909-062713-c61f9f46-e827-41b1-82e0-bb565b9c05b3.png", mcapUsd: null, name: "ArcTools", pad: "RadarDex", pool: "0xf89005ccf237a59eeee1521e74b15c7d8d022ab7", priceUsd: null, symbol: "ARCT", telegram: "https://t.me/ArcToolsPortal", token: OFFICIAL_TOKEN, twitter: "https://x.com/ArcToolsBackup", venueUrl: `/token/${OFFICIAL_TOKEN}`, volUsd: null, website: "https://arctools.fun" };
+
 function Trade() {
   const navigate = useNavigate();
   // whole row is clickable: one click = token page with chart + swap; buttons/links inside keep their own action
@@ -147,7 +151,7 @@ function Trade() {
   }, [addr]);
   useEffect(() => { void loadPositions(); const id = setInterval(loadPositions, 20_000); return () => clearInterval(id); }, [loadPositions]);
 
-  const byToken = useMemo(() => new Map(rows.map((r) => [r.token.toLowerCase(), r])), [rows]);
+  const byToken = useMemo(() => { const m = new Map(rows.map((r) => [r.token.toLowerCase(), r])); if (!m.has(OFFICIAL_TOKEN)) m.set(OFFICIAL_TOKEN, OFFICIAL_META); return m; }, [rows]);
   const clusterMap = useMemo(() => new Map(clusters.map((c) => [c.token.toLowerCase(), c])), [clusters]);
 
   // ---- one-click buy / sell through the aggregator, signed by the hot wallet
@@ -239,6 +243,10 @@ function Trade() {
       const key = (tab === "new" || tab === "new15") && sortKey === "vol" ? "age" : sortKey;
       base.sort((a, b) => key === "age" ? (b.age ?? 0) - (a.age ?? 0) : key === "mcap" ? (b.mcap ?? 0) - (a.mcap ?? 0) : key === "txs" ? b.txs - a.txs : key === "chg" ? (b.chg ?? -1e9) - (a.chg ?? -1e9) : b.vol - a.vol);
     }
+    // pin the official token on top (every tab except Holdings), regardless of sort / filter
+    if (tab !== "holdings" && (!q || matches(toRow(OFFICIAL_TOKEN)))) {
+      base = [toRow(OFFICIAL_TOKEN), ...base.filter((r) => r.token.toLowerCase() !== OFFICIAL_TOKEN)];
+    }
     return base;
   }, [tab, rows, trend, clusters, favs, q, sortKey, byToken, trendMap, clusterMap, liq, logos]); // eslint-disable-line react-hooks/exhaustive-deps
   // lazy enrich visible rows: logos (screener index) + holder concentration (arc-scan), cached server-side
@@ -316,13 +324,13 @@ function Trade() {
                   <tbody>
                     {tableRows.length === 0 && <tr><td className="arc-mono" colSpan={10} style={{ ...cell, color: "var(--arc-muted)" }}>{tab === "favs" ? "No favourites yet — click ☆ on any row." : tab === "new15" ? "No launch younger than 15 minutes right now — watch New pair." : tab === "insiders" ? "No token with 2+ insiders in the last 24h." : "Loading…"}</td></tr>}
                     {tableRows.map((r) => (
-                      <tr className="arc-row-link" key={r.token} onClick={rowClick(r.token)} onMouseEnter={() => { void import("@/lib/arc-api").then((m) => m.tokenPage({ data: { token: r.token } })).catch(() => null); }} style={{ background: favs.has(r.token) ? "rgba(46,124,255,0.05)" : undefined, cursor: "pointer" }}>
+                      <tr className="arc-row-link" key={r.token} onClick={rowClick(r.token)} onMouseEnter={() => { void import("@/lib/arc-api").then((m) => m.tokenPage({ data: { token: r.token } })).catch(() => null); }} style={{ background: r.token.toLowerCase() === OFFICIAL_TOKEN ? "rgba(46,124,255,0.09)" : favs.has(r.token) ? "rgba(46,124,255,0.05)" : undefined, cursor: "pointer" }}>
                         <td style={{ ...cell, paddingRight: 4 }}><button onClick={() => toggleFav(r.token)} style={{ background: "none", border: "none", color: favs.has(r.token) ? "#f5c542" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, padding: 0 }} title="favourite" type="button">{favs.has(r.token) ? "★" : "☆"}</button></td>
                         <td style={{ ...cell, minWidth: 250 }}>
                           <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
                             <Link params={{ ca: r.token }} preload="intent" style={{ textDecoration: "none" }} to="/token/$ca"><span style={{ alignItems: "center", background: "#0e1118", border: "1px solid var(--arc-line)", borderRadius: 8, display: "inline-flex", height: 38, justifyContent: "center", overflow: "hidden", width: 38 }}>{r.logo ? <img alt="" height={38} src={r.logo} style={{ objectFit: "cover" }} width={38} /> : <span className="arc-mono" style={{ fontSize: 14 }}>{r.symbol.slice(0, 1)}</span>}</span></Link>
                             <div style={{ lineHeight: 1.25 }}>
-                              <div><Link params={{ ca: r.token }} preload="intent" style={{ color: "var(--arc-ink)", fontWeight: 700, textDecoration: "none" }} to="/token/$ca">{r.symbol}</Link> <span style={{ color: "var(--arc-muted)", fontSize: 12 }}>{r.name.slice(0, 18)}</span>
+                              <div><Link params={{ ca: r.token }} preload="intent" style={{ color: "var(--arc-ink)", fontWeight: 700, textDecoration: "none" }} to="/token/$ca">{r.symbol}</Link>{r.token.toLowerCase() === OFFICIAL_TOKEN && <span className="arc-mono" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "#fff", fontSize: 10, marginLeft: 6, padding: "1px 6px", verticalAlign: "middle" }}>⭐ OFFICIAL</span>} <span style={{ color: "var(--arc-muted)", fontSize: 12 }}>{r.name.slice(0, 18)}</span>
                                 {r.twitter && <a href={r.twitter} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 6 }} target="_blank">𝕏</a>}
                                 {r.telegram && <a href={r.telegram} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 4 }} target="_blank">✈︎</a>}
                                 {r.website && <a href={r.website} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 4 }} target="_blank">🌐</a>}

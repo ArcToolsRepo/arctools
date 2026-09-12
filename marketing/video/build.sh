@@ -10,11 +10,11 @@ mkdir -p seg
 # still -> Ken Burns clip. args: src dur out zoom_dir(in|out)
 kb() {
   local src=$1 dur=$2 out=$3 dir=${4:-in}
-  local frames; frames=$(python3 -c "print(int(round($dur*$FPS)))")
-  local zexpr
-  if [ "$dir" = in ]; then zexpr="min(1+0.06*on/$frames,1.06)"; else zexpr="1.06-0.06*on/$frames"; fi
+  local z
+  if [ "$dir" = in ]; then z="(1+0.05*t/$dur)"; else z="(1.05-0.05*t/$dur)"; fi
+  # sub-pixel smooth: rescale the still every frame with a fractional factor, then center-crop; no zoompan rounding
   ffmpeg -y -loglevel error -loop 1 -framerate $FPS -i "$src" -f lavfi -i anullsrc=r=48000:cl=stereo \
-    -vf "scale=2560:-2,zoompan=z='$zexpr':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=$frames:s=1280x720:fps=$FPS,format=yuv420p" \
+    -vf "scale=1280:720:flags=lanczos,scale=w='trunc(1280*$z/2)*2':h='trunc(720*$z/2)*2':eval=frame:flags=bicubic,crop=1280:720:(iw-1280)/2:(ih-720)/2,format=yuv420p" \
     -t "$dur" -c:v libx264 -preset veryfast -crf 18 -c:a aac -b:a 128k -shortest "$out"
 }
 # robot clip -> 1280x720, own ambient audio at low volume, optional freeze-tail to reach dur
@@ -45,8 +45,6 @@ drawtext=fontfile=$FONT/Metropolis-ExtraBold.ttf:text='ARCTOOLS.FUN':fontsize=88
 drawtext=fontfile=$FONT/Metropolis-Bold.ttf:text='Trade the whole chain':fontsize=34:fontcolor=#2f7ff5:x=(w-tw)/2:y=h*0.62+100:enable='gte(t,48.1)'[v]" \
   -map "[v]" -map "[a]" -c:v libx264 -preset medium -crf 18 -c:a aac -b:a 160k -movflags +faststart final_nocap.mp4
 
-# captions from the narration transcript
-python3 -c "import json;d=json.load(open('captions.json'));json.dump({'video':'final_nocap.mp4','segments':d['captions']},open('segments.json','w'))"
-python3 /home/.hermes/skills/video-montage/scripts/make_captions.py segments.json -o captions.ass --size 50 --no-caps
+# captions: captions.ass (lower-third bar, generated from captions.json)
 ffmpeg -y -loglevel error -i final_nocap.mp4 -vf "ass=captions.ass:fontsdir=$FONT" -c:v libx264 -preset medium -crf 18 -c:a copy -movflags +faststart arctools-explainer.mp4
 ffprobe -v error -show_entries format=duration:stream=width,height -of csv=p=0 arctools-explainer.mp4
