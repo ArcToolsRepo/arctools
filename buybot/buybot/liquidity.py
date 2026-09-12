@@ -143,11 +143,40 @@ _risk_cache: dict[str, tuple[float, dict]] = {}
 _risk_sem = asyncio.Semaphore(6)
 
 
+_dep_cache: dict[str, tuple[float, str | None]] = {}
+
+
+async def _deployer(s: aiohttp.ClientSession, token: str) -> str | None:
+    c = _dep_cache.get(token)
+    if c and time.time() - c[0] < 3600:
+        return c[1]
+    dev = None
+    try:
+        async with s.get(f"https://api.radardex.pro/token/{token}", headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"},
+                         timeout=aiohttp.ClientTimeout(total=8)) as r:
+            j = await r.json(content_type=None)
+        d = str((j or {}).get("deployer") or "").lower()
+        if d.startswith("0x") and len(d) == 42:
+            dev = d
+    except Exception:  # noqa
+        pass
+    if not dev:
+        # fallback: first wallet that ever bought it in our index (launch buyer ~= deployer on curve pads)
+        try:
+            r = await db.fetchone(text("SELECT wallet FROM swaps WHERE token = :t ORDER BY ts ASC, log_index ASC LIMIT 1").bindparams(t=token))
+            if r and r["wallet"]:
+                dev = r["wallet"].lower()
+        except Exception:  # noqa
+            pass
+    _dep_cache[token] = (time.time(), dev)
+    return dev
+
+
 async def _risk_one(s: aiohttp.ClientSession, token: str) -> dict:
     c = _risk_cache.get(token)
     if c and time.time() - c[0] < 300:
         return c[1]
-    out = {"holders": 0, "top10": None, "top1": None}
+    out = {"holders": 0, "top10": None, "top1": None, "dev": None, "dev_pct": None, "bundle_pct": None, "bundlers": 0}
     try:
         pools = await _known_pools()
         async with _risk_sem:
@@ -158,9 +187,26 @@ async def _risk_one(s: aiohttp.ClientSession, token: str) -> dict:
         items = [x for x in (j.get("items") or [])
                  if (a := (x.get("address") or {}).get("address", "").lower()) not in SKIP_HOLDERS and a not in pools]
         shares = [float(x.get("share") or 0) for x in items]
+        share_of = {(x.get("address") or {}).get("address", "").lower(): float(x.get("share") or 0) for x in items}
+        # --- dev: deployer wallet (RadarDex knows it for most tokens) and its current share
+        dev = await _deployer(s, token)
+        dev_pct = round(share_of.get(dev, 0.0) * 100, 2) if dev else None
+        # --- bundle: wallets whose FIRST buy landed within 2 s (~4 Arc blocks) of the token's first swap
+        bundle_pct, bundlers = None, 0
+        try:
+            rows = await db.fetchall(text(
+                "SELECT wallet, MIN(ts) AS t0 FROM swaps WHERE token = :t AND side = 'buy' GROUP BY wallet").bindparams(t=token))
+            if rows:
+                first = min(int(r["t0"]) for r in rows)
+                early = {r["wallet"].lower() for r in rows if int(r["t0"]) <= first + 2 and r["wallet"].lower() != dev}
+                bundlers = len(early)
+                bundle_pct = round(sum(share_of.get(w, 0.0) for w in early) * 100, 2)
+        except Exception as e:  # noqa
+            log.debug("bundle %s: %s", token, e)
         out = {"holders": int(j.get("holder_count") or len(items)),
                "top10": round(sum(shares[:10]) * 100, 2) if shares else None,
-               "top1": round(shares[0] * 100, 2) if shares else None}
+               "top1": round(shares[0] * 100, 2) if shares else None,
+               "dev": dev, "dev_pct": dev_pct, "bundle_pct": bundle_pct, "bundlers": bundlers}
         _risk_cache[token] = (time.time(), out)
     except Exception as e:  # noqa
         log.debug("holder risk %s: %s", token, e)
@@ -180,3 +226,17 @@ async def api_holder_risk(req: web.Request):
 
 def register_risk(app: web.Application):
     app.router.add_get("/api/holder-risk", api_holder_risk)
+    app.router.add_get("/api/venue-tokens", api_venue_tokens)
+
+
+async def api_venue_tokens(req: web.Request):
+    """GET /api/venue-tokens?venue=v2 — tokens with swaps on a venue (v2 = DYORSwap / WarpDex pairs), with 24h stats."""
+    venue = req.query.get("venue", "v2")[:8]
+    days = min(30, int(req.query.get("days", "30")))
+    rows = await db.fetchall(text(
+        "SELECT s.token, sym.symbol, COUNT(*) AS txs, SUM(s.usdc) AS vol, MIN(s.ts) AS first_ts, MAX(s.ts) AS last_ts, "
+        "(SELECT price1m FROM swaps x WHERE x.token = s.token AND x.price1m > 0 ORDER BY ts DESC LIMIT 1) AS price1m "
+        "FROM swaps s LEFT JOIN token_symbols sym ON sym.token = s.token "
+        "WHERE s.venue = :v AND s.ts > :since GROUP BY s.token, sym.symbol ORDER BY vol DESC LIMIT 300").bindparams(v=venue, since=int(time.time()) - days * 86400))
+    return web.json_response({"venue": venue, "rows": [dict(r) for r in rows]},
+                             headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=30"})

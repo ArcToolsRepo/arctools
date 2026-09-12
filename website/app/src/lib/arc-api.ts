@@ -1076,6 +1076,10 @@ export const getPrice1m = createServerFn({ method: "POST" })
 export type PadToken = {
   /** normalized launch stage across pads: "curve 42%" | "graduated" | "pool" | "instant" */
   stage?: string | null;
+  /** RadarDex "OG" flag (ticker registered before Arc mainnet launch) */
+  og?: boolean;
+  /** V2 DEXes the token trades on (e.g. dyorswap) — from the screener */
+  dexes?: string[];
   createdAt: string | null;
   logo: string | null;
   mcapUsd: number | null;
@@ -1733,9 +1737,19 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
       pool: null, priceUsd: typeof t.price === "number" ? Number(t.price) : null, stage: (t.versions as string[] | undefined)?.includes("v4") ? "V4 pool" : "pool",
       symbol: String(t.symbol ?? ""), telegram: (t.telegram as string) ?? null, token: String(t.address).toLowerCase(), twitter: (t.twitter as string) ?? null,
       venueUrl: `/token/${String(t.address).toLowerCase()}`, volUsd: typeof t.volume24 === "number" ? Number(t.volume24) : null, website: (t.website as string) ?? null,
+      og: t.isOG === true, dexes: Array.isArray(t.v2Dexes) ? (t.v2Dexes as string[]).map((d) => String(d).toLowerCase()) : [],
     }) as PadToken);
   }, (v) => v.length > 20).catch(() => [] as PadToken[]);
-  const all = [...pad, ...order.flatMap((p) => byName.get(p as typeof ALL_PADS[number]) ?? []), ...screener].filter((t) => { const k = t.token.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  // DYORSwap / WarpDex V2 pairs come from our own swap index (no public listing API)
+  const v2: PadToken[] = await memo("v2:tokens", 60_000, async () => {
+    const j = (await fetch("https://bot-production-4200.up.railway.app/api/venue-tokens?venue=v2", { signal: AbortSignal.timeout(8000) }).then((r) => r.json())) as { rows?: { token: string; symbol: string | null; first_ts: number | null; vol: number | null; price1m: number | null }[] };
+    return (j.rows ?? []).filter((r) => /^0x[0-9a-f]{40}$/i.test(r.token)).map((r) => ({
+      createdAt: r.first_ts ? new Date(Number(r.first_ts) * 1000).toISOString() : null, logo: null, mcapUsd: null, name: r.symbol ?? "", pad: "DYORSwap", pool: null,
+      priceUsd: r.price1m ? Number(r.price1m) / 1e6 : null, stage: "V2 pair", symbol: r.symbol ?? "", telegram: null, token: r.token.toLowerCase(), twitter: null,
+      venueUrl: `/token/${r.token.toLowerCase()}`, volUsd: r.vol ?? null, website: null, dexes: ["dyor"],
+    }) as PadToken);
+  }, (v) => v.length > 0).catch(() => [] as PadToken[]);
+  const all = [...pad, ...order.filter((p) => p !== "RadarDex").flatMap((p) => byName.get(p as typeof ALL_PADS[number]) ?? []), ...v2, ...(byName.get("RadarDex") ?? []), ...screener].filter((t) => { const k = t.token.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
   // keep the payload small (the Terminal shows 100 rows per tab): newest 600 + top 300 by volume, compact fields
   const ts = (t: PadToken) => (t.createdAt ? Date.parse(t.createdAt) : 0);
   const newest = [...all].sort((a, b) => ts(b) - ts(a)).slice(0, 400);
@@ -1745,8 +1759,10 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   // every launchpad list is small — keep them whole so a source chip shows the full pad; only the raw
   // RadarDex launch feed (hundreds of dead pools) is trimmed to newest/busiest
   for (const t of all) if (t.pad !== "RadarDex") keep.set(t.token.toLowerCase(), t);
+  for (const t of v2) { const k = t.token.toLowerCase(); const cur = keep.get(k); if (cur && !(cur.dexes ?? []).includes("dyor")) keep.set(k, { ...cur, dexes: [...(cur.dexes ?? []), "dyor"] }); }
   // the screener set (chain-wide most active) is always carried whole
   const scr = new Set(screener.map((t) => t.token.toLowerCase()));
+  const scrMeta = new Map(screener.map((t) => [t.token.toLowerCase(), t]));
   for (const t of all) if (scr.has(t.token.toLowerCase())) keep.set(t.token.toLowerCase(), t);
   // whatever is trending / moving in the last 24 h must carry its metadata into the Terminal rows
   try {
@@ -1761,6 +1777,7 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   return [...keep.values()].sort((a, b) => ts(b) - ts(a)).map((t) => ({
     createdAt: t.createdAt, logo: t.logo, mcapUsd: t.mcapUsd, name: (t.name ?? "").slice(0, 40), pad: t.pad, pool: t.pool, priceUsd: t.priceUsd, stage: t.stage ?? null,
     symbol: (t.symbol ?? "").slice(0, 16), telegram: t.telegram, token: t.token, twitter: t.twitter, venueUrl: t.venueUrl, volUsd: t.volUsd, website: t.website,
+    og: t.og || scrMeta.get(t.token.toLowerCase())?.og || false, dexes: t.dexes?.length ? t.dexes : (scrMeta.get(t.token.toLowerCase())?.dexes ?? []),
   }) as PadToken);
 }
 export const listAllTokens = createServerFn({ method: "POST" })
