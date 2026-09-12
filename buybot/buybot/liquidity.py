@@ -296,7 +296,10 @@ async def api_search(req: web.Request):
                               headers={"User-Agent": "ArcTools/1.0"}) as r:
                 if r.status == 200:
                     j = await r.json()
-                    for it in (j.get("results") or [])[:40]:
+                    results = list(j.get("results") or [])
+                    if j.get("type") == "token" and j.get("url") and not results:   # unique match: arc-scan returns a redirect url only
+                        results.append({"type": "token", "sub": j["url"].rsplit("/", 1)[-1], "label": None})
+                    for it in results[:40]:
                         if it.get("type") != "token":
                             continue
                         a = (it.get("sub") or "").lower()
@@ -304,6 +307,12 @@ async def api_search(req: web.Request):
                             continue
                         d = rows.setdefault(a, {"token": a, "symbol": None, "txs": 0, "vol": 0.0, "last_ts": None, "venue": None, "source": "chain"})
                         d["symbol"] = d.get("symbol") or it.get("label")
+                        if not d["symbol"]:
+                            try:
+                                from .insider import _symbol
+                                d["symbol"] = await _symbol(a) or None
+                            except Exception:  # noqa
+                                pass
                         d["lookalike"] = bool(it.get("unverified_lookalike"))
     except Exception as e:  # noqa
         log.debug("search arc-scan %s: %s", q, e)

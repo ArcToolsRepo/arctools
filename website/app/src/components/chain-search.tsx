@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { TokenLogo } from "@/components/token-logo";
 
 export type SearchHit = {
-  token: string; symbol: string | null; txs: number; vol: number; last_ts: number | null; venue: string | null;
-  source: "index" | "chain" | "unknown"; lookalike?: boolean;
+  token: string; symbol: string | null; name?: string | null; logo?: string | null; pad?: string | null; mcap?: number | null;
+  txs: number; vol: number; last_ts: number | null; venue: string | null;
+  source: "index" | "chain" | "pad" | "unknown"; lookalike?: boolean;
 };
 
 const usd = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v >= 1e4 ? `$${(v / 1e3).toFixed(1)}K` : v >= 1000 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`);
@@ -45,18 +46,22 @@ export function ChainSearch({ q, hide, renderBuy }: { q: string; hide: Set<strin
         <span>SEARCH ALL OF ARC</span>
         <span style={{ color: "var(--arc-ink)" }}>“{query}”</span>
         <span style={{ flex: 1 }} />
-        <span>{busy ? "searching…" : rows.length === 0 ? "no token with that name or address on Arc" : `${rows.length} token${rows.length === 1 ? "" : "s"} · index + arc-scan`}</span>
+        <span>{busy ? "searching…" : rows.length === 0 ? "no token with that name or address on Arc" : `${rows.length} token${rows.length === 1 ? "" : "s"} · launchpads + index + arc-scan`}</span>
       </div>
-      {rows.slice(0, 12).map((h) => (
+      {rows.slice(0, 15).map((h) => (
         <div key={h.token} style={{ alignItems: "center", borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 10, padding: "6px 12px" }}>
-          <TokenLogo src={null} symbol={h.symbol ?? "?"} size={22} radius={6} monogram />
+          <TokenLogo src={h.logo ?? null} symbol={h.symbol ?? "?"} size={22} radius={6} monogram />
           <a href={`/token/${h.token}`} className="arc-mono" style={{ color: "var(--arc-ink)", fontSize: 13, fontWeight: 600, minWidth: 70, textDecoration: "none" }}>{h.symbol ?? "unknown"}</a>
+          {h.name && h.name.toLowerCase() !== (h.symbol ?? "").toLowerCase() && <span style={{ color: "var(--arc-muted)", fontSize: 12, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.name}</span>}
+          {h.pad && <span className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-muted)", fontSize: 10, padding: "0 5px" }}>{h.pad}</span>}
           <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{h.token.slice(0, 6)}…{h.token.slice(-4)}</span>
           <button className="arc-mono" onClick={() => void navigator.clipboard?.writeText(h.token)} style={{ background: "transparent", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: 0 }} title="copy address" type="button">⧉</button>
           {h.lookalike && <span className="arc-mono" style={{ color: "var(--arc-down)", fontSize: 10 }}>⚠ lookalike name</span>}
           <span style={{ flex: 1 }} />
           {h.source === "index" ? (
-            <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{usd(h.vol)} 24h · {h.txs} txs{h.last_ts ? ` · last ${ago(h.last_ts)}` : ""}{h.venue ? ` · ${h.venue}` : ""}</span>
+            <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{h.mcap ? `${usd(h.mcap)} MC · ` : ""}{usd(h.vol)} vol · {h.txs} txs{h.last_ts ? ` · last ${ago(h.last_ts)}` : ""}</span>
+          ) : h.source === "pad" ? (
+            <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{h.mcap ? `${usd(h.mcap)} MC` : "on curve"}{h.vol ? ` · ${usd(h.vol)} vol` : ""}</span>
           ) : (
             <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{h.source === "chain" ? "on-chain · no indexed trades" : "unknown contract · will probe on open"}</span>
           )}
