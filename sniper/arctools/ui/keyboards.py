@@ -15,6 +15,7 @@ def main_menu() -> InlineKeyboardMarkup:
         [("📡 New pairs", "feed"), ("📊 Portfolio", "portfolio")],
         [("🤖 Copy-trade", "copy"), ("🔔 Alerts", "alerts")],
         [("🌉 Bridge", "bridge"), ("⚙️ Settings", "settings")],
+        [("🤝 Referrals · earn 25% of fees", "ref")],
     ])
 
 

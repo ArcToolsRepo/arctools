@@ -13,7 +13,7 @@ from eth_utils import to_checksum_address
 from .config import CFG
 from .chain import CHAIN
 from .pads import PADS, Pad, pad_by_name, default_pad
-from . import db, wallets
+from . import db, referral, wallets
 
 log = logging.getLogger("sniper")
 
@@ -128,6 +128,7 @@ async def execute_buy(tg_id: int, token: str, pad: Pad, amount_usdc: float,
                     tg_id=tg_id, token=token, side="buy", usdc=amount_usdc,
                     tokens=float(got), tx=h, ts=int(time.time())))
                 asyncio.create_task(send_fee(acct, fee, "buy"))
+                asyncio.create_task(referral.credit(tg_id, h, fee))
             return {"ok": ok, "tx": h, "tokens": got, "wallet": acct.address}
         except Exception as e:  # noqa
             log.exception("buy fail")
@@ -170,6 +171,7 @@ async def execute_sell(tg_id: int, pos: dict, pct: int, gas_mode: str = "turbo")
         got_usdc = got_usdc - fee_amt
         if ok:
             asyncio.create_task(send_fee(acct, fee_amt, "sell"))
+            asyncio.create_task(referral.credit(tg_id, h, fee_amt))
             new_amount = pos["amount_tokens"] * (100 - pct) / 100
             await db.execute(update(db.positions).where(db.positions.c.id == pos["id"]).values(
                 amount_tokens=new_amount,

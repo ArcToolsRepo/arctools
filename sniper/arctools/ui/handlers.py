@@ -5,7 +5,7 @@ import time
 import asyncio
 import logging
 from aiogram import Router, F
-from aiogram.filters import CommandStart, CommandObject
+from aiogram.filters import Command, CommandStart, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery
@@ -15,7 +15,7 @@ from eth_utils import is_address, to_checksum_address
 from ..config import CFG
 from ..chain import CHAIN
 from ..pads import PADS, pad_by_name, default_pad, auto_pad, token_overview, quote_usdc_to_token
-from .. import db, wallets, sniper, portfolio, feed, bridge
+from .. import db, wallets, sniper, portfolio, feed, bridge, referral
 from .keyboards import (kb, main_menu, back, snipe_card, position_card,
                         AMOUNTS, SLIPPAGES, GAS_MODES, MODES)
 
@@ -57,6 +57,16 @@ async def start(m: Message, state: FSMContext, command: CommandObject = None):
     if payload.startswith("ca_") and is_address("0x" + payload[3:]):
         await open_ca_panel(m, "0x" + payload[3:])
         return
+    # deep link: /start ref_<CODE> -> bind this account to a referrer (once), then the normal start screen
+    if payload.startswith("ref_") and 4 <= len(payload) <= 16:
+        res = await referral.bind(m.from_user.id, payload[4:])
+        note = {"bound": "🤝 Referral linked — thanks for joining through a friend.",
+                "already": "🤝 You already have a referrer linked.",
+                "self": "That is your own referral code.",
+                "unknown": "That referral code does not exist."}.get(res, "")
+        if note:
+            await m.answer(note)
+        payload = ""
     # deep link: /start copy_<hex40> -> add an Insider wallet as a copy target
     if payload.startswith("copy_") and is_address("0x" + payload[5:]):
         wallet = to_checksum_address("0x" + payload[5:])
@@ -880,3 +890,35 @@ async def any_text(m: Message, state: FSMContext):
     else:
         await m.answer("💡 Paste a contract address to open the buy panel, or use the menu.",
                        reply_markup=main_menu())
+
+
+# ============ REFERRALS ============
+
+@router.message(Command("ref"))
+async def cmd_ref(m: Message, tg_id: int | None = None):
+    uid = tg_id or m.from_user.id
+    try:
+        w = await wallets.active_wallet(uid)
+        if w:
+            await referral.set_payout_wallet(uid, w["address"])
+        st = await referral.stats(uid)
+    except Exception as e:  # noqa
+        return await m.answer(f"Referral service unavailable: {str(e)[:80]}")
+    pct = int(round(float(st.get("share", referral.SHARE)) * 100))
+    await m.answer(
+        f"🤝 <b>Your referral link</b>\n"
+        f"Bot: <code>{st['link_bot']}</code>\n"
+        f"Site: <code>{st['link_site']}</code>\n\n"
+        f"You earn <b>{pct}% of the platform fee</b> on every trade of everyone who joins through your link — "
+        f"sniper (1% per trade) and the website (1.5% per swap), forever.\n\n"
+        f"Referred: <b>{st.get('referred', 0)}</b> · trades: <b>{st.get('trades', 0)}</b>\n"
+        f"Earned: <b>${st.get('earned_usd', 0):.2f}</b> · paid: ${st.get('paid_usd', 0):.2f} · pending: <b>${st.get('pending_usd', 0):.2f}</b>\n"
+        f"Payout wallet: <code>{st.get('payout_wallet') or 'set by trading once / use the site'}</code>\n\n"
+        f"Payouts go out in native USDC every week to your active wallet.",
+        parse_mode="HTML", disable_web_page_preview=True)
+
+
+@router.callback_query(F.data == "ref")
+async def cb_ref(cb: CallbackQuery):
+    await cb.answer()
+    await cmd_ref(cb.message, tg_id=cb.from_user.id)

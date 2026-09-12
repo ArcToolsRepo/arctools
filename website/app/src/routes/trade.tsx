@@ -7,6 +7,7 @@ import { ARC_AGGREGATOR, connectWallet, encodeAggregatorSwap, ethCall, getStored
 import { hotAddress, hotCall, hotSend, hotWait } from "@/lib/arc-hotwallet";
 import { TokenLogo } from "@/components/token-logo";
 import { TradeToasts } from "@/components/trade-toasts";
+import { creditRef } from "@/lib/arc-ref";
 import { WalletPanel } from "@/components/wallet-panel";
 import { routeSwap, type RouteResult } from "@/lib/arc-route";
 import { quickAmount, setQuickAmount } from "@/components/quick-buy";
@@ -181,6 +182,7 @@ function Trade() {
       setToast({ ok: true, text: `Buying ${symbol} for ${buyAmt} USDC via ${r.legs.map((l) => l.label).join(" + ")}…`, tx: h });
       const rc = await wait(h);
       setToast({ ok: rc.status === 1, text: rc.status === 1 ? `Bought ${symbol} for ${buyAmt} USDC.` : `Buy of ${symbol} reverted (slippage?).`, tx: h });
+      if (rc.status === 1) creditRef(addr, h, Number(spend) / 1e18 * 0.015);
       void loadPositions();
     } catch (e) { setToast({ ok: false, text: (e as Error).message }); }
     setBusy(null);
@@ -206,6 +208,7 @@ function Trade() {
       setToast({ ok: true, text: `Selling ${pct}% of ${p.symbol ?? short(p.token)}…`, tx: h });
       const rc = await wait(h);
       setToast({ ok: rc.status === 1, text: rc.status === 1 ? `Sold ${pct}% of ${p.symbol ?? short(p.token)}.` : "Sell reverted (slippage?).", tx: h });
+      if (rc.status === 1) creditRef(addr, h, Number(r.out) / 1e18 * 0.015);
       void loadPositions();
     } catch (e) { setToast({ ok: false, text: (e as Error).message }); }
     setBusy(null);

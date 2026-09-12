@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { hasWallet, hotAddress, hotSend, hotWait, isUnlocked, onHotChange } from "@/lib/arc-hotwallet";
+import { creditRef } from "@/lib/arc-ref";
 import { routeSwap } from "@/lib/arc-route";
 import { ARC_AGGREGATOR, encodeAggregatorSwap } from "@/lib/arc-wallet";
 
@@ -37,6 +38,7 @@ export function QuickBuy({ token, symbol, compact = false }: { token: string; sy
       setMsg({ ok: true, text: "sent…" });
       const rc = await hotWait(h);
       setMsg({ ok: rc.status === 1, text: rc.status === 1 ? `bought ${symbol}` : "reverted" });
+      if (rc.status === 1) creditRef(addr, h, Number(spend) / 1e18 * 0.015);
     } catch (err) { setMsg({ ok: false, text: (err as Error).message.slice(0, 40) }); }
     setBusy(false);
     setTimeout(() => setMsg(null), 6000);

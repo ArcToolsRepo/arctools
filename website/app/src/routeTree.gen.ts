@@ -15,6 +15,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ScanRouteImport } from './routes/scan'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as RewardsRouteImport } from './routes/rewards'
+import { Route as ReferralsRouteImport } from './routes/referrals'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as LaunchpadRouteImport } from './routes/launchpad'
@@ -31,6 +32,7 @@ import { Route as ApiWarmRouteImport } from './routes/api/warm'
 import { Route as ApiTokensRouteImport } from './routes/api/tokens'
 import { Route as ApiTokenpageRouteImport } from './routes/api/tokenpage'
 import { Route as ApiRpcRouteImport } from './routes/api/rpc'
+import { Route as ApiRefCreditRouteImport } from './routes/api/ref-credit'
 import { Route as ApiPadLogoCaRouteImport } from './routes/api/pad-logo.$ca'
 import { Route as ApiLogoIpfsCidRouteImport } from './routes/api/logo.ipfs.$cid'
 
@@ -62,6 +64,11 @@ const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
 const RewardsRoute = RewardsRouteImport.update({
   id: '/rewards',
   path: '/rewards',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReferralsRoute = ReferralsRouteImport.update({
+  id: '/referrals',
+  path: '/referrals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProfileRoute = ProfileRouteImport.update({
@@ -144,6 +151,11 @@ const ApiRpcRoute = ApiRpcRouteImport.update({
   path: '/api/rpc',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRefCreditRoute = ApiRefCreditRouteImport.update({
+  id: '/api/ref-credit',
+  path: '/api/ref-credit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPadLogoCaRoute = ApiPadLogoCaRouteImport.update({
   id: '/api/pad-logo/$ca',
   path: '/api/pad-logo/$ca',
@@ -166,12 +178,14 @@ export interface FileRoutesByFullPath {
   '/launchpad': typeof LaunchpadRoute
   '/portfolio': typeof PortfolioRoute
   '/profile': typeof ProfileRoute
+  '/referrals': typeof ReferralsRoute
   '/rewards': typeof RewardsRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/scan': typeof ScanRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/trade': typeof TradeRoute
   '/wallets': typeof WalletsRoute
+  '/api/ref-credit': typeof ApiRefCreditRoute
   '/api/rpc': typeof ApiRpcRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
@@ -192,12 +206,14 @@ export interface FileRoutesByTo {
   '/launchpad': typeof LaunchpadRoute
   '/portfolio': typeof PortfolioRoute
   '/profile': typeof ProfileRoute
+  '/referrals': typeof ReferralsRoute
   '/rewards': typeof RewardsRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/scan': typeof ScanRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/trade': typeof TradeRoute
   '/wallets': typeof WalletsRoute
+  '/api/ref-credit': typeof ApiRefCreditRoute
   '/api/rpc': typeof ApiRpcRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
@@ -219,12 +235,14 @@ export interface FileRoutesById {
   '/launchpad': typeof LaunchpadRoute
   '/portfolio': typeof PortfolioRoute
   '/profile': typeof ProfileRoute
+  '/referrals': typeof ReferralsRoute
   '/rewards': typeof RewardsRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/scan': typeof ScanRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/trade': typeof TradeRoute
   '/wallets': typeof WalletsRoute
+  '/api/ref-credit': typeof ApiRefCreditRoute
   '/api/rpc': typeof ApiRpcRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
@@ -247,12 +265,14 @@ export interface FileRouteTypes {
     | '/launchpad'
     | '/portfolio'
     | '/profile'
+    | '/referrals'
     | '/rewards'
     | '/robots.txt'
     | '/scan'
     | '/sitemap.xml'
     | '/trade'
     | '/wallets'
+    | '/api/ref-credit'
     | '/api/rpc'
     | '/api/tokenpage'
     | '/api/tokens'
@@ -273,12 +293,14 @@ export interface FileRouteTypes {
     | '/launchpad'
     | '/portfolio'
     | '/profile'
+    | '/referrals'
     | '/rewards'
     | '/robots.txt'
     | '/scan'
     | '/sitemap.xml'
     | '/trade'
     | '/wallets'
+    | '/api/ref-credit'
     | '/api/rpc'
     | '/api/tokenpage'
     | '/api/tokens'
@@ -299,12 +321,14 @@ export interface FileRouteTypes {
     | '/launchpad'
     | '/portfolio'
     | '/profile'
+    | '/referrals'
     | '/rewards'
     | '/robots.txt'
     | '/scan'
     | '/sitemap.xml'
     | '/trade'
     | '/wallets'
+    | '/api/ref-credit'
     | '/api/rpc'
     | '/api/tokenpage'
     | '/api/tokens'
@@ -326,12 +350,14 @@ export interface RootRouteChildren {
   LaunchpadRoute: typeof LaunchpadRoute
   PortfolioRoute: typeof PortfolioRoute
   ProfileRoute: typeof ProfileRoute
+  ReferralsRoute: typeof ReferralsRoute
   RewardsRoute: typeof RewardsRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   ScanRoute: typeof ScanRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TradeRoute: typeof TradeRoute
   WalletsRoute: typeof WalletsRoute
+  ApiRefCreditRoute: typeof ApiRefCreditRoute
   ApiRpcRoute: typeof ApiRpcRoute
   ApiTokenpageRoute: typeof ApiTokenpageRoute
   ApiTokensRoute: typeof ApiTokensRoute
@@ -384,6 +410,13 @@ declare module '@tanstack/react-router' {
       path: '/rewards'
       fullPath: '/rewards'
       preLoaderRoute: typeof RewardsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/referrals': {
+      id: '/referrals'
+      path: '/referrals'
+      fullPath: '/referrals'
+      preLoaderRoute: typeof ReferralsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/profile': {
@@ -498,6 +531,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiRpcRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ref-credit': {
+      id: '/api/ref-credit'
+      path: '/api/ref-credit'
+      fullPath: '/api/ref-credit'
+      preLoaderRoute: typeof ApiRefCreditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/pad-logo/$ca': {
       id: '/api/pad-logo/$ca'
       path: '/api/pad-logo/$ca'
@@ -526,12 +566,14 @@ const rootRouteChildren: RootRouteChildren = {
   LaunchpadRoute: LaunchpadRoute,
   PortfolioRoute: PortfolioRoute,
   ProfileRoute: ProfileRoute,
+  ReferralsRoute: ReferralsRoute,
   RewardsRoute: RewardsRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   ScanRoute: ScanRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TradeRoute: TradeRoute,
   WalletsRoute: WalletsRoute,
+  ApiRefCreditRoute: ApiRefCreditRoute,
   ApiRpcRoute: ApiRpcRoute,
   ApiTokenpageRoute: ApiTokenpageRoute,
   ApiTokensRoute: ApiTokensRoute,

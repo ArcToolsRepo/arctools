@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { connectWallet, disconnectWallet, getStoredWallet, onWalletChange, setStoredWallet, setWalletPicker } from "@/lib/arc-wallet";
+import { bindRef, captureRef } from "@/lib/arc-ref";
 import { PadTicker } from "./pad-ticker";
 
 /** Shared site nav: tool links, launchpad, rewards, wallet connect. */
@@ -23,6 +24,7 @@ export function ArcNav({ active }: { active?: string }) {
   // picker for the case of several installed wallet extensions (MetaMask + Rabby + …)
   const [picker, setPicker] = useState<{ opts: { rdns: string; name: string; icon: string }[]; resolve: (r: string | null) => void } | null>(null);
   useEffect(() => { setWalletPicker((opts) => new Promise((resolve) => setPicker({ opts, resolve }))); return () => setWalletPicker(null); }, []);
+  useEffect(() => { captureRef(); void bindRef(getStoredWallet()); return onWalletChange((a) => void bindRef(a)); }, []);
   const disconnect = async () => {
     // full disconnect (permission revoked in the extension), then straight back into the connect flow so the
     // user picks the wallet / account they actually want
@@ -34,6 +36,7 @@ export function ArcNav({ active }: { active?: string }) {
     ["/trade", "Terminal"],
     ["/profile", "Profile"],
     ["/wallets", "Wallets"],
+    ["/referrals", "Referrals"],
     ["/scan", "Scanner"],
     ["/portfolio", "Portfolio"],
     ["/bridge", "Bridge"],

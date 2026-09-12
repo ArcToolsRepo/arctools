@@ -324,6 +324,8 @@ async def v4_bootstrap():
     await warm_supply_cache()
     from .warm import warm_loop
     asyncio.create_task(warm_loop(), name="site-warm")
+    from .referrals import init_tables as _ref_init
+    await _ref_init()
     from .watchdog import watchdog_loop
     asyncio.create_task(watchdog_loop(), name="site-watchdog")
     if await db.kv_get("v4_bootstrapped"):
@@ -1173,6 +1175,8 @@ async def start_api():
     from . import liquidity as _liq
     _liq.register(app)
     _liq.register_risk(app)
+    from . import referrals as _ref
+    _ref.register(app)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", "8080")))

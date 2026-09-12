@@ -6,6 +6,7 @@ import { SocialCheck } from "@/components/social-check";
 import { TokenLogo } from "@/components/token-logo";
 import { TvChart, type Candle } from "@/components/tv-chart";
 import { ARC_V4_ROUTER, SWAP_FEE_ROUTER, tokenPage, venueData, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
+import { creditRef } from "@/lib/arc-ref";
 import { routeSwap, type RouteResult } from "@/lib/arc-route";
 import { hotAddress, hotSend, isUnlocked, onHotChange } from "@/lib/arc-hotwallet";
 import { QuickBuy } from "@/components/quick-buy";
@@ -326,11 +327,13 @@ function TokenPage() {
       if (quote === null) throw new Error("No quote yet.");
       setBusy("Confirm in wallet...");
       let hash: string;
+      let feeUsdForRef = 0;
       if (useAgg && route && route.legs.length > 0) {
         const legs = route.legs.map((l) => ({ venue: l.venue, target: l.target, fee: l.fee, key: l.key, amount: l.amount }));
         if (side === "buy") {
           const spend = legs.reduce((s, l) => s + BigInt(l.amount), 0n);
           const value = spend + (spend * 15n) / 1000n;
+          feeUsdForRef = Number(spend) / 1e18 * 0.015;
           const minOut = BigInt(Math.round(quote * (1 - slippage / 100) * 1e6)) * BigInt(10) ** BigInt(Math.max(0, dec - 6));
           hash = await send({ data: encodeAggregatorSwap("buy", ca, legs, minOut, from, 150), from, to: ARC_AGGREGATOR, value });
         } else {
@@ -342,6 +345,7 @@ function TokenPage() {
             await waitReceipt(await send({ data: SEL.approve + p32(ARC_AGGREGATOR) + "f".repeat(64), from, to: ca }));
             setBusy("Confirm in wallet...");
           }
+          feeUsdForRef = (quote ?? 0) * 0.015 / 0.985;   // quote is post-fee USDC out
           hash = await send({ data: encodeAggregatorSwap("sell", ca, legs, minOut, from, 150), from, to: ARC_AGGREGATOR });
         }
       } else if (info.venue === "pad") {
@@ -447,6 +451,7 @@ function TokenPage() {
       const r = await waitReceipt(hash);
       if (Number(r.status) !== 1) throw new Error("Transaction reverted (slippage?).");
       setMsg(`${side === "buy" ? "Bought" : "Sold"} ${info.symbol} — confirmed.`);
+      if (feeUsdForRef > 0) creditRef(from, hash, feeUsdForRef);
       setAmount("");
       void refreshBalances(from);
       setTimeout(() => { void loadSide(); void loadCandles(); }, 2500);
