@@ -537,6 +537,16 @@ export const tokenPage = createServerFn({ method: "POST" })
       } catch {
         /* screener down */
       }
+      if (!meta.address) {
+        // not in the top-200 screener list (older / quieter tokens like ARCT): per-token endpoint has the same fields
+        try {
+          const one = await memo(`radar:one:${lc}`, 60_000, async () => {
+            const r = await fetch(`https://api.radardex.pro/token/${lc}`, { headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; ArcToolsSite/1.0)" }, signal: AbortSignal.timeout(6000) });
+            return r.ok ? ((await r.json()) as Record<string, unknown>) : null;
+          }, (v) => !!v && typeof v === "object" && !!(v as Record<string, unknown>).address);
+          if (one && one.address) meta = one;
+        } catch { /* skip */ }
+      }
       // Swieze tokeny Tolly nie sa jeszcze w RadarDex — rozpoznajemy je z listy Tolly
       // (launchpad, logo, sociale, mcap), inaczej strona nie wiedzialaby skad brac dane.
       if (!meta.launchpad) {
@@ -713,7 +723,9 @@ export const tokenPage = createServerFn({ method: "POST" })
         venueUrl,
         website: normSocial("web", padSocial.website || (meta.website as string) || null),
       };
-    }, (v) => !("error" in v) || v.error === "That is not a contract address."),
+    // cache only complete results: a page computed while RadarDex / the RPC were rate-limiting comes back
+    // without price, mcap or logo — serve it once, but let the next visitor recompute instead of freezing junk
+    }, (v) => ("error" in v ? v.error === "That is not a contract address." : (v.mcapUsd != null || v.price1m != null) && v.venue !== "external")),
   );
 
 /**
@@ -1125,6 +1137,9 @@ function decodeStringAt(data: string, slotIndex: number): string {
  * screener indexes just a handful of Warp tokens), so we decode it on chain.
  */
 export function ipfsToHttp(uri: string): string | null {
+  if (!uri) return null;
+  // people paste BBCode / markdown / whitespace into launchpad forms: keep only the URL part
+  uri = String(uri).trim().replace(/^[\[(<]*(?:img|url)?[=\]]?\s*/i, "").split(/[\s\[\]<>"']/)[0];
   if (!uri) return null;
   // przez wlasne proxy z cache na brzegu — publiczne bramy IPFS limituja ruch
   if (uri.startsWith("ipfs://")) return `/api/logo/ipfs/${uri.slice(7).replace(/^ipfs\//, "")}`;
