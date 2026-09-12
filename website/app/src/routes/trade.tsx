@@ -6,6 +6,7 @@ import { holderRisk, listAllTokens, tokenLogos, xAvatar, type PadToken } from "@
 import { ARC_AGGREGATOR, connectWallet, encodeAggregatorSwap, ethCall, getStoredWallet, onWalletChange, p32, sendTx, waitReceipt } from "@/lib/arc-wallet";
 import { hotAddress, hotCall, hotSend, hotWait } from "@/lib/arc-hotwallet";
 import { TokenLogo } from "@/components/token-logo";
+import { TradeToasts } from "@/components/trade-toasts";
 import { WalletPanel } from "@/components/wallet-panel";
 import { routeSwap, type RouteResult } from "@/lib/arc-route";
 import { quickAmount, setQuickAmount } from "@/components/quick-buy";
@@ -74,6 +75,9 @@ function Trade() {
   const [hotAddr, setHotAddr] = useState<string | null>(null);
   // who signs: the in-browser trading wallet (one click) or the connected browser wallet (MetaMask/Rabby — confirm each tx)
   const [signer, setSigner] = useState<"hot" | "browser">("hot");
+  const [toastsOn, setToastsOn] = useState(true);
+  useEffect(() => { try { setToastsOn(localStorage.getItem("arctools_toasts") !== "0"); } catch { /* ignore */ } }, []);
+  const toggleToasts = () => setToastsOn((v) => { try { localStorage.setItem("arctools_toasts", v ? "0" : "1"); } catch { /* ignore */ } return !v; });
   const [browserAddr, setBrowserAddr] = useState<string | null>(null);
   useEffect(() => { setBrowserAddr(getStoredWallet()); return onWalletChange(setBrowserAddr); }, []);
   const addr = signer === "hot" ? hotAddr : browserAddr;
@@ -306,6 +310,7 @@ function Trade() {
               ))}
               <span style={{ marginLeft: "auto" }}>
                 {[1, 5, 60, 360, 1440].map((m) => <button key={m} className="arc-mono" onClick={() => setTf(m)} style={{ background: tf === m ? "rgba(255,255,255,0.08)" : "transparent", border: "1px solid " + (tf === m ? "var(--arc-line)" : "transparent"), borderRadius: 4, color: tf === m ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, marginLeft: 2, padding: "4px 9px" }} type="button">{tfLabel(m)}</button>)}
+                <button className="arc-mono" onClick={toggleToasts} style={{ background: toastsOn ? "rgba(34,197,128,0.12)" : "transparent", border: "1px solid " + (toastsOn ? "var(--arc-up)" : "var(--arc-line)"), borderRadius: 4, color: toastsOn ? "var(--arc-up)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, marginLeft: 8, padding: "3px 8px" }} title="Live buy/sell pop-ups for the tokens on screen" type="button">{toastsOn ? "🔔 live" : "🔕 live"}</button>
               </span>
             </div>
             {/* paste CA quick action */}
@@ -418,6 +423,7 @@ function Trade() {
           </div>
         </div>
       </section>
+          <TradeToasts enabled={toastsOn} logos={Object.fromEntries([...tableRows.map((r) => [r.token, r.logo] as const), ...trend.map((t) => [t.token.toLowerCase(), logos[t.token.toLowerCase()] ?? byToken.get(t.token.toLowerCase())?.logo ?? null] as const)])} tokens={[...new Set([...trend.map((t) => t.token), ...tableRows.map((r) => r.token)])]} />
     </main>
   );
 }
