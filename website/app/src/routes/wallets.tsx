@@ -142,7 +142,7 @@ function Wallets() {
                     {s30?.rank != null && <span className="arc-mono" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", borderRadius: 4, fontSize: 10, padding: "1px 6px" }}>INSIDER #{s30.rank}</span>}
                     {c && c.watchers > 0 && <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>👁 {c.watchers} watching</span>}
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
+                  <div className="arc-wallet-actions" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     <a className="arc-mono" href={`${BOT}?start=watch_${w.slice(2)}`} rel="noreferrer" style={{ background: "var(--arc-up)", border: "1px solid var(--arc-up)", borderRadius: 6, color: "#06130b", fontSize: 12, fontWeight: 700, padding: "6px 12px", textDecoration: "none" }} target="_blank">🔔 Alert me in Telegram</a>
                     <a className="arc-mono" href={`https://t.me/ArcSniper_bot?start=copy_${w.slice(2)}`} rel="noreferrer" style={{ background: "transparent", border: "1px solid var(--arc-cobalt)", borderRadius: 6, color: "var(--arc-cobalt)", fontSize: 12, padding: "6px 12px", textDecoration: "none" }} target="_blank">copy-trade</a>
                     <button className="arc-mono" onClick={() => remove(w)} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 6, color: "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "6px 10px" }} type="button">remove</button>

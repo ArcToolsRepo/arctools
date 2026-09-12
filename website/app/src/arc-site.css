@@ -700,3 +700,8 @@
   .arc-toasts { width: 230px; }
   table td, table th { font-size: 12px; }
 }
+
+@media (max-width: 760px) {
+  .arc-wallet-actions { width: 100%; }
+  .arc-wallet-actions > a, .arc-wallet-actions > button { flex: 1 1 auto; text-align: center; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
+}
