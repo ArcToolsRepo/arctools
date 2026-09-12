@@ -267,3 +267,32 @@ async def api_wallet_watch_count(request: web.Request) -> web.Response:
     w = (request.query.get("wallet") or "").lower()
     r = await db.fetchone(text("SELECT COUNT(*) AS n FROM watchlist WHERE wallet = :w").bindparams(w=w))
     return web.json_response({"wallet": w, "watchers": int(r["n"] or 0)}, headers=API_CORS)
+
+
+async def api_positions(request: web.Request) -> web.Response:
+    """Open positions of a wallet from the swap index: net tokens, avg cost, current price (last indexed), unrealized PnL."""
+    w = (request.query.get("wallet") or "").lower()
+    if not _is_addr(w):
+        return web.json_response({"error": "bad wallet"}, status=400, headers=API_CORS)
+    rows = await db.fetchall(text("""
+        SELECT s.token, sym.symbol,
+               SUM(CASE WHEN s.side='buy' THEN s.tokens ELSE 0 END) AS bought,
+               SUM(CASE WHEN s.side='sell' THEN s.tokens ELSE 0 END) AS sold,
+               SUM(CASE WHEN s.side='buy' THEN s.usdc ELSE 0 END) AS cost,
+               SUM(CASE WHEN s.side='sell' THEN s.usdc ELSE 0 END) AS proceeds,
+               COUNT(*) AS n, MAX(s.ts) AS last_ts,
+               (SELECT price1m FROM swaps p WHERE p.token = s.token AND p.price1m > 0 AND p.usdc >= 0.5 ORDER BY p.ts DESC LIMIT 1) AS price1m
+        FROM swaps s LEFT JOIN token_symbols sym ON sym.token = s.token
+        WHERE s.wallet = :w GROUP BY s.token, sym.symbol ORDER BY MAX(s.ts) DESC LIMIT 60""").bindparams(w=w))
+    out = []
+    for r in rows:
+        d = dict(r)
+        net = max(0.0, float(d["bought"] or 0) - float(d["sold"] or 0))
+        avg = (float(d["cost"] or 0) / float(d["bought"])) if float(d["bought"] or 0) > 0 else 0.0
+        px = (float(d["price1m"]) / 1e6) if d.get("price1m") else None
+        d.update({"net": net, "avg": avg, "price": px, "value": (net * px) if px else None,
+                  "unrealized": ((px - avg) * net) if (px and avg) else None,
+                  "realized": float(d["proceeds"] or 0) - avg * float(d["sold"] or 0)})
+        out.append(d)
+    await _fill_symbols(out)
+    return web.json_response({"wallet": w, "positions": out}, headers=API_CORS)

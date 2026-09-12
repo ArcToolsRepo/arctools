@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TradeRouteImport } from './routes/trade'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ScanRouteImport } from './routes/scan'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
@@ -24,9 +25,15 @@ import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TokenCaRouteImport } from './routes/token.$ca'
 import { Route as PadCaRouteImport } from './routes/pad.$ca'
+import { Route as ApiRpcRouteImport } from './routes/api/rpc'
 import { Route as ApiPadLogoCaRouteImport } from './routes/api/pad-logo.$ca'
 import { Route as ApiLogoIpfsCidRouteImport } from './routes/api/logo.ipfs.$cid'
 
+const TradeRoute = TradeRouteImport.update({
+  id: '/trade',
+  path: '/trade',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
@@ -102,6 +109,11 @@ const PadCaRoute = PadCaRouteImport.update({
   path: '/pad/$ca',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRpcRoute = ApiRpcRouteImport.update({
+  id: '/api/rpc',
+  path: '/api/rpc',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPadLogoCaRoute = ApiPadLogoCaRouteImport.update({
   id: '/api/pad-logo/$ca',
   path: '/api/pad-logo/$ca',
@@ -127,6 +139,8 @@ export interface FileRoutesByFullPath {
   '/robots.txt': typeof RobotsDottxtRoute
   '/scan': typeof ScanRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/trade': typeof TradeRoute
+  '/api/rpc': typeof ApiRpcRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
@@ -146,6 +160,8 @@ export interface FileRoutesByTo {
   '/robots.txt': typeof RobotsDottxtRoute
   '/scan': typeof ScanRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/trade': typeof TradeRoute
+  '/api/rpc': typeof ApiRpcRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
@@ -166,6 +182,8 @@ export interface FileRoutesById {
   '/robots.txt': typeof RobotsDottxtRoute
   '/scan': typeof ScanRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/trade': typeof TradeRoute
+  '/api/rpc': typeof ApiRpcRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
@@ -187,6 +205,8 @@ export interface FileRouteTypes {
     | '/robots.txt'
     | '/scan'
     | '/sitemap.xml'
+    | '/trade'
+    | '/api/rpc'
     | '/pad/$ca'
     | '/token/$ca'
     | '/api/pad-logo/$ca'
@@ -206,6 +226,8 @@ export interface FileRouteTypes {
     | '/robots.txt'
     | '/scan'
     | '/sitemap.xml'
+    | '/trade'
+    | '/api/rpc'
     | '/pad/$ca'
     | '/token/$ca'
     | '/api/pad-logo/$ca'
@@ -225,6 +247,8 @@ export interface FileRouteTypes {
     | '/robots.txt'
     | '/scan'
     | '/sitemap.xml'
+    | '/trade'
+    | '/api/rpc'
     | '/pad/$ca'
     | '/token/$ca'
     | '/api/pad-logo/$ca'
@@ -245,6 +269,8 @@ export interface RootRouteChildren {
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   ScanRoute: typeof ScanRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  TradeRoute: typeof TradeRoute
+  ApiRpcRoute: typeof ApiRpcRoute
   PadCaRoute: typeof PadCaRoute
   TokenCaRoute: typeof TokenCaRoute
   ApiPadLogoCaRoute: typeof ApiPadLogoCaRoute
@@ -253,6 +279,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/trade': {
+      id: '/trade'
+      path: '/trade'
+      fullPath: '/trade'
+      preLoaderRoute: typeof TradeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sitemap.xml': {
       id: '/sitemap.xml'
       path: '/sitemap.xml'
@@ -358,6 +391,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PadCaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/rpc': {
+      id: '/api/rpc'
+      path: '/api/rpc'
+      fullPath: '/api/rpc'
+      preLoaderRoute: typeof ApiRpcRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/pad-logo/$ca': {
       id: '/api/pad-logo/$ca'
       path: '/api/pad-logo/$ca'
@@ -389,6 +429,8 @@ const rootRouteChildren: RootRouteChildren = {
   RobotsDottxtRoute: RobotsDottxtRoute,
   ScanRoute: ScanRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  TradeRoute: TradeRoute,
+  ApiRpcRoute: ApiRpcRoute,
   PadCaRoute: PadCaRoute,
   TokenCaRoute: TokenCaRoute,
   ApiPadLogoCaRoute: ApiPadLogoCaRoute,

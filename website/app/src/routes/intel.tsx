@@ -53,8 +53,19 @@ function useApi<T>(path: string, every: number, deps: unknown[] = []) {
 }
 
 const card: React.CSSProperties = { background: "var(--arc-paper)", border: "1px solid var(--arc-line)", padding: 16 };
-const th: React.CSSProperties = { color: "var(--arc-muted)", fontSize: 10, fontWeight: 400, padding: "0 6px 6px 0", textAlign: "left", textTransform: "uppercase" };
-const td: React.CSSProperties = { borderTop: "1px solid var(--arc-line)", fontSize: 12, padding: "6px 6px 6px 0", whiteSpace: "nowrap" };
+const th: React.CSSProperties = { color: "var(--arc-muted)", fontSize: 11, fontWeight: 400, padding: "0 10px 8px 0", textAlign: "left", textTransform: "uppercase" };
+const td: React.CSSProperties = { borderTop: "1px solid var(--arc-line)", fontSize: 13, padding: "11px 12px 11px 0", whiteSpace: "nowrap" };
+type Section = "money" | "smart" | "new" | "market" | "alerts";
+const SECTIONS: { id: Section; label: string; blurb: string }[] = [
+  { id: "money", label: "Money", blurb: "Where the big USDC is and where it moves: largest swaps, richest wallets, deposits and withdrawals." },
+  { id: "smart", label: "Smart money", blurb: "What the 100 most profitable wallets on Arc are doing right now, and where several of them agree." },
+  { id: "new", label: "New arrivals", blurb: "Capital entering Arc: wallets making their first trade and USDC crossing the bridge." },
+  { id: "market", label: "Market", blurb: "Tokens moving hardest in the window you pick." },
+  { id: "alerts", label: "Alerts", blurb: "Turn any of the above into a Telegram alert with your own thresholds." },
+];
+const PANELS: Record<Section, string[]> = {
+  money: ["whales", "rich", "moves"], smart: ["insiders", "clusters"], new: ["fresh", "bridge"], market: ["movers"], alerts: [],
+};
 const UP = "var(--arc-up)";
 const DOWN = "var(--arc-down, #f0534f)";
 
@@ -62,16 +73,21 @@ function Pill({ on, onClick, children }: { on: boolean; onClick: () => void; chi
   return <button className="arc-mono" onClick={onClick} style={{ background: on ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (on ? "var(--arc-cobalt)" : "var(--arc-line)"), color: on ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, marginLeft: 4, padding: "2px 7px" }} type="button">{children}</button>;
 }
 
-function Title({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
+function Title({ children, right, caption }: { children: React.ReactNode; right?: React.ReactNode; caption?: string }) {
   return (
-    <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "space-between", marginBottom: 8 }}>
-      <p className="arc-mono" style={{ color: "var(--arc-cobalt)", fontSize: 11, margin: 0 }}>{children}</p>
-      <span className="arc-mono" style={{ fontSize: 11 }}>{right}</span>
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "space-between" }}>
+        <p style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{children}</p>
+        <span className="arc-mono" style={{ fontSize: 11 }}>{right}</span>
+      </div>
+      {caption && <p style={{ color: "var(--arc-muted)", fontSize: 13, margin: "4px 0 0" }}>{caption}</p>}
     </div>
   );
 }
 
 function Intel() {
+  const [section, setSection] = useState<Section>("money");
+  const show = (k: string) => PANELS[section].includes(k);
   const [whaleMin, setWhaleMin] = useState(250);
   const [whaleWin, setWhaleWin] = useState(60);
   const [moverWin, setMoverWin] = useState(60);
@@ -158,9 +174,11 @@ function Intel() {
         </p>
 
         {/* CHECK ANYTHING */}
-        <div style={{ ...card, border: "1px solid var(--arc-cobalt)", margin: "22px 0 16px" }}>
-          <p className="arc-mono" style={{ color: "var(--arc-cobalt)", fontSize: 11, margin: "0 0 8px" }}>CHECK ANYTHING · paste a token contract or a wallet</p>
-          <input className="arc-mono" onChange={(e) => setQ(e.target.value)} placeholder="0x… token or wallet" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 15, padding: "12px 14px", width: "100%" }} value={q} />
+        <div style={{ ...card, border: "1px solid var(--arc-cobalt)", margin: "18px 0 16px", padding: "12px 16px" }}>
+          <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 12 }}>
+            <p style={{ fontSize: 16, fontWeight: 700, margin: 0, whiteSpace: "nowrap" }}>Check anything</p>
+            <input className="arc-mono" onChange={(e) => setQ(e.target.value)} placeholder="paste a token contract or a wallet address — 0x…" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", flex: "1 1 420px", fontSize: 14, padding: "10px 14px" }} value={q} />
+          </div>
           {isAddr(q) && !look && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, margin: "10px 0 0" }}>Looking up…</p>}
           {look?.kind === "token" && (
             <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", marginTop: 12 }}>
@@ -171,7 +189,7 @@ function Intel() {
                 <a className="arc-cta" href={`/token/${q.trim().toLowerCase()}`}>Chart & swap →</a>
                 <a className="arc-mono" href={`/scan?ca=${q.trim().toLowerCase()}`} style={{ alignSelf: "center", color: "var(--arc-cobalt)", fontSize: 12 }}>rug check</a>
                 <a className="arc-mono" href={`${SNIPER}?start=ca_${q.trim().slice(2).toLowerCase()}`} rel="noreferrer" style={{ alignSelf: "center", color: "var(--arc-cobalt)", fontSize: 12 }} target="_blank">snipe</a>
-                <button className="arc-mono" onClick={() => { setRType("token"); setRTok(q.trim()); document.getElementById("rule-builder")?.scrollIntoView({ behavior: "smooth" }); }} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 12, padding: "4px 8px" }} type="button">alert on this token</button>
+                <button className="arc-mono" onClick={() => { setRType("token"); setRTok(q.trim()); setSection("alerts"); setTimeout(() => document.getElementById("rule-builder")?.scrollIntoView({ behavior: "smooth" }), 50); }} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 12, padding: "4px 8px" }} type="button">alert on this token</button>
               </div>
             </div>
           )}
@@ -197,7 +215,7 @@ function Intel() {
         </div>
 
         {/* KPI strip */}
-        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", margin: "0 0 16px" }}>
+        <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", margin: "0 0 20px" }}>
           {[
             [`Whale vol ${whaleWin < 60 ? whaleWin + "m" : whaleWin / 60 + "h"}`, usd(whaleVol)],
             ["Whale buy share", whaleVol > 0 ? `${Math.round((buys / whaleVol) * 100)}%` : "—"],
@@ -208,17 +226,27 @@ function Intel() {
             ["USDC in tracked wallets", rich ? usd(rich.total_usdc) : "—"],
           ].map(([k, v]) => (
             <div key={k} style={card}>
-              <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: 0 }}>{k.toUpperCase()}</p>
-              <p className="arc-mono" style={{ fontSize: 20, margin: "6px 0 0" }}>{v}</p>
+              <p style={{ color: "var(--arc-muted)", fontSize: 13, margin: 0 }}>{k}</p>
+              <p className="arc-mono" style={{ fontSize: 24, margin: "8px 0 0" }}>{v}</p>
             </div>
           ))}
         </div>
 
-        <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(390px, 1fr))" }}>
+        {/* SECTION BAR */}
+        <div style={{ borderBottom: "1px solid var(--arc-line)", display: "flex", flexWrap: "wrap", gap: 4, margin: "8px 0 0" }}>
+          {SECTIONS.map((sec) => (
+            <button key={sec.id} onClick={() => setSection(sec.id)} style={{ background: "transparent", border: "none", borderBottom: "2px solid " + (section === sec.id ? "var(--arc-cobalt)" : "transparent"), color: section === sec.id ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 16, fontWeight: section === sec.id ? 700 : 400, padding: "12px 18px" }} type="button">
+              {sec.label}
+            </button>
+          ))}
+        </div>
+        <p style={{ color: "var(--arc-muted)", fontSize: 14, margin: "12px 0 18px" }}>{SECTIONS.find((x) => x.id === section)?.blurb}</p>
+
+        <div style={{ display: "grid", gap: 18, gridTemplateColumns: "1fr" }}>
           {/* WHALE FEED */}
-          <div style={card}>
-            <Title right={<>{[100, 250, 1000, 5000].map((m) => <Pill key={m} on={whaleMin === m} onClick={() => setWhaleMin(m)}>≥${m}</Pill>)}{[15, 60, 360, 1440].map((m) => <Pill key={m} on={whaleWin === m} onClick={() => setWhaleWin(m)}>{m < 60 ? `${m}m` : `${m / 60}h`}</Pill>)}</>}>WHALE FEED · biggest swaps, live</Title>
-            <div style={{ maxHeight: 440, overflow: "auto" }}>
+          {show("whales") && <div style={card}>
+            <Title right={<>{[100, 250, 1000, 5000].map((m) => <Pill key={m} on={whaleMin === m} onClick={() => setWhaleMin(m)}>≥${m}</Pill>)}{[15, 60, 360, 1440].map((m) => <Pill key={m} on={whaleWin === m} onClick={() => setWhaleWin(m)}>{m < 60 ? `${m}m` : `${m / 60}h`}</Pill>)}</>} caption="Every swap above the threshold, newest first. A rank badge means the wallet is in the top-100 by 30-day PnL. Click a wallet to inspect it.">WHALE FEED · biggest swaps, live</Title>
+            <div style={{ maxHeight: 560, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead><tr><th style={th}>age</th><th style={th}>side</th><th style={th}>USDC</th><th style={th}>token</th><th style={th}>wallet</th><th style={th}>venue</th><th style={th} /></tr></thead>
                 <tbody>
@@ -233,19 +261,19 @@ function Intel() {
                         {r.rank && <span style={{ background: "rgba(46,124,255,0.15)", border: "1px solid var(--arc-cobalt)", borderRadius: 3, color: "var(--arc-cobalt)", fontSize: 9, marginLeft: 6, padding: "0 4px" }}>#{r.rank}</span>}
                       </td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.venue}</td>
-                      <td style={td}><a className="arc-mono" href={`${BOT}?start=watch_${r.wallet.slice(2)}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)", fontSize: 11 }} target="_blank">watch</a></td>
+                      <td style={td}><a className="arc-mono" href={`${BOT}?start=watch_${r.wallet.slice(2)}`} rel="noreferrer" style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} target="_blank">watch</a></td>
                     </tr>
                   ))}
                   {whales && whales.rows.length === 0 && <tr><td colSpan={7} className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>Quiet: no swaps ≥ ${whaleMin} in this window.</td></tr>}
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>}
 
           {/* WHALES BY BALANCE */}
-          <div style={card}>
-            <Title right={rich?.snapshot_ts ? <span style={{ color: "var(--arc-muted)" }}>snapshot {ago(rich.snapshot_ts)} ago</span> : null}>WHALES BY BALANCE · native USDC held by wallets the index knows</Title>
-            <div style={{ maxHeight: 440, overflow: "auto" }}>
+          {show("rich") && <div style={card}>
+            <Title right={rich?.snapshot_ts ? <span style={{ color: "var(--arc-muted)" }}>snapshot {ago(rich.snapshot_ts)} ago</span> : null} caption="Who holds the most USDC among wallets that ever traded on Arc. Δ snap = change since the last 10-minute snapshot.">WHALES BY BALANCE · native USDC held by wallets the index knows</Title>
+            <div style={{ maxHeight: 560, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead><tr><th style={th}>#</th><th style={th}>wallet</th><th style={th}>USDC</th><th style={th}>Δ snap</th><th style={th}>30d PnL</th><th style={th}>swaps</th><th style={th}>last</th><th style={th} /></tr></thead>
                 <tbody>
@@ -258,19 +286,19 @@ function Intel() {
                       <td className="arc-mono" style={{ ...td, color: (r.pnl_total ?? 0) >= 0 ? UP : DOWN }}>{r.pnl_total != null ? `${r.pnl_total >= 0 ? "+" : "−"}${usd(Math.abs(r.pnl_total))}` : "—"}</td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.swaps}</td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.last_trade ? ago(r.last_trade) : "—"}</td>
-                      <td style={td}><a className="arc-mono" href={`${BOT}?start=watch_${r.wallet.slice(2)}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)", fontSize: 11 }} target="_blank">watch</a></td>
+                      <td style={td}><a className="arc-mono" href={`${BOT}?start=watch_${r.wallet.slice(2)}`} rel="noreferrer" style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} target="_blank">watch</a></td>
                     </tr>
                   ))}
                   {rich && rich.rows.length === 0 && <tr><td colSpan={8} className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>First balance snapshot is running — back in a few minutes.</td></tr>}
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>}
 
           {/* INSIDER CLUSTERS */}
-          <div style={card}>
-            <Title right={<>{[30, 120, 360, 1440].map((m) => <Pill key={m} on={clusterWin === m} onClick={() => setClusterWin(m)}>{m < 60 ? `${m}m` : `${m / 60}h`}</Pill>)}</>}>INSIDER CLUSTERS · tokens several top-100 wallets bought together</Title>
-            <div style={{ maxHeight: 300, overflow: "auto" }}>
+          {show("clusters") && <div style={card}>
+            <Title right={<>{[30, 120, 360, 1440].map((m) => <Pill key={m} on={clusterWin === m} onClick={() => setClusterWin(m)}>{m < 60 ? `${m}m` : `${m / 60}h`}</Pill>)}</>} caption="When two or more ranked wallets buy the same token in the same window, it is the strongest signal this index produces.">INSIDER CLUSTERS · tokens several top-100 wallets bought together</Title>
+            <div style={{ maxHeight: 460, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead><tr><th style={th}>token</th><th style={th}>insiders</th><th style={th}>ranks</th><th style={th}>bought</th><th style={th}>last</th><th style={th} /></tr></thead>
                 <tbody>
@@ -281,19 +309,19 @@ function Intel() {
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>#{r.ranks.split(",").slice(0, 5).join(" #")}</td>
                       <td className="arc-mono" style={td}>{usd(r.usd)}</td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{ago(r.last_ts)}</td>
-                      <td style={td}><a className="arc-mono" href={`${SNIPER}?start=ca_${r.token.slice(2)}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)", fontSize: 11 }} target="_blank">snipe</a></td>
+                      <td style={td}><a className="arc-mono" href={`${SNIPER}?start=ca_${r.token.slice(2)}`} rel="noreferrer" style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} target="_blank">snipe</a></td>
                     </tr>
                   ))}
                   {clusters && clusters.rows.length === 0 && <tr><td colSpan={6} className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>No token with 2+ insiders in this window.</td></tr>}
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>}
 
           {/* FRESH WALLETS */}
-          <div style={card}>
-            <Title right={<>{[50, 100, 500, 2000].map((m) => <Pill key={m} on={freshMin === m} onClick={() => setFreshMin(m)}>≥${m}</Pill>)}</>}>FRESH WALLETS · first ever swap on Arc in the last 24h</Title>
-            <div style={{ maxHeight: 300, overflow: "auto" }}>
+          {show("fresh") && <div style={card}>
+            <Title right={<>{[50, 100, 500, 2000].map((m) => <Pill key={m} on={freshMin === m} onClick={() => setFreshMin(m)}>≥${m}</Pill>)}</>} caption="Wallets that had never traded on Arc before, sorted by the size of their first buy. Big first buys from new wallets are usually not retail.">FRESH WALLETS · first ever swap on Arc in the last 24h</Title>
+            <div style={{ maxHeight: 460, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead><tr><th style={th}>age</th><th style={th}>wallet</th><th style={th}>first buy</th><th style={th}>token</th><th style={th}>since</th><th style={th} /></tr></thead>
                 <tbody>
@@ -304,18 +332,18 @@ function Intel() {
                       <td className="arc-mono" style={{ ...td, fontWeight: 700 }}>{usd(r.usdc)}</td>
                       <td style={td}><a href={`/token/${r.token}`} style={{ color: "var(--arc-ink)" }}>${r.symbol ?? short(r.token)}</a></td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.swaps} swaps · {usd(r.bought ?? 0)}</td>
-                      <td style={td}><a className="arc-mono" href={`${BOT}?start=watch_${r.wallet.slice(2)}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)", fontSize: 11 }} target="_blank">watch</a></td>
+                      <td style={td}><a className="arc-mono" href={`${BOT}?start=watch_${r.wallet.slice(2)}`} rel="noreferrer" style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} target="_blank">watch</a></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>}
 
           {/* MOVERS */}
-          <div style={card}>
-            <Title right={<>{[15, 60, 360, 1440].map((m) => <Pill key={m} on={moverWin === m} onClick={() => setMoverWin(m)}>{m < 60 ? `${m}m` : `${m / 60}h`}</Pill>)}</>}>TOP MOVERS</Title>
-            <div style={{ maxHeight: 300, overflow: "auto" }}>
+          {show("movers") && <div style={card}>
+            <Title right={<>{[15, 60, 360, 1440].map((m) => <Pill key={m} on={moverWin === m} onClick={() => setMoverWin(m)}>{m < 60 ? `${m}m` : `${m / 60}h`}</Pill>)}</>} caption="Price change from the first to the last trade in the window. Needs at least 3 trades and $50 of volume to appear.">TOP MOVERS</Title>
+            <div style={{ maxHeight: 460, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead><tr><th style={th}>token</th><th style={th}>change</th><th style={th}>price</th><th style={th}>vol</th><th style={th}>trades</th></tr></thead>
                 <tbody>
@@ -331,12 +359,12 @@ function Intel() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>}
 
           {/* INSIDER ACTIVITY */}
-          <div style={card}>
-            <Title right={<><a href="/insiders" style={{ color: "var(--arc-cobalt)" }}>leaderboard</a> · <a href="https://t.me/ArcToolsInsiders" rel="noreferrer" style={{ color: "var(--arc-cobalt)" }} target="_blank">channel</a></>}>INSIDER ACTIVITY · top-100 by 30d PnL</Title>
-            <div style={{ maxHeight: 300, overflow: "auto" }}>
+          {show("insiders") && <div style={card}>
+            <Title right={<><a href="/insiders" style={{ color: "var(--arc-cobalt)" }}>leaderboard</a> · <a href="https://t.me/ArcToolsInsiders" rel="noreferrer" style={{ color: "var(--arc-cobalt)" }} target="_blank">channel</a></>} caption="Latest trades of the leaderboard wallets. Copy sends the wallet to the sniper as a copy-trade target.">INSIDER ACTIVITY · top-100 by 30d PnL</Title>
+            <div style={{ maxHeight: 460, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead><tr><th style={th}>age</th><th style={th}>#</th><th style={th}>side</th><th style={th}>USDC</th><th style={th}>token</th><th style={th}>30d PnL</th><th style={th} /></tr></thead>
                 <tbody>
@@ -348,18 +376,18 @@ function Intel() {
                       <td className="arc-mono" style={{ ...td, fontWeight: 700 }}>{usd(r.usdc)}</td>
                       <td style={td}><a href={`/token/${r.token}`} style={{ color: "var(--arc-ink)" }}>${r.symbol ?? short(r.token)}</a></td>
                       <td className="arc-mono" style={{ ...td, color: r.pnl_total >= 0 ? UP : DOWN }}>{r.pnl_total >= 0 ? "+" : "−"}{usd(Math.abs(r.pnl_total))}</td>
-                      <td style={td}><a className="arc-mono" href={`${SNIPER}?start=copy_${r.wallet.slice(2)}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)", fontSize: 11 }} target="_blank">copy</a></td>
+                      <td style={td}><a className="arc-mono" href={`${SNIPER}?start=copy_${r.wallet.slice(2)}`} rel="noreferrer" style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} target="_blank">copy</a></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>}
 
           {/* BALANCE MOVES */}
-          <div style={card}>
-            <Title>BALANCE MOVES 24h · deposits & withdrawals that never touched a DEX</Title>
-            <div style={{ maxHeight: 300, overflow: "auto" }}>
+          {show("moves") && <div style={card}>
+            <Title caption="USDC that entered or left a wallet between snapshots without a swap: exchanges, bridges, OTC. Positive = money arrived and has not been used yet.">BALANCE MOVES 24h · deposits & withdrawals that never touched a DEX</Title>
+            <div style={{ maxHeight: 460, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead><tr><th style={th}>age</th><th style={th}>wallet</th><th style={th}>Δ USDC</th><th style={th}>now</th><th style={th}>swaps</th><th style={th} /></tr></thead>
                 <tbody>
@@ -370,20 +398,20 @@ function Intel() {
                       <td className="arc-mono" style={{ ...td, color: r.delta >= 0 ? UP : DOWN, fontWeight: 700 }}>{r.delta >= 0 ? "+" : "−"}{usd(Math.abs(r.delta))}</td>
                       <td className="arc-mono" style={td}>{usd(r.balance)}</td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.swaps}</td>
-                      <td style={td}><a className="arc-mono" href={`${BOT}?start=watch_${r.wallet.slice(2)}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)", fontSize: 11 }} target="_blank">watch</a></td>
+                      <td style={td}><a className="arc-mono" href={`${BOT}?start=watch_${r.wallet.slice(2)}`} rel="noreferrer" style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} target="_blank">watch</a></td>
                     </tr>
                   ))}
                   {moves && moves.rows.length === 0 && <tr><td colSpan={6} className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>No balance move ≥ $1,000 between snapshots yet (snapshots every 10 min).</td></tr>}
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>}
 
           {/* BRIDGE */}
-          <div style={card}>
-            <Title>BRIDGE WATCH · Circle CCTP into Arc</Title>
+          {show("bridge") && <div style={card}>
+            <Title caption="Money crossing into Arc through Circle CCTP, with the chain it came from. Alerts for large inflows go to @ArcToolsInsiders.">BRIDGE WATCH · Circle CCTP into Arc</Title>
             {bridge && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, margin: "0 0 8px" }}>24h: <span style={{ color: "var(--arc-ink)" }}>{usd(bridge.in24)}</span> in · {usd(bridge.out24)} out · {bridge.n_in24} inflows from {bridge.wallets_in24} wallets</p>}
-            <div style={{ maxHeight: 300, overflow: "auto" }}>
+            <div style={{ maxHeight: 460, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead><tr><th style={th}>age</th><th style={th}>dir</th><th style={th}>USDC</th><th style={th}>from</th><th style={th}>wallet</th><th style={th} /></tr></thead>
                 <tbody>
@@ -394,18 +422,23 @@ function Intel() {
                       <td className="arc-mono" style={{ ...td, fontWeight: 700 }}>{usd(r.amount)}</td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.source ?? "—"}</td>
                       <td className="arc-mono" style={td}><button className="arc-mono" onClick={() => setQ(r.recipient)} style={{ background: "none", border: "none", color: "var(--arc-ink)", cursor: "pointer", fontSize: 12, padding: 0 }} type="button">{short(r.recipient)}</button></td>
-                      <td style={td}><a className="arc-mono" href={`${BOT}?start=watch_${r.recipient.slice(2)}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)", fontSize: 11 }} target="_blank">watch</a></td>
+                      <td style={td}><a className="arc-mono" href={`${BOT}?start=watch_${r.recipient.slice(2)}`} rel="noreferrer" style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} target="_blank">watch</a></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>}
         </div>
 
         {/* ALERT BUILDER */}
-        <div id="rule-builder" style={{ ...card, border: "1px solid var(--arc-cobalt)", marginTop: 16 }}>
-          <p className="arc-mono" style={{ color: "var(--arc-cobalt)", fontSize: 11, margin: "0 0 10px" }}>BUILD AN ALERT · delivered to your Telegram by @ArcToolsBuyBot</p>
+        {section === "alerts" && <div id="rule-builder" style={{ ...card, border: "1px solid var(--arc-cobalt)", marginTop: 0 }}>
+          <Title caption="Pick a condition, set the threshold, arm it. The bot checks it every 10 seconds and DMs you when it fires. You can also type /alert in the bot.">Build an alert</Title>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+            {[["Whale swap ≥ $5k", "whale", "5000", ""], ["Bridge inflow ≥ $20k", "bridge", "20000", ""], ["3 insiders, 30 min", "cluster", "3", "30"], ["Fresh wallet buys ≥ $1k", "fresh", "1000", ""], ["Balance jump ≥ $25k", "balance", "25000", ""]].map(([lab, t, a, b]) => (
+              <button key={t} onClick={() => { setRType(t); setTimeout(() => { setRNum1(a); setRNum2(b); }, 0); }} style={{ background: rType === t ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (rType === t ? "var(--arc-cobalt)" : "var(--arc-line)"), borderRadius: 999, color: rType === t ? "var(--arc-cobalt)" : "var(--arc-ink)", cursor: "pointer", fontSize: 13, padding: "6px 14px" }} type="button">{lab}</button>
+            ))}
+          </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             <select className="arc-mono" onChange={(e) => setRType(e.target.value)} style={{ background: "var(--arc-paper)", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 13, padding: "9px 12px" }} value={rType}>
               <option value="price">Token price moves</option>
@@ -421,10 +454,11 @@ function Intel() {
             {(rType === "price" || rType === "cluster") && <input className="arc-mono" onChange={(e) => setRNum2(e.target.value)} placeholder="minutes" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 13, padding: "9px 12px", width: 110 }} value={rNum2} />}
             <a className="arc-cta" href={ruleLink ?? undefined} rel="noreferrer" style={{ opacity: ruleLink ? 1 : 0.4, pointerEvents: ruleLink ? "auto" : "none" }} target="_blank">Arm on Telegram →</a>
           </div>
-          <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, margin: "10px 0 0" }}>
-            Rule: <span style={{ color: "var(--arc-ink)" }}>{ruleText}</span> · checked every 10 s against the chain-wide index · free tier 5 rules + 3 watched wallets · also by command: <code>/alert</code> in the bot
+          <p style={{ fontSize: 15, margin: "14px 0 0" }}>
+            Rule: <strong>{ruleText}</strong>
           </p>
-        </div>
+          <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, margin: "6px 0 0" }}>free tier: 5 rules + 3 watched wallets per Telegram account</p>
+        </div>}
 
         <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginTop: 18 }}>
           Sources: ArcTools chain-wide swap index (Uniswap V3, V4, every launchpad), native USDC balance snapshots every 10 min for every wallet the index has seen, CCTP TokenMessenger events, insider ranking recomputed every 2 minutes. Not financial advice.

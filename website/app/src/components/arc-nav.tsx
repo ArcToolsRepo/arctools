@@ -25,6 +25,7 @@ export function ArcNav({ active }: { active?: string }) {
   };
 
   const links = [
+    ["/trade", "Trade"],
     ["/feed", "Feed"],
     ["/scan", "Scanner"],
     ["/portfolio", "Portfolio"],

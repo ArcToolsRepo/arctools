@@ -23,21 +23,23 @@ ALLOWED = {
     "eth_call", "eth_blockNumber", "eth_getLogs", "eth_getBalance",
     "eth_getCode", "eth_chainId", "eth_getTransactionReceipt",
     "eth_getTransactionByHash", "eth_getBlockByNumber", "eth_gasPrice",
-    "eth_getTransactionCount", "net_version",
+    "eth_getTransactionCount", "net_version", "eth_estimateGas",
 }
+SEND_AUTH = os.getenv("SEND_AUTH", "")   # X-Send-Auth header unlocks eth_sendRawTransaction (site trading wallet via Worker)
 
 session: ClientSession | None = None
 
 
-def method_ok(body) -> bool:
+def method_ok(body, can_send: bool = False) -> bool:
     items = body if isinstance(body, list) else [body]
-    return all(isinstance(i, dict) and i.get("method") in ALLOWED for i in items)
+    ok = ALLOWED | ({"eth_sendRawTransaction"} if can_send else set())
+    return all(isinstance(i, dict) and i.get("method") in ok for i in items)
 
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, X-Send-Auth",
     "Access-Control-Max-Age": "86400",
 }
 
@@ -47,7 +49,8 @@ async def relay(request: web.Request) -> web.Response:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad json"}, status=400, headers=CORS)
-    if not method_ok(body):
+    can_send = bool(SEND_AUTH) and request.headers.get("X-Send-Auth") == SEND_AUTH
+    if not method_ok(body, can_send):
         return web.json_response(
             {"jsonrpc": "2.0", "id": None,
              "error": {"code": -32601, "message": "method not allowed (read-only relay)"}},
