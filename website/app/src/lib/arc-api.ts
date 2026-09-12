@@ -444,6 +444,9 @@ export type TokenPageInfo = {
   graduated: boolean;
   padMode: "v2" | "curve" | "instant" | null;
   targetQuote: number | null;
+  /** long.supply: wrapped stock (custodial IOU) or a token whose main market is a V3 pool quoted in one */
+  stock?: { symbol: string; usd: number; vault: string; underlying: string } | null;
+  longPool?: { pool: string; pairToken: string; pairSymbol: string; pairUsd: number; liquidityUsd: number | null; priceUsd: number } | null;
 };
 
 export const tokenPage = createServerFn({ method: "POST" })
@@ -689,11 +692,41 @@ export const tokenPage = createServerFn({ method: "POST" })
       if (venue === "v3") price1m = await quoteToUsdc(token, BigInt(10) ** BigInt(decimals) * 1_000_000n);
       if (price1m !== null && !(price1m > 0)) price1m = null;
       if (price1m === null && typeof meta.price === "number") price1m = Number(meta.price) * 1e6;
-      const mcapUsd = price1m !== null && supply > 0 ? (price1m / 1e6) * supply : (typeof meta.mcap === "number" ? Number(meta.mcap) : null);
+      let mcapUsd = price1m !== null && supply > 0 ? (price1m / 1e6) * supply : (typeof meta.mcap === "number" ? Number(meta.mcap) : null);
 
-      const lp = (meta.launchpad as string | undefined) ?? null;
+      let lp = (meta.launchpad as string | undefined) ?? null;
+      // long.supply: wrapped stocks + tokens whose real market is a V3 pool quoted in a wrapped stock (their public API)
+      let stockInfo: TokenPageInfo["stock"] = null;
+      let longPool: TokenPageInfo["longPool"] = null;
+      let longUrl: string | null = null;
+      try {
+        const LS = await import("@/lib/longsupply");
+        const [stocks, launches] = await Promise.all([LS.longStocks().catch(() => []), LS.longLaunches().catch(() => [])]);
+        const st = stocks.find((x) => x.token === lc);
+        if (st) {
+          stockInfo = { symbol: st.symbol, usd: st.usd, vault: st.vault, underlying: st.underlying };
+          price1m = st.usd * 1e6; mcapUsd = st.usd * supply; lp = "long.supply"; longUrl = "https://long.supply/bridge";
+        }
+        const ln = launches.find((x) => x.token === lc);
+        if (ln && ln.pool) {
+          let liq: number | null = null;
+          try {
+            const bal = await rpc("eth_call", [{ data: SEL.balanceOf + ln.pool.slice(2).padStart(64, "0"), to: ln.pairToken }, "latest"]) as string;
+            if (bal && bal !== "0x") liq = (Number(BigInt(bal)) / 1e18) * ln.pairUsd * 2;
+          } catch { /* keep null */ }
+          longPool = { pool: ln.pool, pairToken: ln.pairToken, pairSymbol: ln.pairSymbol, pairUsd: ln.pairUsd, liquidityUsd: liq, priceUsd: ln.priceUsd };
+          longUrl = `https://long.supply/${lc}`;
+          // our own USDC venue is thinner than the stock-quoted pool (or missing) → price the page from the real market
+          if (venue === "external" || (liq ?? 0) > (liquidityUsdc ?? 0) * 2) {
+            if (ln.priceUsd > 0) { price1m = ln.priceUsd * 1e6; mcapUsd = ln.priceUsd * supply; }
+            if (liq != null && venue === "external") liquidityUsdc = liq;
+            lp = "long.supply";
+          }
+        }
+      } catch { /* long.supply API down: page still works from our own data */ }
       const venueUrl =
-        venue === "pad" || padAddress ? `/pad/${lc}`
+        longUrl && (lp === "long.supply") ? longUrl
+          : venue === "pad" || padAddress ? `/pad/${lc}`
           : lp === "tolly" ? `https://tollylabs.com/token/${lc}`
           : lp === "warp" ? `https://circlewarp.fun/token/${lc}`
           : lp === "arcpad" || lp === "arcfun" ? `https://arcpad.meme/token/${lc}`
@@ -711,7 +744,9 @@ export const tokenPage = createServerFn({ method: "POST" })
         quoteUsd,
         targetQuote,
         holders: typeof meta.holderCount === "number" ? Number(meta.holderCount) : null,
-        launchpad: padAddress ? "ArcToolsPad" : (v4Key ? v4Key.venueName : curveAddress ? "Warp" : lp),
+        launchpad: padAddress ? "ArcToolsPad" : lp === "long.supply" ? "long.supply" : (v4Key ? v4Key.venueName : curveAddress ? "Warp" : lp),
+        stock: stockInfo,
+        longPool,
         liquidityUsdc,
         logo: padLogo || ipfsToHttp(String(meta.icon ?? "")) || (await screenerIcons().then((m) => ipfsToHttp(m.get(lc) ?? "")).catch(() => "")) || xAvatar(padSocial.twitter || (meta.twitter as string) || null),
         mcapUsd,
@@ -732,7 +767,7 @@ export const tokenPage = createServerFn({ method: "POST" })
       };
     // cache only complete results: a page computed while RadarDex / the RPC were rate-limiting comes back
     // without price, mcap or logo — serve it once, but let the next visitor recompute instead of freezing junk
-    }, (v) => ("error" in v ? v.error === "That is not a contract address." : (v.mcapUsd != null || v.price1m != null) && v.venue !== "external")),
+    }, (v) => ("error" in v ? v.error === "That is not a contract address." : (v.mcapUsd != null || v.price1m != null) && (v.venue !== "external" || v.launchpad === "long.supply"))),
   );
 
 /**
@@ -1080,6 +1115,11 @@ export type PadToken = {
   og?: boolean;
   /** V2 DEXes the token trades on (e.g. dyorswap) — from the screener */
   dexes?: string[];
+  /** long.supply wrapped stock (custodial IOU on a Robinhood-Chain token) */
+  stock?: boolean;
+  /** non-USDC quote token of the token's main pool (e.g. a wrapped stock on long.supply) */
+  quote?: string;
+  quoteSymbol?: string;
   createdAt: string | null;
   logo: string | null;
   mcapUsd: number | null;
@@ -1763,7 +1803,9 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
       venueUrl: `/token/${r.token.toLowerCase()}`, volUsd: r.vol ?? null, website: null, dexes: ["dyor"],
     }) as PadToken);
   }, (v) => v.length > 0).catch(() => [] as PadToken[]);
-  const all = [...pad, ...order.filter((p) => p !== "RadarDex").flatMap((p) => byName.get(p as typeof ALL_PADS[number]) ?? []), ...v2, ...(byName.get("RadarDex") ?? []), ...screener].filter((t) => { const k = t.token.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  // long.supply: memecoins quoted in wrapped stocks + the wrapped stocks themselves (their public API)
+  const longs: PadToken[] = await import("@/lib/longsupply").then((m) => m.longSupplyTokens()).catch(() => [] as PadToken[]);
+  const all = [...pad, ...longs, ...order.filter((p) => p !== "RadarDex").flatMap((p) => byName.get(p as typeof ALL_PADS[number]) ?? []), ...v2, ...(byName.get("RadarDex") ?? []), ...screener].filter((t) => { const k = t.token.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
   // keep the payload small (the Terminal shows 100 rows per tab): newest 600 + top 300 by volume, compact fields
   const ts = (t: PadToken) => (t.createdAt ? Date.parse(t.createdAt) : 0);
   const newest = [...all].sort((a, b) => ts(b) - ts(a)).slice(0, 400);
@@ -1795,6 +1837,7 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
       createdAt: t.createdAt, logo: t.logo, mcapUsd: t.mcapUsd, name: (t.name ?? "").slice(0, 40), pad: t.pad, pool: t.pool, priceUsd: t.priceUsd, stage: t.stage ?? null,
       symbol: (t.symbol ?? "").slice(0, 16), telegram: t.telegram, token: t.token, twitter: t.twitter, venueUrl: t.venueUrl, volUsd: t.volUsd, website: t.website,
       og: t.og || scrMeta.get(t.token.toLowerCase())?.og || false, dexes: t.dexes?.length ? t.dexes : (scrMeta.get(t.token.toLowerCase())?.dexes ?? []),
+      ...(t.stock ? { stock: true } : {}), ...(t.quote ? { quote: t.quote, quoteSymbol: t.quoteSymbol } : {}),
     } as PadToken;
   }
   return [...keep.values()].sort((a, b) => ts(b) - ts(a)).map(compactToken);

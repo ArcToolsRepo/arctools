@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
 import { SocialCheck } from "@/components/social-check";
-import { RiskCard, Tags, useWalletLabels } from "@/components/risk";
+import { RiskCard, StockCard, Tags, useWalletLabels } from "@/components/risk";
 import { TokenLogo } from "@/components/token-logo";
 import { TvChart, type Candle } from "@/components/tv-chart";
 import { ARC_V4_ROUTER, SWAP_FEE_ROUTER, tokenPage, venueData, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
@@ -716,7 +716,18 @@ function TokenPage() {
         </div>
 
         {/* ---------- social check: who is behind the token ---------- */}
-        <RiskCard official={ca.toLowerCase() === "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52"} token={ca} />
+        {info.stock ? <StockCard stock={info.stock} token={ca} /> : <RiskCard official={ca.toLowerCase() === "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52"} token={ca} />}
+        {info.longPool && !info.stock && (
+          <section style={{ border: "1px solid var(--arc-line)", marginTop: 14, padding: "10px 14px" }}>
+            <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, letterSpacing: "0.08em" }}>MAIN MARKET · long.supply</div>
+            <div style={{ fontSize: 13, marginTop: 4 }}>
+              Quoted in <b>{info.longPool.pairSymbol}</b> (a wrapped stock, ${info.longPool.pairUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}) on a Uniswap V3 pool
+              {info.longPool.liquidityUsd != null ? <> with <b>${Math.round(info.longPool.liquidityUsd).toLocaleString()}</b> liquidity</> : null}. USD price here is derived through the stock price.
+              {info.venue !== "external" ? " Our swap panel routes through the USDC pool, which is thinner — expect worse fills." : " No USDC pool yet — trade on long.supply until the CRCL hop lands in our aggregator."}
+              {" "}<a href={`https://long.supply/${ca.toLowerCase()}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)" }} target="_blank">open on long.supply ↗</a>
+            </div>
+          </section>
+        )}
         <SocialCheck deployer={info.deployer} tg={info.telegram} token={ca} web={info.website} x={info.twitter} />
 
         {/* ---------- tabs ---------- */}

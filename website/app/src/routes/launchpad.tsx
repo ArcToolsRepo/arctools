@@ -67,8 +67,31 @@ function CreateForm() {
   const [rewardMode, setRewardMode] = useState<"quote" | "usdc" | "arct" | "custom">("quote");
   const [customReward, setCustomReward] = useState("");
   const [launchMode, setLaunchMode] = useState<"curve5k" | "curve10k" | "instant">("curve5k");
-  const [pairMode, setPairMode] = useState<"usdc" | "tolly" | "custom">("usdc");
+  const [pairMode, setPairMode] = useState<"usdc" | "tolly" | "stock" | "custom">("usdc");
   const [customQuote, setCustomQuote] = useState("");
+  // long.supply wrapped stocks (custodial IOUs on Robinhood-Chain tokens) as quote tokens — reference USD price from their API
+  const [stocks, setStocks] = useState<{ token: string; symbol: string; name: string; usd: number; usdcPool: boolean }[]>([]);
+  const [stockAddr, setStockAddr] = useState("");
+  useEffect(() => {
+    // ArcPadV3 requires the quote token to have a Uniswap V3 pool against USDC (fee flush + pricing) → check every tier via the factory
+    const FACTORY = "0xf0db7b58379503491d857dB50AC9ece64c653918"; const USDC = "0x3600000000000000000000000000000000000000";
+    fetch("/api/stocks").then((r) => r.json()).then(async (j) => {
+      const raw = (j.stocks ?? []) as { token: string; symbol: string; name: string; usd: number }[];
+      const withPool = await Promise.all(raw.map(async (st) => {
+        let usdcPool = false;
+        for (const fee of [10000, 3000, 500, 100]) {
+          try {
+            const r = await ethCall(FACTORY, "0x1698ee82" + p32(USDC) + p32(st.token) + fee.toString(16).padStart(64, "0"));
+            if (r && !/^0x0*$/.test(r)) { usdcPool = true; break; }
+          } catch { /* try next tier */ }
+        }
+        return { ...st, usdcPool };
+      }));
+      setStocks(withPool);
+      if (withPool.length && !stockAddr) setStockAddr((withPool.find((x) => x.symbol === "CRCL" && x.usdcPool) ?? withPool.find((x) => x.usdcPool) ?? withPool[0]).token);
+    }).catch(() => null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [seed, setSeed] = useState("");               // instant: quote units
   const [quotePrice, setQuotePrice] = useState<number | null>(1); // USD per 1 quote token
   const [quoteSym, setQuoteSym] = useState("USDC");
@@ -77,7 +100,7 @@ function CreateForm() {
     ethCall(PAD_V3, FN3.instantFee).then((r) => setInstantFee(r && r !== "0x" ? Number(BigInt(r) / 10n ** 12n) / 1e6 : 0)).catch(() => setInstantFee(null));
   }, []);
   const ZERO = "0x0000000000000000000000000000000000000000";
-  const quoteAddr = pairMode === "usdc" ? ZERO : pairMode === "tolly" ? TOLLY : customQuote.trim();
+  const quoteAddr = pairMode === "usdc" ? ZERO : pairMode === "tolly" ? TOLLY : pairMode === "stock" ? stockAddr : customQuote.trim();
   const isInstant = launchMode === "instant";
 
   // cena quote tokena (USD za 1 token) — do przeliczenia celu $5k/$10k na jednostki quote
@@ -93,7 +116,9 @@ function CreateForm() {
         ethCall(quoteAddr, "0x95d89b41").catch(() => null),   // symbol()
       ]);
       if (!alive) return;
-      setQuotePrice(pr.price1m !== null && pr.price1m > 0 ? pr.price1m / 1e6 : 0);
+      const stockRef = stocks.find((x) => x.token === quoteAddr.toLowerCase())?.usd ?? null;
+      // wrapped stocks rarely have a deep USDC pool on Arc: use long.supply's reference price (what their own pools use)
+      setQuotePrice(stockRef && stockRef > 0 ? stockRef : pr.price1m !== null && pr.price1m > 0 ? pr.price1m / 1e6 : 0);
       let sym = "?";
       try {
         if (symHex && symHex.length >= 130) {
@@ -108,7 +133,7 @@ function CreateForm() {
     })();
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pairMode, quoteAddr]);
+  }, [pairMode, quoteAddr, stocks.length]);
   const targetUsd = launchMode === "curve10k" ? 10_000 : 5_000;
   const targetQuoteUnits = quotePrice && quotePrice > 0 ? targetUsd / quotePrice : null;
   const [busy, setBusy] = useState<string | null>(null);
@@ -277,9 +302,10 @@ function CreateForm() {
         </label>
         <label className="arc-mono" style={{ fontSize: 12 }}>
           <span style={{ color: "var(--arc-muted)", textTransform: "uppercase" }}>Trading pair</span>
-          <select onChange={(e) => setPairMode(e.target.value as "usdc" | "tolly" | "custom")} style={{ ...inp, marginTop: 6 }} value={pairMode}>
+          <select onChange={(e) => setPairMode(e.target.value as "usdc" | "tolly" | "stock" | "custom")} style={{ ...inp, marginTop: 6 }} value={pairMode}>
             <option value="usdc">USDC (native)</option>
             <option value="tolly">TOLLY</option>
+            {stocks.length > 0 && <option value="stock">📈 Wrapped stock (long.supply)…</option>}
             <option value="custom">Custom token…</option>
           </select>
         </label>
@@ -293,6 +319,19 @@ function CreateForm() {
           </select>
         </label>
       </div>
+      {pairMode === "stock" && (
+        <div style={{ display: "grid", gap: 6 }}>
+          <select onChange={(e) => setStockAddr(e.target.value)} style={inp} value={stockAddr}>
+            {stocks.map((st) => <option disabled={!st.usdcPool} key={st.token} value={st.token}>{st.symbol} — {st.name} (${st.usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}){st.usdcPool ? "" : " — no USDC pool on Arc yet"}</option>)}
+          </select>
+          <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>
+            ArcToolsPad needs a USDC pool for the pair token (platform fees in {quoteSym} are flushed to USDC on-chain). Stocks without one are greyed out until someone seeds a USDC/stock pool on Uniswap V3.
+          </p>
+          <p className="arc-mono" style={{ color: "#f5c542", fontSize: 11, margin: 0 }}>
+            ⚠ Wrapped stocks are custodial IOUs minted by long.supply (a team-run bridge from Robinhood Chain), not shares. If their vault or the underlying Robinhood token stops, the quote side of your pool is worth nothing. Buyers must hold the stock token first (bridge on long.supply).
+          </p>
+        </div>
+      )}
       {pairMode === "custom" && (
         <input onChange={(e) => setCustomQuote(e.target.value)} placeholder="pair token CA 0x… (18 decimals, must have a USDC pool on Arc)" style={inp} value={customQuote} />
       )}
@@ -301,7 +340,7 @@ function CreateForm() {
           {quotePrice
             ? `1 ${quoteSym} ≈ $${quotePrice < 0.01 ? quotePrice.toFixed(8) : quotePrice.toFixed(4)}. Buyers pay in ${quoteSym}; ${isInstant ? "the Uniswap pool is" : "the curve and the graduation pool are"} ${quoteSym}/${symbol.trim().toUpperCase() || "TOKEN"}.`
             : quotePrice === 0 ? `${quoteSym} has no USDC pool on Arc — it cannot be priced, so it cannot be a pair.`
-            : pairMode === "tolly" || /^0x[0-9a-fA-F]{40}$/.test(quoteAddr) ? "Pricing the pair token…" : "Enter the pair token address."}
+            : pairMode === "tolly" || pairMode === "stock" || /^0x[0-9a-fA-F]{40}$/.test(quoteAddr) ? "Pricing the pair token…" : "Enter the pair token address."}
         </p>
       )}
       {!isInstant && (

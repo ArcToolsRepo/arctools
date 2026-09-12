@@ -7,6 +7,10 @@ import { createServerFn } from "@tanstack/react-start";
 import { rpc } from "./arc-api";
 
 export const ARC_AGGREGATOR = "0xff9A8F35F683C810f6C1507f7409Bf0637093707";
+/** v2 aggregator with the two-hop V3 leg (VENUE_V3PATH). null until ArcAggregatorV2 is deployed — the hop venue is
+ *  then skipped in discovery so nothing routes through a contract that cannot execute it. */
+export const V3PATH_AGGREGATOR: string | null = null;
+const SITE_API = typeof window !== "undefined" ? "" : "https://arctools.fun";
 const USDC = "0x3600000000000000000000000000000000000000";
 const ZERO = "0x0000000000000000000000000000000000000000";
 const QUOTER_V2 = "0x7dfd4f31be6814d2906bde155c3e1b146eac1468";
@@ -18,6 +22,8 @@ const INSIDER_API = "https://bot-production-4200.up.railway.app";
 const SEL = {
   getPool: "0x1698ee82",
   quoteExactInputSingle: "0xc6a5026a",
+  quoteExactInput: "0xcdca1753",
+  poolFee: "0xddca3f43",
   quoteV4: "0x" + "00000000", // filled below (keccak computed at module load is not available: use constant)
   curve: "0x06d8d7db",
   quoteBuy: "0x0d7a94f6",
@@ -36,7 +42,7 @@ const p32 = (h: string) => h.replace(/^0x/, "").toLowerCase().padStart(64, "0");
 const pnum = (n: bigint) => BigInt.asUintN(256, n).toString(16).padStart(64, "0");
 
 export type V4Key = { id: string; currency0: string; currency1: string; fee: number; tick_spacing: number; hooks: string; usdc_dec: number };
-export type Leg = { venue: 1 | 2 | 3 | 4; target: string; fee: number; key: V4Key | null; amount: string; label: string; out: string };
+export type Leg = { venue: 1 | 2 | 3 | 4 | 5; target: string; fee: number; key: V4Key | null; amount: string; label: string; out: string };
 export type RouteResult = {
   legs: Leg[];
   out: string;              // total expected output (wei-ish string)
@@ -45,7 +51,7 @@ export type RouteResult = {
   error?: string;
 };
 
-type Venue = { kind: "v3"; fee: number; label: string } | { kind: "v4"; key: V4Key; label: string } | { kind: "pad"; target: string; label: string } | { kind: "curve"; target: string; label: string };
+type Venue = { kind: "v3"; fee: number; label: string } | { kind: "v3path"; mid: string; midSymbol: string; fee1: number; fee2: number; label: string } | { kind: "v4"; key: V4Key; label: string } | { kind: "pad"; target: string; label: string } | { kind: "curve"; target: string; label: string };
 
 async function call(to: string, data: string): Promise<string | null> {
   try {
@@ -97,8 +103,36 @@ async function discoverVenues(token: string): Promise<Venue[]> {
     const graduated = !!l3 && l3.length >= 2 + 64 * 6 && BigInt("0x" + l3.slice(2 + 64 * 5, 2 + 64 * 6)) !== 0n;
     if (!graduated && (q.toLowerCase() === ZERO || q.toLowerCase() === USDC)) out.push({ kind: "pad", target: PAD_V3, label: "ArcToolsPad v3 curve" });
   }
+  // long.supply launches: main market is a V3 pool quoted in a wrapped stock → two-hop USDC -> stock -> token (needs the v2 aggregator)
+  if (V3PATH_AGGREGATOR) {
+    try {
+      const ln = (await longLaunches()).find((l) => l.token === t);
+      if (ln && ln.pool) {
+        const [feeHex, ...tiers] = await Promise.all([
+          call(ln.pool, SEL.poolFee),
+          ...[10000, 3000, 500, 100].map((f) => call(V3_FACTORY, SEL.getPool + p32(USDC) + p32(ln.pairToken) + pnum(BigInt(f)))),
+        ]);
+        const fee2 = feeHex ? Number(BigInt(feeHex)) : 10000;
+        const idx = tiers.findIndex((r) => r && !/^0x0+$/.test(r));
+        if (idx >= 0) out.push({ kind: "v3path", mid: ln.pairToken, midSymbol: ln.pairSymbol, fee1: [10000, 3000, 500, 100][idx], fee2, label: `Uniswap V3 via ${ln.pairSymbol}` });
+      }
+    } catch { /* long.supply API down: no hop venue */ }
+  }
   return out;
 }
+
+let _long: { ts: number; v: { token: string; pool: string; pairToken: string; pairSymbol: string }[] } | null = null;
+async function longLaunches() {
+  if (_long && Date.now() - _long.ts < 60_000) return _long.v;
+  const j = (await fetch(`${SITE_API}/api/stocks?launches=1`).then((r) => r.json())) as { launches?: { token: string; pool: string; pairToken: string; pairSymbol: string }[] };
+  _long = { ts: Date.now(), v: j.launches ?? [] };
+  return _long.v;
+}
+
+/** abi.encodePacked(tokenA, fee, tokenB, fee, tokenC) for QuoterV2.quoteExactInput / SwapRouter02.exactInput */
+const packPath = (a: string, f1: number, b: string, f2: number, c: string) =>
+  a.replace(/^0x/, "").toLowerCase() + f1.toString(16).padStart(6, "0") + b.replace(/^0x/, "").toLowerCase() + f2.toString(16).padStart(6, "0") + c.replace(/^0x/, "").toLowerCase();
+const encBytes = (hex: string) => pnum(BigInt(hex.length / 2)) + hex.padEnd(Math.ceil(hex.length / 64) * 64, "0");
 
 /** Quote one venue. amount: buy = native USDC 1e18, sell = tokens 1e18. Returns output in the same convention. */
 async function quoteVenue(v: Venue, token: string, side: "buy" | "sell", amount: bigint): Promise<bigint | null> {
@@ -110,6 +144,15 @@ async function quoteVenue(v: Venue, token: string, side: "buy" | "sell", amount:
     if (!r) return null;
     const out = BigInt("0x" + r.slice(2, 66));
     return side === "buy" ? out : out * 10n ** 12n;   // facade 6-dec -> native 1e18
+  }
+  if (v.kind === "v3path") {
+    const path = side === "buy" ? packPath(USDC, v.fee1, v.mid, v.fee2, token) : packPath(token, v.fee2, v.mid, v.fee1, USDC);
+    const amt = side === "buy" ? amount / 10n ** 12n : amount;
+    // quoteExactInput(bytes path, uint256 amountIn): head = offset(0x40) + amountIn, tail = bytes
+    const r = await call(QUOTER_V2, SEL.quoteExactInput + pnum(64n) + pnum(amt) + encBytes(path));
+    if (!r) return null;
+    const out = BigInt("0x" + r.slice(2, 66));
+    return side === "buy" ? out : out * 10n ** 12n;
   }
   if (v.kind === "v4") {
     const k = v.key;
@@ -128,6 +171,7 @@ async function quoteVenue(v: Venue, token: string, side: "buy" | "sell", amount:
 
 function toLeg(v: Venue, amount: bigint, out: bigint): Leg {
   if (v.kind === "v3") return { venue: 1, target: ZERO, fee: v.fee, key: null, amount: amount.toString(), label: v.label, out: out.toString() };
+  if (v.kind === "v3path") return { venue: 5, target: v.mid, fee: v.fee1, key: { id: "", currency0: ZERO, currency1: ZERO, fee: v.fee2, tick_spacing: 0, hooks: ZERO, usdc_dec: 18 }, amount: amount.toString(), label: v.label, out: out.toString() };
   if (v.kind === "v4") return { venue: 2, target: ZERO, fee: 0, key: v.key, amount: amount.toString(), label: v.label, out: out.toString() };
   if (v.kind === "curve") return { venue: 4, target: v.target, fee: 0, key: null, amount: amount.toString(), label: v.label, out: out.toString() };
   return { venue: 3, target: v.target, fee: 0, key: null, amount: amount.toString(), label: v.label, out: out.toString() };

@@ -28,6 +28,29 @@ export function ScoreBadge({ risk, size = 12 }: { risk?: Risk | null; size?: num
 }
 
 /** Full risk read-out for the token page. */
+/** long.supply wrapped stock: a Token Score makes no sense (supply = what the team minted); show what the risk actually is. */
+export function StockCard({ stock, token }: { stock: { symbol: string; usd: number; vault: string; underlying: string }; token: string }) {
+  return (
+    <section style={{ border: "1px solid #7cc4ff", marginTop: 14, padding: 14 }}>
+      <div style={{ alignItems: "center", display: "flex", gap: 12 }}>
+        <div className="arc-mono" style={{ background: "rgba(124,196,255,0.14)", border: "2px solid #7cc4ff", borderRadius: 10, color: "#7cc4ff", fontSize: 18, fontWeight: 800, lineHeight: 1, padding: "12px 10px" }}>IOU</div>
+        <div style={{ flex: 1 }}>
+          <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, letterSpacing: "0.08em" }}>WRAPPED STOCK · long.supply</div>
+          <div style={{ fontSize: 13, marginTop: 4 }}>Custodial claim on the Robinhood-Chain <b>{stock.symbol}</b> token held in long.supply’s vault. Not a share, no shareholder rights. Reference price ${stock.usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}.</div>
+        </div>
+      </div>
+      <div style={{ borderTop: "1px solid var(--arc-line)", color: "var(--arc-muted)", fontSize: 12, marginTop: 10, paddingTop: 8 }}>
+        <div>Risk = trust in one team’s wallets (mint / redeem / vault are manual) + Robinhood pausing or upgrading the underlying. No audit, no on-chain proof of reserves beyond their keeper’s self-report.</div>
+        <div className="arc-mono" style={{ fontSize: 11, marginTop: 6 }}>
+          vault (Robinhood Chain) <span style={{ color: "var(--arc-ink)" }}>{stock.vault.slice(0, 10)}…{stock.vault.slice(-4)}</span> · underlying <span style={{ color: "var(--arc-ink)" }}>{stock.underlying.slice(0, 10)}…{stock.underlying.slice(-4)}</span>
+          {" · "}<a href="https://long.supply/bridge" rel="noreferrer" style={{ color: "var(--arc-cobalt)" }} target="_blank">bridge / redeem ↗</a>
+          {" · "}<a href={`https://arc-scan.org/token/${token}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)" }} target="_blank">holders ↗</a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function RiskCard({ token, official = false }: { token: string; official?: boolean }) {
   const [risk, setRisk] = useState<Risk | null>(null);
   const [hist, setHist] = useState<DevHistory | null>(null);

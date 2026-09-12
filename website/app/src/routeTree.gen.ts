@@ -31,6 +31,7 @@ import { Route as PadCaRouteImport } from './routes/pad.$ca'
 import { Route as ApiWarmRouteImport } from './routes/api/warm'
 import { Route as ApiTokensRouteImport } from './routes/api/tokens'
 import { Route as ApiTokenpageRouteImport } from './routes/api/tokenpage'
+import { Route as ApiStocksRouteImport } from './routes/api/stocks'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
 import { Route as ApiRpcRouteImport } from './routes/api/rpc'
 import { Route as ApiRefCreditRouteImport } from './routes/api/ref-credit'
@@ -147,6 +148,11 @@ const ApiTokenpageRoute = ApiTokenpageRouteImport.update({
   path: '/api/tokenpage',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiStocksRoute = ApiStocksRouteImport.update({
+  id: '/api/stocks',
+  path: '/api/stocks',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSearchRoute = ApiSearchRouteImport.update({
   id: '/api/search',
   path: '/api/search',
@@ -194,6 +200,7 @@ export interface FileRoutesByFullPath {
   '/api/ref-credit': typeof ApiRefCreditRoute
   '/api/rpc': typeof ApiRpcRoute
   '/api/search': typeof ApiSearchRoute
+  '/api/stocks': typeof ApiStocksRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
   '/api/warm': typeof ApiWarmRoute
@@ -223,6 +230,7 @@ export interface FileRoutesByTo {
   '/api/ref-credit': typeof ApiRefCreditRoute
   '/api/rpc': typeof ApiRpcRoute
   '/api/search': typeof ApiSearchRoute
+  '/api/stocks': typeof ApiStocksRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
   '/api/warm': typeof ApiWarmRoute
@@ -253,6 +261,7 @@ export interface FileRoutesById {
   '/api/ref-credit': typeof ApiRefCreditRoute
   '/api/rpc': typeof ApiRpcRoute
   '/api/search': typeof ApiSearchRoute
+  '/api/stocks': typeof ApiStocksRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
   '/api/warm': typeof ApiWarmRoute
@@ -284,6 +293,7 @@ export interface FileRouteTypes {
     | '/api/ref-credit'
     | '/api/rpc'
     | '/api/search'
+    | '/api/stocks'
     | '/api/tokenpage'
     | '/api/tokens'
     | '/api/warm'
@@ -313,6 +323,7 @@ export interface FileRouteTypes {
     | '/api/ref-credit'
     | '/api/rpc'
     | '/api/search'
+    | '/api/stocks'
     | '/api/tokenpage'
     | '/api/tokens'
     | '/api/warm'
@@ -342,6 +353,7 @@ export interface FileRouteTypes {
     | '/api/ref-credit'
     | '/api/rpc'
     | '/api/search'
+    | '/api/stocks'
     | '/api/tokenpage'
     | '/api/tokens'
     | '/api/warm'
@@ -372,6 +384,7 @@ export interface RootRouteChildren {
   ApiRefCreditRoute: typeof ApiRefCreditRoute
   ApiRpcRoute: typeof ApiRpcRoute
   ApiSearchRoute: typeof ApiSearchRoute
+  ApiStocksRoute: typeof ApiStocksRoute
   ApiTokenpageRoute: typeof ApiTokenpageRoute
   ApiTokensRoute: typeof ApiTokensRoute
   ApiWarmRoute: typeof ApiWarmRoute
@@ -537,6 +550,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTokenpageRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/stocks': {
+      id: '/api/stocks'
+      path: '/api/stocks'
+      fullPath: '/api/stocks'
+      preLoaderRoute: typeof ApiStocksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/search': {
       id: '/api/search'
       path: '/api/search'
@@ -596,6 +616,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiRefCreditRoute: ApiRefCreditRoute,
   ApiRpcRoute: ApiRpcRoute,
   ApiSearchRoute: ApiSearchRoute,
+  ApiStocksRoute: ApiStocksRoute,
   ApiTokenpageRoute: ApiTokenpageRoute,
   ApiTokensRoute: ApiTokensRoute,
   ApiWarmRoute: ApiWarmRoute,
