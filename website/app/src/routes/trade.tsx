@@ -370,13 +370,13 @@ function Trade() {
                       <th style={{ ...hd, width: 26 }} />
                       <th style={hd}>Token / <button className="arc-mono" onClick={() => setSortKey("age")} style={{ background: "none", border: "none", color: sortKey === "age" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">Age ⇅</button></th>
                       <th style={hd}><button className="arc-mono" onClick={() => setSortKey("mcap")} style={{ background: "none", border: "none", color: sortKey === "mcap" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">MC ⇅</button></th>
-                      <th style={hd}>ATH MC</th>
+                      <th className="arc-col-ath" style={hd}>ATH MC</th>
                       <th style={hd}>Liq</th>
                       <th style={hd}><button className="arc-mono" onClick={() => setSortKey("vol")} style={{ background: "none", border: "none", color: sortKey === "vol" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">{tfLabel(tf)} Vol ⇅</button></th>
                       <th style={hd}><button className="arc-mono" onClick={() => setSortKey("txs")} style={{ background: "none", border: "none", color: sortKey === "txs" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">{tfLabel(tf)} TXs ⇅</button></th>
                       <th style={hd} title="share of supply held by the 10 largest wallets (LP/launchpad excluded) · holders">Top-10 %</th>
                       <th style={hd} title="Dev: deployer wallet's share of supply · Bundle: supply held by wallets that bought within 2 s of the first trade">Dev / bundle</th>
-                      <th style={hd}>Insiders</th>
+                      <th className="arc-col-ins" style={hd}>Insiders</th>
                       <th style={hd} />
                     </tr>
                   </thead>
@@ -389,7 +389,7 @@ function Trade() {
                           <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
                             <Link params={{ ca: r.token }} preload="intent" style={{ textDecoration: "none" }} to="/token/$ca"><TokenLogo src={r.logo} symbol={r.symbol} /></Link>
                             <div style={{ lineHeight: 1.25 }}>
-                              <div><Link params={{ ca: r.token }} preload="intent" style={{ color: "var(--arc-ink)", fontWeight: 700, textDecoration: "none" }} to="/token/$ca">{r.symbol}</Link>{r.token.toLowerCase() === OFFICIAL_TOKEN && <span className="arc-mono" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "#fff", fontSize: 10, marginLeft: 6, padding: "1px 6px", verticalAlign: "middle" }}>⭐ OFFICIAL</span>}{r.og && <span className="arc-mono" style={{ background: "rgba(245,197,66,0.15)", border: "1px solid #f5c542", borderRadius: 4, color: "#f5c542", fontSize: 10, marginLeft: 6, padding: "1px 5px", verticalAlign: "middle" }} title="OG ticker: registered on RadarDex before Arc mainnet launch">OG</span>} <span style={{ color: "var(--arc-muted)", fontSize: 12 }}>{r.name.slice(0, 12)}</span>
+                              <div><Link params={{ ca: r.token }} preload="intent" style={{ color: "var(--arc-ink)", fontWeight: 700, textDecoration: "none" }} to="/token/$ca">{r.symbol}</Link>{r.token.toLowerCase() === OFFICIAL_TOKEN && <span className="arc-mono" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "#fff", fontSize: 10, marginLeft: 6, padding: "1px 6px", verticalAlign: "middle" }}>⭐ OFFICIAL</span>}{r.og && <span className="arc-mono" style={{ background: "rgba(245,197,66,0.15)", border: "1px solid #f5c542", borderRadius: 4, color: "#f5c542", fontSize: 10, marginLeft: 6, padding: "1px 5px", verticalAlign: "middle" }} title="OG ticker: registered on RadarDex before Arc mainnet launch">OG</span>} <span className="arc-name" style={{ color: "var(--arc-muted)", fontSize: 12 }}>{r.name.slice(0, 12)}</span>
                                 {r.twitter && <a href={r.twitter} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 6 }} target="_blank">𝕏</a>}
                                 {r.telegram && <a href={r.telegram} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 4 }} target="_blank">✈︎</a>}
                                 {r.website && <a href={r.website} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 4 }} target="_blank">🌐</a>}
@@ -404,13 +404,13 @@ function Trade() {
                           </div>
                         </td>
                         <td className="arc-mono" style={cell}><div style={{ color: "var(--arc-cobalt)", fontWeight: 700 }}>{usd(r.mcap)}</div>{r.chg != null && <div style={{ color: r.chg >= 0 ? UP : DOWN, fontSize: 11 }}>{r.chg >= 0 ? "+" : ""}{r.chg.toFixed(1)}%</div>}</td>
-                        <td className="arc-mono" style={{ ...cell, color: "var(--arc-cobalt)" }}>{usd(r.athMcap)}</td>
+                        <td className="arc-mono arc-col-ath" style={{ ...cell, color: "var(--arc-cobalt)" }}>{usd(r.athMcap)}</td>
                         <td className="arc-mono" style={cell}>{r.liq != null && r.liq > 0 ? usd(r.liq) : "—"}</td>
                         <td className="arc-mono" style={{ ...cell, color: "#f5c542" }}>{r.vol > 0 ? usd(r.vol) : "—"}</td>
                         <td className="arc-mono" style={cell}><div>{r.txs > 0 ? r.txs.toLocaleString() : "—"}</div>{r.txs > 0 && <div style={{ fontSize: 11 }}><span style={{ color: UP }}>{r.buys}</span> / <span style={{ color: DOWN }}>{r.sells}</span></div>}</td>
                         <td className="arc-mono" style={cell}>{(() => { const k = risk[r.token]; if (!k) return <span style={{ color: "var(--arc-muted)" }}>…</span>; if (r.token.toLowerCase() === OFFICIAL_TOKEN) return <div style={{ color: "var(--arc-ink)", fontWeight: 700 }} title="Top-10 share not shown for the official token: the LP pool and the staking vault would dominate it">{k.holders ? `${k.holders} holders` : "—"}</div>; const t10 = k.top10; return <><div style={{ color: t10 == null ? "var(--arc-muted)" : t10 >= 50 ? DOWN : t10 >= 30 ? "#f5c542" : UP, fontWeight: 700 }}>{t10 == null ? "—" : `${t10.toFixed(0)}%`}</div><div style={{ color: "var(--arc-muted)", fontSize: 11 }}>{k.holders ? `${k.holders} h` : ""}{k.top1 != null ? ` · #1 ${k.top1.toFixed(0)}%` : ""}</div></>; })()}</td>
                         <td className="arc-mono" style={cell}>{(() => { const k = risk[r.token]; if (!k) return <span style={{ color: "var(--arc-muted)" }}>…</span>; const dv = k.dev_pct, bd = k.bundle_pct; const c = (v: number | null | undefined, warn: number, bad: number) => v == null ? "var(--arc-muted)" : v >= bad ? DOWN : v >= warn ? "#f5c542" : UP; return <><div style={{ color: c(dv, 5, 15), fontWeight: 700 }} title="Deployer wallet's share of supply (top-50 holders)">{dv == null ? "—" : `${dv.toFixed(dv < 1 ? 1 : 0)}%`}</div><div style={{ color: c(bd, 10, 25), fontSize: 11 }} title={`Bundled: supply held by wallets that bought within 2 s of the first trade (${k.bundlers ?? 0} wallets)`}>{bd == null ? "" : `bundle ${bd.toFixed(bd < 1 ? 1 : 0)}%`}</div></>; })()}</td>
-                        <td className="arc-mono" style={{ ...cell, color: r.insiders ? UP : "var(--arc-muted)" }}>{r.insiders || "—"}</td>
+                        <td className="arc-mono arc-col-ins" style={{ ...cell, color: r.insiders ? UP : "var(--arc-muted)" }}>{r.insiders || "—"}</td>
                         <td style={{ ...cell, textAlign: "right" }}><BuyBtn symbol={r.symbol} token={r.token} /></td>
                       </tr>
                     ))}
