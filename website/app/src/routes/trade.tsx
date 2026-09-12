@@ -310,12 +310,12 @@ function Trade() {
         <div className="arc-2col" style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr) 340px" }}>
           {/* LEFT: terminal */}
           <div>
-            <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+            <div className="arc-title" style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
               <h1 style={{ fontSize: 26, margin: 0 }}>Terminal</h1>
               <span style={{ color: "var(--arc-muted)", fontSize: 13 }}>every Arc launchpad · one click · best price across venues · <a href="/profile" style={{ color: "var(--arc-cobalt)" }}>profile & history →</a></span>
             </div>
             {/* quick-buy bar */}
-            <div style={{ alignItems: "center", background: "var(--arc-paper)", border: "1px solid var(--arc-line)", display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10, padding: "8px 12px" }}>
+            <div className="arc-controls" style={{ alignItems: "center", background: "var(--arc-paper)", border: "1px solid var(--arc-line)", display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10, padding: "8px 12px" }}>
               <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>SIGN WITH</span>
               {(["hot", "browser"] as const).map((k) => (
                 <button className="arc-mono" key={k} onClick={() => { setSigner(k); if (k === "browser" && !browserAddr) void connectWallet().then(setBrowserAddr).catch(() => null); }} style={{ background: signer === k ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (signer === k ? "var(--arc-cobalt)" : "var(--arc-line)"), borderRadius: 4, color: signer === k ? "#fff" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "4px 8px" }} title={k === "hot" ? "In-browser trading wallet: one click, no popups" : "MetaMask / Rabby: confirm every transaction"} type="button">
@@ -330,8 +330,10 @@ function Trade() {
               <input className="arc-mono" onChange={(e) => setQ(e.target.value)} placeholder="filter / paste CA" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", flex: "1 1 160px", fontSize: 12, marginLeft: "auto", padding: "4px 8px" }} value={q} />
             </div>
             {/* tabs */}
-            <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, margin: "2px 0 8px" }}>
+            <div className="arc-filters" style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, margin: "2px 0 8px" }}>
+              <div className="arc-chips" style={{ display: "contents" }}>
               {PADS.map(([k, l]) => <button className="arc-mono" key={k} onClick={() => setPadF(k)} style={{ background: padF === k ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (padF === k ? "var(--arc-cobalt)" : "var(--arc-line)"), borderRadius: 999, color: padF === k ? "#fff" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "3px 10px" }} type="button">{l}</button>)}
+              </div>
               <span style={{ flex: 1 }} />
               {[["min MC $", minMc, setMinMc], ["max MC $", maxMc, setMaxMc], ["min vol $", minVol, setMinVol]].map(([ph, v, set]) => (
                 <input className="arc-mono" inputMode="numeric" key={ph as string} onChange={(e) => (set as (x: string) => void)(e.target.value.replace(/[^0-9.]/g, ""))} placeholder={ph as string} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-ink)", fontSize: 11, padding: "4px 8px", width: 84 }} value={v as string} />
@@ -341,7 +343,7 @@ function Trade() {
               </select>
               {(padF !== "all" || minMc || maxMc || minVol || q) && <button className="arc-mono" onClick={() => { setPadF("all"); setMinMc(""); setMaxMc(""); setMinVol(""); setQ(""); }} style={{ background: "transparent", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, textDecoration: "underline" }} type="button">clear</button>}
             </div>
-            <div style={{ borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 2, marginBottom: 8 }}>
+            <div className="arc-tabs" style={{ borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 2, marginBottom: 8 }}>
               {([["new", "New pair"], ["new15", "New <15m"], ["trending", "Trending"], ["insiders", "Insider picks"], ["favs", `★ Watchlist${favs.size ? ` (${favs.size})` : ""}`], ["holdings", `Holdings${positions.length ? ` (${positions.length})` : ""}`]] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setTab(k)} style={{ background: "transparent", border: "none", borderBottom: "2px solid " + (tab === k ? "var(--arc-up)" : "transparent"), color: tab === k ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, fontWeight: tab === k ? 700 : 400, padding: "8px 14px" }} type="button">{l}</button>
               ))}

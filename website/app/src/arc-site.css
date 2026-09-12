@@ -677,3 +677,26 @@
 
 .arc-fresh { animation: arc-fresh 6s ease-out both; border-radius: 4px; }
 @keyframes arc-fresh { 0% { background: rgba(34,197,128,0.28); } 100% { background: transparent; } }
+
+/* ---- Terminal on phones: touch-sized controls, scrolling chip rows, no jagged wrapping ---- */
+@media (max-width: 760px) {
+  .arc-controls { gap: 8px !important; }
+  .arc-controls > span.arc-mono { flex-basis: 100%; margin-left: 0 !important; margin-top: 4px; }
+  .arc-controls > button, .arc-controls > input { min-height: 36px; font-size: 13px !important; padding: 6px 8px !important; }
+  .arc-controls > button { flex: 1 1 calc(25% - 8px) !important; white-space: nowrap; }
+  .arc-controls > input { flex: 1 1 100% !important; width: auto !important; }
+  .arc-filters { display: block !important; margin: 4px -14px 8px !important; }
+  .arc-chips { display: flex !important; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding: 2px 14px 6px; }
+  .arc-chips::-webkit-scrollbar { display: none; }
+  .arc-chips > button { flex: 0 0 auto; min-height: 32px; font-size: 12px !important; padding: 5px 12px !important; }
+  .arc-filters > span { display: none; }
+  .arc-filters > input, .arc-filters > select { display: inline-block; box-sizing: border-box; margin: 6px 0 0 14px; min-height: 36px; width: calc(33.33% - 14px) !important; font-size: 13px !important; }
+  .arc-filters > select { width: calc(100% - 28px) !important; }
+  .arc-filters > button { margin-left: 14px; }
+  .arc-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; margin-left: -14px; margin-right: -14px; padding: 0 14px; }
+  .arc-tabs::-webkit-scrollbar { display: none; }
+  .arc-tabs > button { flex: 0 0 auto; font-size: 14px !important; padding: 10px 12px !important; }
+  .arc-tabs > span { flex: 0 0 auto; }
+  .arc-toasts { width: 230px; }
+  table td, table th { font-size: 12px; }
+}
