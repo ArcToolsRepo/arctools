@@ -2,9 +2,10 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
-import { holderRisk, listAllTokens, tokenLogos, type PadToken } from "@/lib/arc-api";
+import { holderRisk, listAllTokens, tokenLogos, xAvatar, type PadToken } from "@/lib/arc-api";
 import { ARC_AGGREGATOR, connectWallet, encodeAggregatorSwap, ethCall, getStoredWallet, onWalletChange, p32, sendTx, waitReceipt } from "@/lib/arc-wallet";
 import { hotAddress, hotCall, hotSend, hotWait } from "@/lib/arc-hotwallet";
+import { TokenLogo } from "@/components/token-logo";
 import { WalletPanel } from "@/components/wallet-panel";
 import { routeSwap, type RouteResult } from "@/lib/arc-route";
 import { quickAmount, setQuickAmount } from "@/components/quick-buy";
@@ -230,7 +231,7 @@ function Trade() {
     const t = byToken.get(k); const tr = trendMap.get(k); const c = clusterMap.get(k);
     const createdTs = t?.createdAt ? new Date(t.createdAt).getTime() / 1000 : tr?.first_ts ?? null;
     return {
-      token: k, symbol: tr?.symbol ?? t?.symbol ?? short(k), name: t?.name ?? tr?.symbol ?? "", logo: t?.logo ?? logos[k] ?? null, pad: t?.pad ?? "",
+      token: k, symbol: tr?.symbol ?? t?.symbol ?? short(k), name: t?.name ?? tr?.symbol ?? "", logo: t?.logo ?? logos[k] ?? xAvatar(t?.twitter) ?? null, pad: t?.pad ?? "",
       age: createdTs, ca: k, mcap: tr?.mcap ?? t?.mcapUsd ?? null, chg: tr?.chg ?? null, athMcap: tr?.ath_mcap ?? null,
       liq: liq.get(k) ?? null, vol: tr?.vol ?? t?.volUsd ?? 0, txs: tr?.txs ?? 0, buys: tr?.buys ?? 0, sells: tr?.sells ?? 0, traders: tr?.traders ?? 0,
       insiders: c?.insiders ?? 0, twitter: t?.twitter ?? null, telegram: t?.telegram ?? null, website: t?.website ?? null,
@@ -341,7 +342,7 @@ function Trade() {
                         <td style={{ ...cell, paddingRight: 4 }}><button onClick={() => toggleFav(r.token)} style={{ background: "none", border: "none", color: favs.has(r.token) ? "#f5c542" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, padding: 0 }} title="favourite" type="button">{favs.has(r.token) ? "★" : "☆"}</button></td>
                         <td style={{ ...cell, minWidth: 250 }}>
                           <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
-                            <Link params={{ ca: r.token }} preload="intent" style={{ textDecoration: "none" }} to="/token/$ca"><span style={{ alignItems: "center", background: "#0e1118", border: "1px solid var(--arc-line)", borderRadius: 8, display: "inline-flex", height: 38, justifyContent: "center", overflow: "hidden", width: 38 }}>{r.logo ? <img alt="" height={38} src={r.logo} style={{ objectFit: "cover" }} width={38} /> : <span className="arc-mono" style={{ fontSize: 14 }}>{r.symbol.slice(0, 1)}</span>}</span></Link>
+                            <Link params={{ ca: r.token }} preload="intent" style={{ textDecoration: "none" }} to="/token/$ca"><TokenLogo src={r.logo} symbol={r.symbol} /></Link>
                             <div style={{ lineHeight: 1.25 }}>
                               <div><Link params={{ ca: r.token }} preload="intent" style={{ color: "var(--arc-ink)", fontWeight: 700, textDecoration: "none" }} to="/token/$ca">{r.symbol}</Link>{r.token.toLowerCase() === OFFICIAL_TOKEN && <span className="arc-mono" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "#fff", fontSize: 10, marginLeft: 6, padding: "1px 6px", verticalAlign: "middle" }}>⭐ OFFICIAL</span>} <span style={{ color: "var(--arc-muted)", fontSize: 12 }}>{r.name.slice(0, 18)}</span>
                                 {r.twitter && <a href={r.twitter} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 6 }} target="_blank">𝕏</a>}

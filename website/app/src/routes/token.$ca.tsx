@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
 import { SocialCheck } from "@/components/social-check";
+import { TokenLogo } from "@/components/token-logo";
 import { TvChart, type Candle } from "@/components/tv-chart";
 import { ARC_V4_ROUTER, SWAP_FEE_ROUTER, tokenPage, venueData, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
 import { routeSwap, type RouteResult } from "@/lib/arc-route";
@@ -40,8 +41,13 @@ export const Route = createFileRoute("/token/$ca")({
   staleTime: 15_000,
   preloadStaleTime: 15_000,
   loader: async ({ params }) => {
-    const r = await tokenPage({ data: { token: params.ca } });
-    return { info: "error" in r ? null : r, error: "error" in r ? r.error : null };
+    // Cached pages answer in ms. A cold page can take several seconds of upstream calls: never hold the
+    // HTML for that — after 900 ms ship the shell and let the client finish (the server keeps computing
+    // in the background, so the client's call lands on the same in-flight result).
+    const p = tokenPage({ data: { token: params.ca } });
+    const r = await Promise.race([p, new Promise<"__slow">((res) => setTimeout(() => res("__slow"), 900))]);
+    if (r === "__slow") { void p.catch(() => null); return { info: null, error: null, pending: true as const }; }
+    return { info: "error" in r ? null : r, error: "error" in r ? r.error : null, pending: false as const };
   },
   head: ({ loaderData }) => {
     const i = loaderData?.info;
@@ -120,7 +126,25 @@ function Cell({ k, v, tone }: { k: string; v: string; tone?: "up" | "down" }) {
 }
 
 function TokenPage() {
-  const { info, error } = Route.useLoaderData();
+  const loaded = Route.useLoaderData();
+  const params = Route.useParams();
+  const [late, setLate] = useState<{ info: TokenPageInfo | null; error: string | null } | null>(null);
+  useEffect(() => {
+    if (!loaded.pending) { setLate(null); return; }
+    let alive = true;
+    const go = async (attempt: number) => {
+      const r = await tokenPage({ data: { token: params.ca } }).catch(() => null);
+      if (!alive) return;
+      if (r) setLate({ info: "error" in r ? null : r, error: "error" in r ? r.error : null });
+      else if (attempt < 3) setTimeout(() => void go(attempt + 1), 1500);
+      else setLate({ info: null, error: "Could not load this token right now — try again in a moment." });
+    };
+    void go(0);
+    return () => { alive = false; };
+  }, [loaded.pending, params.ca]);
+  const info = loaded.pending ? late?.info ?? null : loaded.info;
+  const error = loaded.pending ? late?.error ?? null : loaded.error;
+  const stillLoading = loaded.pending && !late;
   const [tf, setTf] = useState<TF>("5m");
   const [mode, setMode] = useState<"price" | "mcap">("mcap");
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -478,6 +502,7 @@ function TokenPage() {
     return candles;
   }, [candles, venue, tf, trades]);
 
+  if (!info && stillLoading) return <TokenSkeleton />;
   if (!info) {
     return (
       <main className="arc-site" style={{ minHeight: "100dvh" }}>
@@ -503,10 +528,7 @@ function TokenPage() {
         {/* ---------- header ---------- */}
         <div className="arc-token__head">
           <div style={{ alignItems: "center", display: "flex", gap: 14, minWidth: 0 }}>
-            <span className="arc-mono" style={{ alignItems: "center", background: "#0e1118", border: "1px solid var(--arc-line)", borderRadius: 12, display: "inline-flex", flex: "0 0 56px", fontSize: 20, height: 56, justifyContent: "center", overflow: "hidden", position: "relative", width: 56 }}>
-              {(info.symbol || "?").slice(0, 1)}
-              {info.logo && <img alt="" src={info.logo} style={{ height: "100%", left: 0, objectFit: "cover", position: "absolute", top: 0, width: "100%" }} />}
-            </span>
+            <TokenLogo radius={12} size={56} src={info.logo} symbol={info.symbol || "?"} />
             <div style={{ minWidth: 0 }}>
               <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 8 }}>
                 <h1 className="arc-h3" style={{ margin: 0 }}>{info.name}</h1>

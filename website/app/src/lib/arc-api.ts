@@ -689,7 +689,7 @@ export const tokenPage = createServerFn({ method: "POST" })
         holders: typeof meta.holderCount === "number" ? Number(meta.holderCount) : null,
         launchpad: padAddress ? "ArcToolsPad" : (v4Key ? v4Key.venueName : curveAddress ? "Warp" : lp),
         liquidityUsdc,
-        logo: padLogo ?? ipfsToHttp(String(meta.icon ?? "")),
+        logo: padLogo || ipfsToHttp(String(meta.icon ?? "")) || (await screenerIcons().then((m) => ipfsToHttp(m.get(lc) ?? "")).catch(() => "")) || xAvatar(padSocial.twitter || (meta.twitter as string) || null),
         mcapUsd,
         name,
         pool,
@@ -1236,6 +1236,16 @@ export const listTokens = createServerFn({ method: "POST" })
  */
 let iconMap = new Map<string, string>();
 let iconTs = 0;
+
+/** Last-resort logo: the project's X avatar (unavatar mirrors profile pictures; content-cached by browsers). */
+export function xAvatar(twitter: string | null | undefined): string | null {
+  if (!twitter) return null;
+  const m = String(twitter).match(/(?:x\.com|twitter\.com)\/(?:#!\/)?@?([A-Za-z0-9_]{1,15})(?:[/?#]|$)/) ?? String(twitter).match(/^@?([A-Za-z0-9_]{1,15})$/);
+  if (!m) return null;
+  const h = m[1].toLowerCase();
+  if (["i", "home", "search", "intent", "share", "hashtag", "explore"].includes(h)) return null;
+  return `https://unavatar.io/x/${h}?fallback=false`;
+}
 
 export async function screenerIcons(): Promise<Map<string, string>> {
   if (iconMap.size > 0 && Date.now() - iconTs < 300_000) return iconMap;
