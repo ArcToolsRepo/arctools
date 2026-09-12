@@ -18,7 +18,7 @@ const usd = (n: number | null | undefined) => n == null ? "—" : `${n < 0 ? "-"
 const ago = (ts: number) => { const s = Math.max(0, Date.now() / 1000 - ts); return s < 60 ? `${s | 0}s` : s < 3600 ? `${(s / 60) | 0}m` : s < 86400 ? `${(s / 3600) | 0}h` : `${(s / 86400) | 0}d`; };
 
 type Stat = { range: string; pnl_total: number | null; pnl_realized: number | null; winrate: number | null; trades: number | null; closed: number | null; volume: number | null; best_symbol: string | null; best_pnl: number | null; rank?: number | null };
-type Trade = { ts: number; token: string; symbol: string | null; side: string; usdc: number; venue: string };
+type Trade = { ts: number; tx?: string; token: string; symbol: string | null; side: string; usdc: number; venue: string };
 type Pos = { token: string; symbol: string | null; net: number; cost: number; value: number | null; pnl: number | null };
 type Card = { wallet: string; stats: Stat[]; trades: Trade[]; positions: Pos[]; watchers: number; loading: boolean };
 
@@ -97,7 +97,7 @@ function Wallets() {
               <div key={w} style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--arc-line)", borderRadius: 12, padding: 16 }}>
                 <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "space-between" }}>
                   <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 10 }}>
-                    <span className="arc-mono" style={{ color: "var(--arc-ink)", fontSize: 15, fontWeight: 700 }}>{short(w)}</span>
+                    <a className="arc-mono" href={`https://arc-scan.org/address/${w}`} rel="noreferrer" style={{ color: "var(--arc-ink)", fontSize: 15, fontWeight: 700, textDecoration: "none" }} target="_blank" title="Open in Arc Scan">{short(w)}</a>
                     <button className="arc-mono" onClick={() => void navigator.clipboard.writeText(w)} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "2px 8px" }} type="button">copy</button>
                     <a className="arc-mono" href={`https://arc-scan.org/address/${w}`} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 11 }} target="_blank">explorer ↗</a>
                     {s30?.rank != null && <span className="arc-mono" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", borderRadius: 4, fontSize: 10, padding: "1px 6px" }}>INSIDER #{s30.rank}</span>}
@@ -122,7 +122,7 @@ function Wallets() {
                     <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: "0 0 6px", textTransform: "uppercase" }}>Open positions</p>
                     {c?.positions.length ? c.positions.slice(0, 6).map((p) => (
                       <div className="arc-mono" key={p.token} style={{ display: "flex", fontSize: 12, gap: 8, justifyContent: "space-between", padding: "3px 0" }}>
-                        <Link params={{ ca: p.token }} style={{ color: "var(--arc-ink)", textDecoration: "none" }} to="/token/$ca">{p.symbol ?? short(p.token)}</Link>
+                        <span><Link params={{ ca: p.token }} preload="intent" style={{ color: "var(--arc-ink)", fontWeight: 700, textDecoration: "none" }} to="/token/$ca">{p.symbol ?? short(p.token)}</Link> <Link params={{ ca: p.token }} preload="intent" style={{ color: "var(--arc-cobalt)", fontSize: 11, textDecoration: "none" }} to="/token/$ca">chart ↗</Link></span>
                         <span style={{ color: (p.pnl ?? 0) >= 0 ? "var(--arc-up)" : "#f0534f" }}>{p.value != null ? usd(p.value) : "—"}{p.pnl != null ? ` (${p.pnl >= 0 ? "+" : ""}${usd(p.pnl)})` : ""}</span>
                       </div>
                     )) : <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, margin: 0 }}>{c?.loading ? "…" : "none tracked"}</p>}
@@ -131,8 +131,8 @@ function Wallets() {
                     <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: "0 0 6px", textTransform: "uppercase" }}>Last trades</p>
                     {c?.trades.length ? c.trades.slice(0, 6).map((t, i) => (
                       <div className="arc-mono" key={i} style={{ alignItems: "baseline", display: "flex", fontSize: 12, gap: 8, justifyContent: "space-between", padding: "3px 0", whiteSpace: "nowrap" }}>
-                        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}><span style={{ color: t.side === "buy" ? "var(--arc-up)" : "#f0534f", display: "inline-block", width: 36 }}>{t.side.toUpperCase()}</span> <Link params={{ ca: t.token }} style={{ color: "var(--arc-ink)", textDecoration: "none" }} to="/token/$ca">{t.symbol ?? short(t.token)}</Link></span>
-                        <span style={{ color: "var(--arc-muted)", flex: "none" }}>{usd(t.usdc)} · {ago(t.ts)}</span>
+                        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}><span style={{ color: t.side === "buy" ? "var(--arc-up)" : "#f0534f", display: "inline-block", width: 36 }}>{t.side.toUpperCase()}</span> <Link params={{ ca: t.token }} preload="intent" style={{ color: "var(--arc-ink)", fontWeight: 700, textDecoration: "none" }} to="/token/$ca">{t.symbol ?? short(t.token)}</Link> <Link params={{ ca: t.token }} preload="intent" style={{ color: "var(--arc-cobalt)", fontSize: 11, textDecoration: "none" }} to="/token/$ca">chart ↗</Link></span>
+                        <span style={{ color: "var(--arc-muted)", flex: "none" }}>{usd(t.usdc)} · {ago(t.ts)}{t.tx && <> · <a href={`https://arc-scan.org/tx/${t.tx}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)", textDecoration: "none" }} target="_blank" title={t.tx}>tx ↗</a></>}</span>
                       </div>
                     )) : <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, margin: 0 }}>{c?.loading ? "…" : "no swaps indexed"}</p>}
                   </div>

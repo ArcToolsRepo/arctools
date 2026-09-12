@@ -97,6 +97,10 @@ function buildHead(meta: AppMeta) {
       ...(ogVideo ? [{ property: "og:video", content: ogVideo }] : []),
     ],
     links: [
+      { rel: "preconnect", href: "https://bot-production-4200.up.railway.app" },
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+      { rel: "dns-prefetch", href: "https://api.radardex.pro" },
       { rel: "stylesheet", href: appCss },
       ...(favicon ? [{ rel: "icon", href: favicon }] : []),
     ],

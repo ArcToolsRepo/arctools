@@ -258,7 +258,7 @@ function Intel() {
                       <td className="arc-mono" style={{ ...td, fontWeight: 700 }}>{usd(r.usdc)}</td>
                       <td style={td}><a href={`/token/${r.token}`} style={{ color: "var(--arc-ink)" }}>${r.symbol ?? short(r.token)}</a> <QuickBuy compact symbol={r.symbol ?? short(r.token)} token={r.token} /></td>
                       <td className="arc-mono" style={td}>
-                        <button className="arc-mono" onClick={() => setQ(r.wallet)} style={{ background: "none", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: 0 }} type="button">{short(r.wallet)}</button>
+                        <a className="arc-mono" href={`https://arc-scan.org/address/${r.wallet}`} rel="noreferrer" style={{ color: "var(--arc-ink)", textDecoration: "none", fontSize: 12, padding: 0 }} target="_blank" title="Open in Arc Scan">{short(r.wallet)}</a> <button className="arc-mono" onClick={() => setQ(r.wallet)} style={{ background: "none", border: "none", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 11, padding: 0 }} title="Inspect in Intel" type="button">🔍</button>
                         {r.rank && <span style={{ background: "rgba(46,124,255,0.15)", border: "1px solid var(--arc-cobalt)", borderRadius: 3, color: "var(--arc-cobalt)", fontSize: 9, marginLeft: 6, padding: "0 4px" }}>#{r.rank}</span>}
                       </td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.venue}</td>
@@ -281,7 +281,7 @@ function Intel() {
                   {(rich?.rows ?? []).map((r, i) => (
                     <tr key={r.wallet}>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{i + 1}</td>
-                      <td className="arc-mono" style={td}><button className="arc-mono" onClick={() => setQ(r.wallet)} style={{ background: "none", border: "none", color: "var(--arc-ink)", cursor: "pointer", fontSize: 12, padding: 0 }} type="button">{short(r.wallet)}</button></td>
+                      <td className="arc-mono" style={td}><a className="arc-mono" href={`https://arc-scan.org/address/${r.wallet}`} rel="noreferrer" style={{ color: "var(--arc-ink)", fontSize: 12, textDecoration: "none" }} target="_blank" title="Open in Arc Scan">{short(r.wallet)}</a> <button className="arc-mono" onClick={() => setQ(r.wallet)} style={{ background: "none", border: "none", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 11, padding: 0 }} title="Inspect in Intel" type="button">🔍</button></td>
                       <td className="arc-mono" style={{ ...td, fontWeight: 700 }}>{usd(r.balance)}</td>
                       <td className="arc-mono" style={{ ...td, color: r.balance - (r.prev ?? r.balance) >= 0 ? UP : DOWN }}>{r.prev != null && Math.abs(r.balance - r.prev) >= 1 ? `${r.balance - r.prev >= 0 ? "+" : "−"}${usd(Math.abs(r.balance - r.prev))}` : ""}</td>
                       <td className="arc-mono" style={{ ...td, color: (r.pnl_total ?? 0) >= 0 ? UP : DOWN }}>{r.pnl_total != null ? `${r.pnl_total >= 0 ? "+" : "−"}${usd(Math.abs(r.pnl_total))}` : "—"}</td>
@@ -329,7 +329,7 @@ function Intel() {
                   {(fresh?.rows ?? []).map((r) => (
                     <tr key={r.wallet}>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{ago(r.ts)}</td>
-                      <td className="arc-mono" style={td}><button className="arc-mono" onClick={() => setQ(r.wallet)} style={{ background: "none", border: "none", color: "var(--arc-ink)", cursor: "pointer", fontSize: 12, padding: 0 }} type="button">{short(r.wallet)}</button></td>
+                      <td className="arc-mono" style={td}><a className="arc-mono" href={`https://arc-scan.org/address/${r.wallet}`} rel="noreferrer" style={{ color: "var(--arc-ink)", fontSize: 12, textDecoration: "none" }} target="_blank" title="Open in Arc Scan">{short(r.wallet)}</a> <button className="arc-mono" onClick={() => setQ(r.wallet)} style={{ background: "none", border: "none", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 11, padding: 0 }} title="Inspect in Intel" type="button">🔍</button></td>
                       <td className="arc-mono" style={{ ...td, fontWeight: 700 }}>{usd(r.usdc)}</td>
                       <td style={td}><a href={`/token/${r.token}`} style={{ color: "var(--arc-ink)" }}>${r.symbol ?? short(r.token)}</a></td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.swaps} swaps · {usd(r.bought ?? 0)}</td>
@@ -395,7 +395,7 @@ function Intel() {
                   {(moves?.rows ?? []).map((r) => (
                     <tr key={r.wallet + r.ts}>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{ago(r.ts)}</td>
-                      <td className="arc-mono" style={td}><button className="arc-mono" onClick={() => setQ(r.wallet)} style={{ background: "none", border: "none", color: "var(--arc-ink)", cursor: "pointer", fontSize: 12, padding: 0 }} type="button">{short(r.wallet)}</button></td>
+                      <td className="arc-mono" style={td}><a className="arc-mono" href={`https://arc-scan.org/address/${r.wallet}`} rel="noreferrer" style={{ color: "var(--arc-ink)", fontSize: 12, textDecoration: "none" }} target="_blank" title="Open in Arc Scan">{short(r.wallet)}</a> <button className="arc-mono" onClick={() => setQ(r.wallet)} style={{ background: "none", border: "none", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 11, padding: 0 }} title="Inspect in Intel" type="button">🔍</button></td>
                       <td className="arc-mono" style={{ ...td, color: r.delta >= 0 ? UP : DOWN, fontWeight: 700 }}>{r.delta >= 0 ? "+" : "−"}{usd(Math.abs(r.delta))}</td>
                       <td className="arc-mono" style={td}>{usd(r.balance)}</td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.swaps}</td>
