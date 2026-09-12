@@ -1099,6 +1099,13 @@ async def start_api():
     app.router.add_get("/api/movers", api_movers)
     app.router.add_get("/api/insider-activity", api_insider_activity)
     app.router.add_get("/api/watchers", api_wallet_watch_count)
+    from .balances import api_rich, api_balance_moves
+    from .rules import api_rule_types, api_fresh, api_clusters
+    app.router.add_get("/api/rich", api_rich)
+    app.router.add_get("/api/balance-moves", api_balance_moves)
+    app.router.add_get("/api/rule-types", api_rule_types)
+    app.router.add_get("/api/fresh", api_fresh)
+    app.router.add_get("/api/clusters", api_clusters)
     from .bridge_watch import api_bridge
     app.router.add_get("/api/bridge", api_bridge)
     app.router.add_get("/health", api_health)

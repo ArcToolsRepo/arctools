@@ -50,12 +50,16 @@ async def start(m: Message):
     if payload.startswith("watch_"):
         from .watchlist import add_watch
         return await add_watch(m, "0x" + payload[6:])
+    if payload.startswith("rule_"):
+        from .rules import add_rule
+        return await add_rule(m, [x.replace("m", "-") if x.startswith("m") and x[1:].replace(".", "").isdigit() else x for x in payload[5:].split("_") if x])
     await m.answer(
         "📟 <b>ArcBuyBot</b> — buy alerts for Arc (chain 5042)\n\n"
         "1. Add me to your token's group and make me admin.\n"
         "2. In the group, send <code>/add 0xTOKEN</code> (admins only).\n"
         "3. I detect buys on Uniswap V3, V4, ArcToolsPad, DYORSwap and WarpDex and post them live.\n\n"
-        "👁 <b>Wallet watch:</b> <code>/watch 0x…</code> — DM on every buy and sell of any wallet on Arc.",
+        "👁 <b>Wallet watch:</b> <code>/watch 0x…</code> — DM on every buy and sell of any wallet on Arc.\n"
+        "🔔 <b>Alert rules:</b> <code>/alert</code> — price drops, whale swaps, bridge inflows, insider clusters, fresh wallets.",
         parse_mode="HTML",
         reply_markup=kb([
             [("➕ Add me to your group", "help_add")],
