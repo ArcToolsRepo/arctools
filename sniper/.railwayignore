@@ -1,0 +1,6 @@
+.venv/
+.env
+test.db
+__pycache__/
+*.pyc
+arctools.db

@@ -1,0 +1,1857 @@
+{
+ "launchpad": "0x2726AeC64D8a9BC41B9940dDA5D21c889458B348",
+ "vault": "0x48aDA931C2C220B074c39449B7e70860A3B4C277",
+ "abi": [
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "_vault",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "_treasury",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "nonpayable",
+   "type": "constructor"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "quote",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "quoteIn",
+     "type": "uint256"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "usdcOut",
+     "type": "uint256"
+    }
+   ],
+   "name": "FeesFlushed",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "pool",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "quoteIn",
+     "type": "uint256"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "tokensIn",
+     "type": "uint256"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "lpTokenId",
+     "type": "uint256"
+    }
+   ],
+   "name": "Graduated",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "amount",
+     "type": "uint256"
+    }
+   ],
+   "name": "HolderRewards",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "creator",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "fee",
+     "type": "uint256"
+    }
+   ],
+   "name": "InstantFee",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "user",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "amount",
+     "type": "uint256"
+    }
+   ],
+   "name": "RewardsClaimed",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "creator",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "string",
+     "name": "name",
+     "type": "string"
+    },
+    {
+     "indexed": false,
+     "internalType": "string",
+     "name": "symbol",
+     "type": "string"
+    }
+   ],
+   "name": "TokenCreated",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "trader",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "bool",
+     "name": "buy",
+     "type": "bool"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "usdcIn",
+     "type": "uint256"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "usdcOut",
+     "type": "uint256"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "tokensIn",
+     "type": "uint256"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "tokensOut",
+     "type": "uint256"
+    }
+   ],
+   "name": "Trade",
+   "type": "event"
+  },
+  {
+   "inputs": [],
+   "name": "DEAD",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "FACTORY",
+   "outputs": [
+    {
+     "internalType": "contract IUniV3Factory",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "FEE_BPS",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "HOLDER_SHARE",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "LOCK_BPS",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "MAX_TAX_EACH",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "MAX_TAX_TOTAL",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "NPM",
+   "outputs": [
+    {
+     "internalType": "contract INonfungiblePositionManager",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "POOL_FEE",
+   "outputs": [
+    {
+     "internalType": "uint24",
+     "name": "",
+     "type": "uint24"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "ROUTER",
+   "outputs": [
+    {
+     "internalType": "contract ISwapRouter02",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "SUPPLY",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "TICK_LOWER",
+   "outputs": [
+    {
+     "internalType": "int24",
+     "name": "",
+     "type": "int24"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "TICK_UPPER",
+   "outputs": [
+    {
+     "internalType": "int24",
+     "name": "",
+     "type": "int24"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "USDC_FACADE",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "minOut",
+     "type": "uint256"
+    }
+   ],
+   "name": "buy",
+   "outputs": [],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "quoteIn",
+     "type": "uint256"
+    },
+    {
+     "internalType": "uint256",
+     "name": "minOut",
+     "type": "uint256"
+    }
+   ],
+   "name": "buyToken",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "a",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "b",
+     "type": "address"
+    }
+   ],
+   "name": "checkpoint",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    }
+   ],
+   "name": "claimRewards",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "u",
+     "type": "address"
+    }
+   ],
+   "name": "claimable",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "components": [
+      {
+       "internalType": "string",
+       "name": "name",
+       "type": "string"
+      },
+      {
+       "internalType": "string",
+       "name": "symbol",
+       "type": "string"
+      },
+      {
+       "internalType": "uint16",
+       "name": "marketingBps",
+       "type": "uint16"
+      },
+      {
+       "internalType": "uint16",
+       "name": "rewardsBps",
+       "type": "uint16"
+      },
+      {
+       "internalType": "uint16",
+       "name": "burnBps",
+       "type": "uint16"
+      },
+      {
+       "internalType": "address",
+       "name": "marketingWallet",
+       "type": "address"
+      },
+      {
+       "internalType": "string",
+       "name": "website",
+       "type": "string"
+      },
+      {
+       "internalType": "string",
+       "name": "twitter",
+       "type": "string"
+      },
+      {
+       "internalType": "string",
+       "name": "telegram",
+       "type": "string"
+      },
+      {
+       "internalType": "address",
+       "name": "rewardToken",
+       "type": "address"
+      },
+      {
+       "internalType": "address",
+       "name": "quoteToken",
+       "type": "address"
+      },
+      {
+       "internalType": "uint8",
+       "name": "mode",
+       "type": "uint8"
+      },
+      {
+       "internalType": "uint256",
+       "name": "targetQuote",
+       "type": "uint256"
+      }
+     ],
+     "internalType": "struct ArcPadLaunchpadV3.CreateParams",
+     "name": "p",
+     "type": "tuple"
+    }
+   ],
+   "name": "createToken",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "name": "curve",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "quoteReserve",
+     "type": "uint256"
+    },
+    {
+     "internalType": "uint256",
+     "name": "tokenReserve",
+     "type": "uint256"
+    },
+    {
+     "internalType": "uint256",
+     "name": "volumeQuote",
+     "type": "uint256"
+    },
+    {
+     "internalType": "uint64",
+     "name": "txCount",
+     "type": "uint64"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "name": "feePot",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "quote",
+     "type": "address"
+    }
+   ],
+   "name": "flushFees",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    }
+   ],
+   "name": "flushRewards",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "instantFee",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "name": "launch",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "quoteToken",
+     "type": "address"
+    },
+    {
+     "internalType": "uint24",
+     "name": "quoteTier",
+     "type": "uint24"
+    },
+    {
+     "internalType": "enum ArcPadLaunchpadV3.Mode",
+     "name": "mode",
+     "type": "uint8"
+    },
+    {
+     "internalType": "uint256",
+     "name": "targetQuote",
+     "type": "uint256"
+    },
+    {
+     "internalType": "uint256",
+     "name": "virtualQuote",
+     "type": "uint256"
+    },
+    {
+     "internalType": "bool",
+     "name": "graduated",
+     "type": "bool"
+    },
+    {
+     "internalType": "address",
+     "name": "pool",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "lpTokenId",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "offset",
+     "type": "uint256"
+    },
+    {
+     "internalType": "uint256",
+     "name": "limit",
+     "type": "uint256"
+    }
+   ],
+   "name": "list",
+   "outputs": [
+    {
+     "internalType": "address[]",
+     "name": "addrs",
+     "type": "address[]"
+    },
+    {
+     "components": [
+      {
+       "internalType": "uint256",
+       "name": "quoteReserve",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint256",
+       "name": "tokenReserve",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint256",
+       "name": "volumeQuote",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint64",
+       "name": "txCount",
+       "type": "uint64"
+      }
+     ],
+     "internalType": "struct ArcPadLaunchpadV3.Curve[]",
+     "name": "curves",
+     "type": "tuple[]"
+    },
+    {
+     "components": [
+      {
+       "internalType": "address",
+       "name": "quoteToken",
+       "type": "address"
+      },
+      {
+       "internalType": "uint24",
+       "name": "quoteTier",
+       "type": "uint24"
+      },
+      {
+       "internalType": "enum ArcPadLaunchpadV3.Mode",
+       "name": "mode",
+       "type": "uint8"
+      },
+      {
+       "internalType": "uint256",
+       "name": "targetQuote",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint256",
+       "name": "virtualQuote",
+       "type": "uint256"
+      },
+      {
+       "internalType": "bool",
+       "name": "graduated",
+       "type": "bool"
+      },
+      {
+       "internalType": "address",
+       "name": "pool",
+       "type": "address"
+      },
+      {
+       "internalType": "uint256",
+       "name": "lpTokenId",
+       "type": "uint256"
+      }
+     ],
+     "internalType": "struct ArcPadLaunchpadV3.Launch[]",
+     "name": "launches",
+     "type": "tuple[]"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "name": "meta",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "creator",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "marketingWallet",
+     "type": "address"
+    },
+    {
+     "internalType": "uint16",
+     "name": "marketingBps",
+     "type": "uint16"
+    },
+    {
+     "internalType": "uint16",
+     "name": "rewardsBps",
+     "type": "uint16"
+    },
+    {
+     "internalType": "uint16",
+     "name": "burnBps",
+     "type": "uint16"
+    },
+    {
+     "internalType": "string",
+     "name": "website",
+     "type": "string"
+    },
+    {
+     "internalType": "string",
+     "name": "twitter",
+     "type": "string"
+    },
+    {
+     "internalType": "string",
+     "name": "telegram",
+     "type": "string"
+    },
+    {
+     "internalType": "uint64",
+     "name": "createdAt",
+     "type": "uint64"
+    },
+    {
+     "internalType": "address",
+     "name": "rewardToken",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "minTarget",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "name": "owed",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "owner",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "quoteIn",
+     "type": "uint256"
+    }
+   ],
+   "name": "quoteBuy",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "out",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "tokensIn",
+     "type": "uint256"
+    }
+   ],
+   "name": "quoteSell",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "out",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "name": "rewardsAcc",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "name": "rewardsPending",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "tokensIn",
+     "type": "uint256"
+    },
+    {
+     "internalType": "uint256",
+     "name": "minOut",
+     "type": "uint256"
+    }
+   ],
+   "name": "sell",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "v",
+     "type": "uint256"
+    }
+   ],
+   "name": "setInstantFee",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "v",
+     "type": "uint256"
+    }
+   ],
+   "name": "setMinTarget",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "tokenCount",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    }
+   ],
+   "name": "tokenPage",
+   "outputs": [
+    {
+     "components": [
+      {
+       "internalType": "address",
+       "name": "token",
+       "type": "address"
+      },
+      {
+       "internalType": "address",
+       "name": "creator",
+       "type": "address"
+      },
+      {
+       "internalType": "address",
+       "name": "marketingWallet",
+       "type": "address"
+      },
+      {
+       "internalType": "uint16",
+       "name": "marketingBps",
+       "type": "uint16"
+      },
+      {
+       "internalType": "uint16",
+       "name": "rewardsBps",
+       "type": "uint16"
+      },
+      {
+       "internalType": "uint16",
+       "name": "burnBps",
+       "type": "uint16"
+      },
+      {
+       "internalType": "string",
+       "name": "website",
+       "type": "string"
+      },
+      {
+       "internalType": "string",
+       "name": "twitter",
+       "type": "string"
+      },
+      {
+       "internalType": "string",
+       "name": "telegram",
+       "type": "string"
+      },
+      {
+       "internalType": "uint64",
+       "name": "createdAt",
+       "type": "uint64"
+      },
+      {
+       "internalType": "address",
+       "name": "rewardToken",
+       "type": "address"
+      }
+     ],
+     "internalType": "struct ArcPadLaunchpadV3.Meta",
+     "name": "m",
+     "type": "tuple"
+    },
+    {
+     "components": [
+      {
+       "internalType": "uint256",
+       "name": "quoteReserve",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint256",
+       "name": "tokenReserve",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint256",
+       "name": "volumeQuote",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint64",
+       "name": "txCount",
+       "type": "uint64"
+      }
+     ],
+     "internalType": "struct ArcPadLaunchpadV3.Curve",
+     "name": "c",
+     "type": "tuple"
+    },
+    {
+     "internalType": "uint256",
+     "name": "pricePer1M",
+     "type": "uint256"
+    },
+    {
+     "components": [
+      {
+       "internalType": "address",
+       "name": "quoteToken",
+       "type": "address"
+      },
+      {
+       "internalType": "uint24",
+       "name": "quoteTier",
+       "type": "uint24"
+      },
+      {
+       "internalType": "enum ArcPadLaunchpadV3.Mode",
+       "name": "mode",
+       "type": "uint8"
+      },
+      {
+       "internalType": "uint256",
+       "name": "targetQuote",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint256",
+       "name": "virtualQuote",
+       "type": "uint256"
+      },
+      {
+       "internalType": "bool",
+       "name": "graduated",
+       "type": "bool"
+      },
+      {
+       "internalType": "address",
+       "name": "pool",
+       "type": "address"
+      },
+      {
+       "internalType": "uint256",
+       "name": "lpTokenId",
+       "type": "uint256"
+      }
+     ],
+     "internalType": "struct ArcPadLaunchpadV3.Launch",
+     "name": "l",
+     "type": "tuple"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "name": "tokens",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "o",
+     "type": "address"
+    }
+   ],
+   "name": "transferOwnership",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "treasury",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "name": "userAcc",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "vault",
+   "outputs": [
+    {
+     "internalType": "contract IVault",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "stateMutability": "payable",
+   "type": "receive"
+  }
+ ],
+ "vault_abi": [
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "_arct",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "nonpayable",
+   "type": "constructor"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "user",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "amount",
+     "type": "uint256"
+    }
+   ],
+   "name": "DropClaimed",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "user",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "amount",
+     "type": "uint256"
+    }
+   ],
+   "name": "Staked",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "amount",
+     "type": "uint256"
+    }
+   ],
+   "name": "TokenDrop",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "user",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "amount",
+     "type": "uint256"
+    }
+   ],
+   "name": "UsdcClaimed",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "user",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "amount",
+     "type": "uint256"
+    }
+   ],
+   "name": "Withdrawn",
+   "type": "event"
+  },
+  {
+   "inputs": [],
+   "name": "accUsdc",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "arct",
+   "outputs": [
+    {
+     "internalType": "contract IERC20",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    }
+   ],
+   "name": "claimDrop",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "claimUsdc",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    },
+    {
+     "internalType": "address",
+     "name": "u",
+     "type": "address"
+    }
+   ],
+   "name": "claimableDrop",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "u",
+     "type": "address"
+    }
+   ],
+   "name": "claimableUsdc",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    },
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "name": "dropClaimed",
+   "outputs": [
+    {
+     "internalType": "bool",
+     "name": "",
+     "type": "bool"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "dropCount",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "name": "drops",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "internalType": "uint64",
+     "name": "blk",
+     "type": "uint64"
+    },
+    {
+     "internalType": "uint256",
+     "name": "amount",
+     "type": "uint256"
+    },
+    {
+     "internalType": "uint256",
+     "name": "totalAt",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "launchpad",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "amount",
+     "type": "uint256"
+    }
+   ],
+   "name": "notifyTokenDrop",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "name": "owedUsdc",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "owner",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "pendingUsdc",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "p",
+     "type": "address"
+    }
+   ],
+   "name": "setLaunchpad",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "amount",
+     "type": "uint256"
+    }
+   ],
+   "name": "stake",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "name": "staked",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "name": "totalCP",
+   "outputs": [
+    {
+     "internalType": "uint64",
+     "name": "blk",
+     "type": "uint64"
+    },
+    {
+     "internalType": "uint192",
+     "name": "amt",
+     "type": "uint192"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "totalStaked",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "name": "userAccUsdc",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "name": "userCP",
+   "outputs": [
+    {
+     "internalType": "uint64",
+     "name": "blk",
+     "type": "uint64"
+    },
+    {
+     "internalType": "uint192",
+     "name": "amt",
+     "type": "uint192"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "amount",
+     "type": "uint256"
+    }
+   ],
+   "name": "withdraw",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "stateMutability": "payable",
+   "type": "receive"
+  }
+ ]
+}
