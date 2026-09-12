@@ -1718,7 +1718,9 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   ]);
   const seen = new Set<string>();
   // order = priority when the same token appears in several sources
-  const order = ["ArcPad", "RadarDex", "Warp", "Tolly", "Archemist", "Arguspad", "UniswapV4", "UniswapV3"];
+  // launchpad-native lists first so a token keeps its real source label; the RadarDex launch feed (which also
+  // mirrors other pads' tokens) and the screener only fill what nobody else listed
+  const order = ["ArcPad", "Warp", "Tolly", "Archemist", "Arguspad", "UniswapV4", "UniswapV3", "RadarDex"];
   const byName = new Map(ALL_PADS.map((p, i) => [p, rest[i]]));
   // the RadarDex screener (chain-wide top tokens by activity, with icons + socials + mcap): established tokens such as
   // TOLLY / ARGUS never appear in any launch feed, this is where their metadata comes from
@@ -1740,6 +1742,9 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   const busiest = [...all].sort((a, b) => (b.volUsd ?? 0) - (a.volUsd ?? 0)).slice(0, 200);
   const keep = new Map<string, PadToken>();
   for (const t of [...newest, ...busiest]) keep.set(t.token.toLowerCase(), t);
+  // every launchpad list is small — keep them whole so a source chip shows the full pad; only the raw
+  // RadarDex launch feed (hundreds of dead pools) is trimmed to newest/busiest
+  for (const t of all) if (t.pad !== "RadarDex") keep.set(t.token.toLowerCase(), t);
   // the screener set (chain-wide most active) is always carried whole
   const scr = new Set(screener.map((t) => t.token.toLowerCase()));
   for (const t of all) if (scr.has(t.token.toLowerCase())) keep.set(t.token.toLowerCase(), t);

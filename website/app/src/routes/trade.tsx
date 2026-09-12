@@ -79,7 +79,7 @@ function Trade() {
   // feed-style filters: launchpad / source, market-cap band, min volume (all persisted in the URL-free local state)
   const [padF, setPadF] = useState<string>("all");
   const [minMc, setMinMc] = useState(""); const [maxMc, setMaxMc] = useState(""); const [minVol, setMinVol] = useState("");
-  const PADS: [string, string][] = [["all", "All sources"], ["ArcToolsPad", "ArcToolsPad"], ["ArcPad", "ArcPad"], ["RadarDex", "RadarDex"], ["Warp", "Warp"], ["Tolly", "Tolly"], ["Archemist", "Archemist"], ["Arguspad", "Arguspad"], ["UniswapV4", "Uniswap V4"], ["UniswapV3", "Uniswap V3 pools"]];
+  const PADS: [string, string][] = [["all", "All sources"], ["ArcToolsPad", "ArcToolsPad"], ["ArcPad", "ArcPad"], ["RadarDex", "RadarDex"], ["Warp", "Warp"], ["Tolly", "Tolly"], ["Archemist", "Archemist"], ["Arguspad", "Arguspad"], ["UniswapV4", "Uniswap V4"], ["UniswapV3", "Uniswap V3 pools"], ["UBI.fun", "UBI.fun"]];
   useEffect(() => { try { setToastsOn(localStorage.getItem("arctools_toasts") !== "0"); } catch { /* ignore */ } }, []);
   const toggleToasts = () => setToastsOn((v) => { try { localStorage.setItem("arctools_toasts", v ? "0" : "1"); } catch { /* ignore */ } return !v; });
   const [browserAddr, setBrowserAddr] = useState<string | null>(null);
@@ -260,14 +260,23 @@ function Trade() {
     else if (tab === "insiders") base = clusters.map((c) => toRow(c.token));
     else if (tab === "favs") base = [...favs].map((t) => toRow(t));
     else base = [];
+    // a source chip turns the table into that launchpad's explorer: every token we know from that source,
+    // with the tab acting only as an extra filter (fresh / watchlist / insiders)
+    if (padF !== "all" && tab !== "holdings") {
+      const src = rows.filter((t) => (t.pad || "").toLowerCase() === padF.toLowerCase()).map((t) => toRow(t.token));
+      const now = Date.now() / 1000;
+      if (tab === "new15") base = src.filter((r) => r.age && now - r.age < 900);
+      else if (tab === "favs") base = src.filter((r) => favs.has(r.token));
+      else if (tab === "insiders") base = src.filter((r) => clusterMap.has(r.token));
+      else base = src;
+    }
     base = base.filter(matches);
-    if (padF !== "all") base = base.filter((r) => (r.pad || "").toLowerCase() === padF.toLowerCase());
     const lo = Number(minMc) || 0, hi = Number(maxMc) || 0, mv = Number(minVol) || 0;
     if (lo) base = base.filter((r) => (r.mcap ?? 0) >= lo);
     if (hi) base = base.filter((r) => (r.mcap ?? 0) > 0 && (r.mcap ?? 0) <= hi);
     if (mv) base = base.filter((r) => r.vol >= mv);
-    if ((tab !== "new" && tab !== "new15") || sortKey !== "vol") {
-      const key = (tab === "new" || tab === "new15") && sortKey === "vol" ? "age" : sortKey;
+    if ((tab !== "new" && tab !== "new15" && padF === "all") || sortKey !== "vol") {
+      const key = ((tab === "new" || tab === "new15") || padF !== "all") && sortKey === "vol" ? "age" : sortKey;
       base.sort((a, b) => key === "age" ? (b.age ?? 0) - (a.age ?? 0) : key === "mcap" ? (b.mcap ?? 0) - (a.mcap ?? 0) : key === "txs" ? b.txs - a.txs : key === "chg" ? (b.chg ?? -1e9) - (a.chg ?? -1e9) : b.vol - a.vol);
     }
     // pin the official token on top (every tab except Holdings), regardless of sort / filter
