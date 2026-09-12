@@ -2,6 +2,7 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { setMemoRuntime } from "./lib/memo-kv";
 import { applySecurityHeaders } from "./lib/security-headers.server";
 
 type ServerEntry = {
@@ -41,6 +42,9 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const e = env as { KV?: import("./lib/memo-kv").KVLike } | undefined;
+      const c = ctx as { waitUntil?: (p: Promise<unknown>) => void } | undefined;
+      setMemoRuntime(e?.KV, c?.waitUntil ? c.waitUntil.bind(c) : undefined);
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return applySecurityHeaders(await normalizeCatastrophicSsrResponse(response));

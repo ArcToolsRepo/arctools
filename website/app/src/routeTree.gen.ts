@@ -26,6 +26,7 @@ import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TokenCaRouteImport } from './routes/token.$ca'
 import { Route as PadCaRouteImport } from './routes/pad.$ca'
+import { Route as ApiWarmRouteImport } from './routes/api/warm'
 import { Route as ApiRpcRouteImport } from './routes/api/rpc'
 import { Route as ApiPadLogoCaRouteImport } from './routes/api/pad-logo.$ca'
 import { Route as ApiLogoIpfsCidRouteImport } from './routes/api/logo.ipfs.$cid'
@@ -115,6 +116,11 @@ const PadCaRoute = PadCaRouteImport.update({
   path: '/pad/$ca',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWarmRoute = ApiWarmRouteImport.update({
+  id: '/api/warm',
+  path: '/api/warm',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiRpcRoute = ApiRpcRouteImport.update({
   id: '/api/rpc',
   path: '/api/rpc',
@@ -148,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/trade': typeof TradeRoute
   '/api/rpc': typeof ApiRpcRoute
+  '/api/warm': typeof ApiWarmRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
@@ -170,6 +177,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/trade': typeof TradeRoute
   '/api/rpc': typeof ApiRpcRoute
+  '/api/warm': typeof ApiWarmRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
@@ -193,6 +201,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/trade': typeof TradeRoute
   '/api/rpc': typeof ApiRpcRoute
+  '/api/warm': typeof ApiWarmRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
@@ -217,6 +226,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/trade'
     | '/api/rpc'
+    | '/api/warm'
     | '/pad/$ca'
     | '/token/$ca'
     | '/api/pad-logo/$ca'
@@ -239,6 +249,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/trade'
     | '/api/rpc'
+    | '/api/warm'
     | '/pad/$ca'
     | '/token/$ca'
     | '/api/pad-logo/$ca'
@@ -261,6 +272,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/trade'
     | '/api/rpc'
+    | '/api/warm'
     | '/pad/$ca'
     | '/token/$ca'
     | '/api/pad-logo/$ca'
@@ -284,6 +296,7 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TradeRoute: typeof TradeRoute
   ApiRpcRoute: typeof ApiRpcRoute
+  ApiWarmRoute: typeof ApiWarmRoute
   PadCaRoute: typeof PadCaRoute
   TokenCaRoute: typeof TokenCaRoute
   ApiPadLogoCaRoute: typeof ApiPadLogoCaRoute
@@ -411,6 +424,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PadCaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/warm': {
+      id: '/api/warm'
+      path: '/api/warm'
+      fullPath: '/api/warm'
+      preLoaderRoute: typeof ApiWarmRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/rpc': {
       id: '/api/rpc'
       path: '/api/rpc'
@@ -452,6 +472,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TradeRoute: TradeRoute,
   ApiRpcRoute: ApiRpcRoute,
+  ApiWarmRoute: ApiWarmRoute,
   PadCaRoute: PadCaRoute,
   TokenCaRoute: TokenCaRoute,
   ApiPadLogoCaRoute: ApiPadLogoCaRoute,

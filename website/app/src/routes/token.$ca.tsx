@@ -15,7 +15,30 @@ import {
 } from "@/lib/arc-wallet";
 import "../arc-site.css";
 
+function TokenSkeleton() {
+  return (
+    <main className="arc-site" style={{ minHeight: "100dvh" }}>
+      <ArcNav active="/feed" />
+      <section className="arc-section" style={{ maxWidth: 1360, paddingTop: 118 }}>
+        <div style={{ alignItems: "center", display: "flex", gap: 14, marginBottom: 18 }}>
+          <div className="arc-skel" style={{ height: 56, width: 56 }} />
+          <div style={{ display: "grid", gap: 8 }}><div className="arc-skel" style={{ height: 26, width: 220 }} /><div className="arc-skel" style={{ height: 14, width: 320 }} /></div>
+        </div>
+        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(4, 1fr)", marginBottom: 16 }}>{[0, 1, 2, 3].map((i) => <div className="arc-skel" key={i} style={{ height: 64 }} />)}</div>
+        <div className="arc-2col" style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr) 340px" }}>
+          <div className="arc-skel" style={{ height: 420 }} />
+          <div className="arc-skel" style={{ height: 420 }} />
+        </div>
+      </section>
+    </main>
+  );
+}
+
 export const Route = createFileRoute("/token/$ca")({
+  pendingComponent: TokenSkeleton,
+  pendingMs: 80,
+  staleTime: 15_000,
+  preloadStaleTime: 15_000,
   loader: async ({ params }) => {
     const r = await tokenPage({ data: { token: params.ca } });
     return { info: "error" in r ? null : r, error: "error" in r ? r.error : null };
@@ -132,7 +155,7 @@ function TokenPage() {
   const [route, setRoute] = useState<RouteResult | null>(null);
   const [hot, setHot] = useState(false);          // sign with the in-browser trading wallet instead of the connected wallet
   const [hotOk, setHotOk] = useState(false);
-  useEffect(() => { setHotOk(isUnlocked()); setHot(isUnlocked()); return onHotChange(() => { setHotOk(isUnlocked()); if (!isUnlocked()) setHot(false); }); }, []);
+  useEffect(() => { setHotOk(isUnlocked()); setHot(isUnlocked()); const off = onHotChange(() => { setHotOk(isUnlocked()); if (!isUnlocked()) setHot(false); }); return () => { off(); }; }, []);
   // graduowany token v3 w parze z innym tokenem (np. BTOLLY/TOLLY): pula jest token/quote, nie token/USDC
   const v3Quote = info?.venue === "v3" && !!info.quoteToken;
 

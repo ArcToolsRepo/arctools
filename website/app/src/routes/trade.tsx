@@ -1,9 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
-import { holderRisk, listTokens, tokenLogos, type PadToken } from "@/lib/arc-api";
-import { padList } from "@/lib/arcpad";
+import { holderRisk, listAllTokens, tokenLogos, type PadToken } from "@/lib/arc-api";
 import { ARC_AGGREGATOR, connectWallet, encodeAggregatorSwap, ethCall, getStoredWallet, onWalletChange, p32, sendTx, waitReceipt } from "@/lib/arc-wallet";
 import { hotAddress, hotCall, hotSend, hotWait } from "@/lib/arc-hotwallet";
 import { WalletPanel } from "@/components/wallet-panel";
@@ -15,6 +14,15 @@ const API = "https://bot-production-4200.up.railway.app";
 const SNIPER = "https://t.me/ArcSniper_bot";
 
 export const Route = createFileRoute("/trade")({
+  // SSR: the first paint already contains the table (lists come from the KV-backed memo — milliseconds)
+  loader: async () => {
+    const [rows, trend] = await Promise.all([
+      listAllTokens().catch(() => [] as PadToken[]),
+      fetch(`${API}/api/trending?minutes=60&limit=120`).then((r) => r.json()).then((j) => (j.rows ?? []) as Trend[]).catch(() => [] as Trend[]),
+    ]);
+    return { rows, trend };
+  },
+  staleTime: 10_000,
   head: () => ({
     meta: [
       { title: "ArcTools Terminal: one-click buys on every Arc launchpad" },
@@ -51,6 +59,13 @@ const hd: React.CSSProperties = { color: "var(--arc-muted)", fontSize: 10, fontW
 
 // ---------------- page ----------------
 function Trade() {
+  const navigate = useNavigate();
+  // whole row is clickable: one click = token page with chart + swap; buttons/links inside keep their own action
+  const rowClick = (token: string) => (e: React.MouseEvent<HTMLTableRowElement>) => {
+    const el = e.target as HTMLElement;
+    if (el.closest("button, a, input")) return;
+    void navigate({ to: "/token/$ca", params: { ca: token } });
+  };
   const [hotAddr, setHotAddr] = useState<string | null>(null);
   // who signs: the in-browser trading wallet (one click) or the connected browser wallet (MetaMask/Rabby — confirm each tx)
   const [signer, setSigner] = useState<"hot" | "browser">("hot");
@@ -66,9 +81,10 @@ function Trade() {
   const [custom, setCustom] = useState("");
   const [slip, setSlip] = useState(5);
   const [tab, setTab] = useState<"new" | "new15" | "trending" | "insiders" | "favs" | "holdings">("trending");
-  const [rows, setRows] = useState<PadToken[]>([]);
+  const initial = Route.useLoaderData();
+  const [rows, setRows] = useState<PadToken[]>(initial?.rows ?? []);
   const [movers, setMovers] = useState<Mover[]>([]);
-  const [trend, setTrend] = useState<Trend[]>([]);
+  const [trend, setTrend] = useState<Trend[]>(initial?.trend ?? []);
   const [tf, setTf] = useState(60);
   const [favs, setFavs] = useState<Set<string>>(new Set());
   const [liq, setLiq] = useState<Map<string, number>>(new Map());
@@ -114,13 +130,7 @@ function Trade() {
     let alive = true;
     const load = async () => {
       try {
-        const [radar, arcpad, warp, tolly, uni, pad, arch, v4, argus] = await Promise.all(
-          ["RadarDex", "ArcPad", "Warp", "Tolly", "UniswapV3", "__pad", "Archemist", "UniswapV4", "Arguspad"].map((p) =>
-            p === "__pad" ? padList().then((ps) => ps.map((x) => ({ createdAt: x.createdAt ? new Date(x.createdAt * 1000).toISOString() : null, logo: x.image, mcapUsd: x.pricePer1M > 0 ? x.pricePer1M * 1000 : null, name: x.name, pad: "ArcToolsPad", pool: null, priceUsd: null, symbol: x.symbol, telegram: x.telegram, token: x.token, twitter: x.twitter, venueUrl: `/token/${x.token}`, volUsd: x.volumeUsdc, website: x.website }) as PadToken)).catch(() => [] as PadToken[])
-              : listTokens({ data: { pad: p } }).catch(() => [] as PadToken[])),
-        );
-        const seen = new Set<string>();
-        const all = [...pad, ...radar, ...arcpad, ...warp, ...tolly, ...arch, ...argus, ...v4, ...uni].filter((t) => { const k = t.token.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+        const all = await listAllTokens();
         if (alive) setRows(all);
       } catch { /* ignore */ }
       fetch(`${API}/api/movers?minutes=1440`).then((r) => r.json()).then((j) => alive && setMovers(j.rows ?? [])).catch(() => null);
@@ -306,13 +316,13 @@ function Trade() {
                   <tbody>
                     {tableRows.length === 0 && <tr><td className="arc-mono" colSpan={10} style={{ ...cell, color: "var(--arc-muted)" }}>{tab === "favs" ? "No favourites yet — click ☆ on any row." : tab === "new15" ? "No launch younger than 15 minutes right now — watch New pair." : tab === "insiders" ? "No token with 2+ insiders in the last 24h." : "Loading…"}</td></tr>}
                     {tableRows.map((r) => (
-                      <tr key={r.token} style={{ background: favs.has(r.token) ? "rgba(46,124,255,0.05)" : undefined }}>
+                      <tr className="arc-row-link" key={r.token} onClick={rowClick(r.token)} onMouseEnter={() => { void import("@/lib/arc-api").then((m) => m.tokenPage({ data: { token: r.token } })).catch(() => null); }} style={{ background: favs.has(r.token) ? "rgba(46,124,255,0.05)" : undefined, cursor: "pointer" }}>
                         <td style={{ ...cell, paddingRight: 4 }}><button onClick={() => toggleFav(r.token)} style={{ background: "none", border: "none", color: favs.has(r.token) ? "#f5c542" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, padding: 0 }} title="favourite" type="button">{favs.has(r.token) ? "★" : "☆"}</button></td>
                         <td style={{ ...cell, minWidth: 250 }}>
                           <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
-                            <a href={`/token/${r.token}`} style={{ textDecoration: "none" }}><span style={{ alignItems: "center", background: "#0e1118", border: "1px solid var(--arc-line)", borderRadius: 8, display: "inline-flex", height: 38, justifyContent: "center", overflow: "hidden", width: 38 }}>{r.logo ? <img alt="" height={38} src={r.logo} style={{ objectFit: "cover" }} width={38} /> : <span className="arc-mono" style={{ fontSize: 14 }}>{r.symbol.slice(0, 1)}</span>}</span></a>
+                            <Link params={{ ca: r.token }} preload="intent" style={{ textDecoration: "none" }} to="/token/$ca"><span style={{ alignItems: "center", background: "#0e1118", border: "1px solid var(--arc-line)", borderRadius: 8, display: "inline-flex", height: 38, justifyContent: "center", overflow: "hidden", width: 38 }}>{r.logo ? <img alt="" height={38} src={r.logo} style={{ objectFit: "cover" }} width={38} /> : <span className="arc-mono" style={{ fontSize: 14 }}>{r.symbol.slice(0, 1)}</span>}</span></Link>
                             <div style={{ lineHeight: 1.25 }}>
-                              <div><a href={`/token/${r.token}`} style={{ color: "var(--arc-ink)", fontWeight: 700, textDecoration: "none" }}>{r.symbol}</a> <span style={{ color: "var(--arc-muted)", fontSize: 12 }}>{r.name.slice(0, 18)}</span>
+                              <div><Link params={{ ca: r.token }} preload="intent" style={{ color: "var(--arc-ink)", fontWeight: 700, textDecoration: "none" }} to="/token/$ca">{r.symbol}</Link> <span style={{ color: "var(--arc-muted)", fontSize: 12 }}>{r.name.slice(0, 18)}</span>
                                 {r.twitter && <a href={r.twitter} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 6 }} target="_blank">𝕏</a>}
                                 {r.telegram && <a href={r.telegram} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 4 }} target="_blank">✈︎</a>}
                                 {r.website && <a href={r.website} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 4 }} target="_blank">🌐</a>}
@@ -347,7 +357,7 @@ function Trade() {
                     {addr && positions.length === 0 && <tr><td className="arc-mono" colSpan={8} style={{ ...cell, color: "var(--arc-muted)" }}>No open positions yet (positions come from your on-chain swaps; new buys appear within seconds).</td></tr>}
                     {positions.map((p) => { const t = byToken.get(p.token.toLowerCase()); const sym = p.symbol ?? t?.symbol ?? short(p.token); return (
                       <tr key={p.token}>
-                        <td style={cell}><a href={`/token/${p.token}`} style={{ color: "var(--arc-ink)", textDecoration: "none" }}><Logo t={{ logo: t?.logo, symbol: sym }} /><strong>{sym}</strong></a></td>
+                        <td style={cell}><Link params={{ ca: p.token }} preload="intent" style={{ color: "var(--arc-ink)", textDecoration: "none" }} to="/token/$ca"><Logo t={{ logo: t?.logo, symbol: sym }} /><strong>{sym}</strong></Link></td>
                         <td className="arc-mono" style={cell}>{num(p.net)}</td>
                         <td className="arc-mono" style={{ ...cell, color: "var(--arc-muted)" }}>{priceStr(p.avg || null)}</td>
                         <td className="arc-mono" style={cell}>{priceStr(p.price)}</td>

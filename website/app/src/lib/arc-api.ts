@@ -6,6 +6,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { bindings } from "@/lib/bindings.server";
+import { keepAlive, memoKV } from "@/lib/memo-kv";
 
 // Primary: our Railway relay (arc-scan via Railway egress: no CF 429, no quota).
 // Fallbacks: Infura shared key (daily quota), then arc-scan direct.
@@ -94,31 +95,59 @@ export async function rpc(method: string, params: any[]): Promise<any> {
 
 const memoStore = new Map<string, { ts: number; v: unknown }>();
 const memoInflight = new Map<string, Promise<unknown>>();
+const KV_MAX_STALE_MS = 6 * 60 * 60 * 1000;   // serve a KV value up to 6 h old while a refresh runs
 
-/** Cache fn() result for ttlMs. Stale-while-revalidate: when the TTL expires,
- *  exactly ONE caller recomputes (and waits); everyone else is served the
- *  previous value instantly, so tail latency never depends on recompute time. */
+function kv() { return memoKV(); }
+
+/** Cache fn() result for ttlMs.
+ *  Tier 1: isolate memory. Tier 2: Cloudflare KV, shared by EVERY isolate and colo — a cold Worker
+ *  answers from KV in a few ms instead of recomputing 9 upstreams. Stale-while-revalidate on both
+ *  tiers: once the TTL expires exactly ONE caller recomputes, everyone else gets the previous value
+ *  instantly, so tail latency never depends on upstream speed. /api/warm keeps KV fresh in background. */
 export async function memo<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
+  const now = Date.now();
   const hit = memoStore.get(key);
-  if (hit && Date.now() - hit.ts < ttlMs) return hit.v as T;
+  if (hit && now - hit.ts < ttlMs) return hit.v as T;
   const inflight = memoInflight.get(key);
   if (inflight) {
-    // refresh already running: serve stale immediately if we have anything
     if (hit) return hit.v as T;
     return inflight as Promise<T>;
   }
-  const p = fn()
-    .then((v) => {
-      memoStore.set(key, { ts: Date.now(), v });
-      if (memoStore.size > 500) {
-        const oldest = [...memoStore.entries()].sort((a, b) => a[1].ts - b[1].ts).slice(0, 250);
-        for (const [k] of oldest) memoStore.delete(k);
+  const store = kv();
+  // tier 2: shared KV
+  if (!hit && store) {
+    try {
+      const raw = await store.get(`memo:${key}`, "text");
+      if (raw) {
+        const rec = JSON.parse(raw) as { ts: number; v: T };
+        memoStore.set(key, rec);
+        if (now - rec.ts < ttlMs) return rec.v;
+        // stale: refresh in background, answer now
+        keepAlive(refresh());
+        return rec.v;
       }
-      return v;
-    })
-    .finally(() => memoInflight.delete(key));
-  memoInflight.set(key, p);
-  return p;
+    } catch { /* KV unavailable: fall through */ }
+  }
+  if (hit) { keepAlive(refresh()); return hit.v as T; }
+  return refresh();
+
+  async function refresh(): Promise<T> {
+    const p = (async () => {
+      try {
+        const v = await fn();
+        const rec = { ts: Date.now(), v };
+        memoStore.set(key, rec);
+        if (store) {
+          try { await store.put(`memo:${key}`, JSON.stringify(rec), { expirationTtl: Math.max(60, Math.ceil(KV_MAX_STALE_MS / 1000)) }); } catch { /* ignore */ }
+        }
+        return v;
+      } finally {
+        memoInflight.delete(key);
+      }
+    })();
+    memoInflight.set(key, p);
+    return p;
+  }
 }
 
 // ---------------- Multicall3: hundreds of eth_calls in ONE request ----------------
@@ -1638,3 +1667,31 @@ export const holderRisk = createServerFn({ method: "POST" })
       return r as Record<string, { holders: number; top10: number | null; top1: number | null }>;
     } catch { return {}; }
   });
+
+/** Every source in ONE round-trip for the Terminal: merged + de-duplicated, memoized (memory + KV).
+ *  Each source is itself memoized, so a refresh only recomputes what actually expired. */
+export const ALL_PADS = ["RadarDex", "ArcPad", "Warp", "Tolly", "UniswapV3", "Archemist", "UniswapV4", "Arguspad"] as const;
+export async function listAllTokensImpl(): Promise<PadToken[]> {
+  const { padList } = await import("@/lib/arcpad");
+  const [pad, ...rest] = await Promise.all([
+    padList().then((ps) => ps.map((x) => ({ createdAt: x.createdAt ? new Date(x.createdAt * 1000).toISOString() : null, logo: x.image, mcapUsd: x.pricePer1M > 0 ? x.pricePer1M * 1000 : null, name: x.name, pad: "ArcToolsPad", pool: null, priceUsd: null, symbol: x.symbol, telegram: x.telegram, token: x.token, twitter: x.twitter, venueUrl: `/token/${x.token}`, volUsd: x.volumeUsdc, website: x.website }) as PadToken)).catch(() => [] as PadToken[]),
+    ...ALL_PADS.map((p) => listTokens({ data: { pad: p } }).catch(() => [] as PadToken[])),
+  ]);
+  const seen = new Set<string>();
+  // order = priority when the same token appears in several sources
+  const order = ["ArcPad", "RadarDex", "Warp", "Tolly", "Archemist", "Arguspad", "UniswapV4", "UniswapV3"];
+  const byName = new Map(ALL_PADS.map((p, i) => [p, rest[i]]));
+  const all = [...pad, ...order.flatMap((p) => byName.get(p as typeof ALL_PADS[number]) ?? [])].filter((t) => { const k = t.token.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  // keep the payload small (the Terminal shows 100 rows per tab): newest 600 + top 300 by volume, compact fields
+  const ts = (t: PadToken) => (t.createdAt ? Date.parse(t.createdAt) : 0);
+  const newest = [...all].sort((a, b) => ts(b) - ts(a)).slice(0, 400);
+  const busiest = [...all].sort((a, b) => (b.volUsd ?? 0) - (a.volUsd ?? 0)).slice(0, 200);
+  const keep = new Map<string, PadToken>();
+  for (const t of [...newest, ...busiest]) keep.set(t.token.toLowerCase(), t);
+  return [...keep.values()].sort((a, b) => ts(b) - ts(a)).map((t) => ({
+    createdAt: t.createdAt, logo: t.logo, mcapUsd: t.mcapUsd, name: (t.name ?? "").slice(0, 40), pad: t.pad, pool: t.pool, priceUsd: t.priceUsd, stage: t.stage ?? null,
+    symbol: (t.symbol ?? "").slice(0, 16), telegram: t.telegram, token: t.token, twitter: t.twitter, venueUrl: t.venueUrl, volUsd: t.volUsd, website: t.website,
+  }) as PadToken);
+}
+export const listAllTokens = createServerFn({ method: "POST" })
+  .handler((): Promise<PadToken[]> => memo("list:__all", 15_000, listAllTokensImpl));

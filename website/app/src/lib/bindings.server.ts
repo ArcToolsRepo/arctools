@@ -26,6 +26,7 @@ type AppEnv = {
   SEND_AUTH?: string;
   APP_SLUG?: string;
   FAUCET_AUTH?: string;
+  WARM_AUTH?: string;
 };
 
 export function bindings(): AppEnv {

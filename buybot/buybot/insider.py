@@ -322,6 +322,8 @@ async def v4_bootstrap():
     _v4_cache.clear()
     asyncio.create_task(v4_keys_backfill(), name="v4-keys-backfill")
     await warm_supply_cache()
+    from .warm import warm_loop
+    asyncio.create_task(warm_loop(), name="site-warm")
     if await db.kv_get("v4_bootstrapped"):
         return
     head = await CHAIN._bn()

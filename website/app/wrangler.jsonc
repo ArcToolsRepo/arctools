@@ -48,6 +48,8 @@
       "database_id": "4c68f1e3-89fc-4bbb-aa20-4056d753ab7b",
     },
   ],
+  // globalny cache odpowiedzi (memo() w arc-api.ts): wszystkie izolaty Workera wspoldziela wyniki
+  "kv_namespaces": [{ "binding": "KV", "id": "5f4b83d7a063494aba291c6cbc13cca7" }],
 
   // ── OPT-IN INFRA (off by default) ────────────────────────────────
   // Declare the service in app.manifest.json; the deploy injects the real

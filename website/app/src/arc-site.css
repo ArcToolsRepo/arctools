@@ -664,3 +664,8 @@
 .arc-tool__go { margin-top: auto; padding-top: 6px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--arc-cobalt); }
 @media (max-width: 900px) { .arc-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .arc-tools { grid-template-columns: 1fr; } }
+
+.arc-row-link { transition: background .1s; }
+.arc-row-link:hover { background: rgba(46,124,255,0.08) !important; }
+.arc-skel { background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.09) 50%, rgba(255,255,255,0.04) 75%); background-size: 400% 100%; animation: arc-skel 1.2s ease infinite; border-radius: 6px; }
+@keyframes arc-skel { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
