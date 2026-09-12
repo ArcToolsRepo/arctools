@@ -10,7 +10,7 @@ import { TokenLogo } from "@/components/token-logo";
  */
 const API = "https://bot-production-4200.up.railway.app";
 const SHOW_MS = 6500;
-const MAX_VISIBLE = 4;
+const MAX_VISIBLE = 3;
 const MIN_USD = 5;
 
 type Swap = { tx: string; log_index: number; ts: number; token: string; side: "buy" | "sell"; usdc: number; price1m: number | null; symbol: string | null; rank: number | null };
@@ -63,23 +63,22 @@ export function TradeToasts({ tokens, logos, enabled = true }: { tokens: string[
 
   if (!toasts.length) return null;
   return (
-    <div aria-live="polite" className="arc-toasts" style={{ bottom: 18, display: "flex", flexDirection: "column", gap: 8, maxWidth: "calc(100vw - 36px)", pointerEvents: "none", position: "fixed", width: 340, zIndex: 60 }}>
+    <div aria-live="polite" className="arc-toasts" style={{ bottom: 14, display: "flex", flexDirection: "column", gap: 6, maxWidth: "calc(100vw - 28px)", pointerEvents: "none", position: "fixed", right: 14, width: 250, zIndex: 60 }}>
       {toasts.map((t) => {
         const up = t.side === "buy"; const col = up ? "var(--arc-up)" : "#f0534f";
         return (
-          <Link className="arc-toast" key={t.key} params={{ ca: t.token }} style={{ alignItems: "center", background: "rgba(10,14,22,0.96)", border: "1px solid rgba(255,255,255,0.08)", borderLeft: `3px solid ${col}`, borderRadius: 12, boxShadow: "0 8px 30px rgba(0,0,0,0.45)", color: "var(--arc-ink)", display: "flex", gap: 12, padding: "10px 14px", pointerEvents: "auto", textDecoration: "none" }} to="/token/$ca">
-            <TokenLogo radius={20} size={40} src={logos[t.token.toLowerCase()] ?? null} symbol={t.symbol ?? "?"} />
+          <Link className="arc-toast" key={t.key} params={{ ca: t.token }} style={{ alignItems: "center", background: "rgba(10,14,22,0.94)", border: "1px solid rgba(255,255,255,0.08)", borderLeft: `3px solid ${col}`, borderRadius: 10, boxShadow: "0 6px 22px rgba(0,0,0,0.4)", color: "var(--arc-ink)", display: "flex", gap: 8, padding: "7px 10px", pointerEvents: "auto", textDecoration: "none" }} to="/token/$ca">
+            <TokenLogo radius={14} size={28} src={logos[t.token.toLowerCase()] ?? null} symbol={t.symbol ?? "?"} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ alignItems: "baseline", display: "flex", gap: 8 }}>
-                <strong style={{ fontSize: 15 }}>{t.symbol ?? short(t.token)}</strong>
-                <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{short(t.token)}</span>
-                {t.rank != null && <span className="arc-mono" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", borderRadius: 4, fontSize: 10, padding: "0 5px" }}>INSIDER #{t.rank}</span>}
+              <div style={{ alignItems: "baseline", display: "flex", gap: 6, overflow: "hidden", whiteSpace: "nowrap" }}>
+                <strong style={{ fontSize: 12.5 }}>{(t.symbol ?? short(t.token)).slice(0, 10)}</strong>
+                {t.rank != null && <span className="arc-mono" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", borderRadius: 4, fontSize: 9, padding: "0 4px" }}>#{t.rank}</span>}
               </div>
-              <div className="arc-mono" style={{ color: col, fontSize: 13 }}>{up ? "Buy" : "Sell"}{fmtPrice(t.price1m) ? ` · ${fmtPrice(t.price1m)}` : ""}</div>
+              <div className="arc-mono" style={{ color: col, fontSize: 11, whiteSpace: "nowrap" }}>{up ? "Buy" : "Sell"}{fmtPrice(t.price1m) ? ` · ${fmtPrice(t.price1m)}` : ""}</div>
             </div>
-            <div style={{ textAlign: "right" }}>
-              <div className="arc-mono" style={{ color: col, fontSize: 16, fontWeight: 700 }}>{fmtUsd(t.usdc)}</div>
-              <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>now</div>
+            <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+              <div className="arc-mono" style={{ color: col, fontSize: 13, fontWeight: 700 }}>{fmtUsd(t.usdc)}</div>
+              <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10 }}>now</div>
             </div>
           </Link>
         );

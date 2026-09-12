@@ -671,7 +671,6 @@
 @keyframes arc-skel { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 
 .arc-toast { animation: arc-toast-in .28s cubic-bezier(.2,.9,.3,1.2) both; }
-@keyframes arc-toast-in { from { opacity: 0; transform: translateX(-16px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes arc-toast-in { from { opacity: 0; transform: translateX(16px) scale(.98); } to { opacity: 1; transform: none; } }
 
-.arc-toasts { left: 18px; }
-@media (min-width: 1024px) { .arc-site:has(.arc-nav--side) .arc-toasts { left: 238px; } }
+.arc-toasts { right: 14px; }
