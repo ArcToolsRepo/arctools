@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArcNav } from "@/components/arc-nav";
 import { WalletPanel } from "@/components/wallet-panel";
 import { hotAddress, hotBalance, hotCall, hotSend, hotWait, isUnlocked, onHotChange } from "@/lib/arc-hotwallet";
+import { getPortfolio } from "@/lib/arc-api";
 import { routeSwap } from "@/lib/arc-route";
 import { ARC_AGGREGATOR, encodeAggregatorSwap, p32, pnum } from "@/lib/arc-wallet";
 import "../arc-site.css";
@@ -15,7 +16,7 @@ export const Route = createFileRoute("/profile")({
   component: Profile,
 });
 
-type Position = { token: string; symbol: string | null; net: number; avg: number; price: number | null; value: number | null; unrealized: number | null; realized: number; cost: number; proceeds: number; n: number; last_ts: number };
+type Position = { token: string; symbol: string | null; net: number; avg: number; price: number | null; value: number | null; unrealized: number | null; realized: number; cost: number; proceeds: number; n: number; last_ts: number; onchain?: boolean; external?: boolean };
 type Trade = { tx: string; ts: number; token: string; side: string; usdc: number; tokens: number; price1m: number | null; venue: string; symbol: string | null };
 type Hist = { trades: Trade[]; summary: { n: number; bought: number; sold: number; first_ts: number; tokens: number }; stats: { range: string; pnl_realized: number; pnl_unrealized: number; pnl_total: number; winrate: number; closed: number; volume: number }[] };
 type Move = { wallet: string; ts: number; balance: number; delta: number };
@@ -48,14 +49,39 @@ function Profile() {
     setAddr(a);
     if (!a) { setPos([]); setHist(null); setBal(null); return; }
     const w = a.toLowerCase();
-    const [b, p, h, m] = await Promise.all([
+    const [b, p, h, m, chain] = await Promise.all([
       hotBalance(a).catch(() => null),
       fetch(`${API}/api/positions?wallet=${w}`).then((r) => r.json()).catch(() => null),
       fetch(`${API}/api/wallet-trades?wallet=${w}&limit=300`).then((r) => r.json()).catch(() => null),
       fetch(`${API}/api/balance-moves?hours=336&min_usd=1`).then((r) => r.json()).catch(() => null),
+      getPortfolio({ data: { wallet: a } }).catch(() => null),   // arc-scan indexer: EVERY erc20 the wallet holds
     ]);
     setBal(b);
-    setPos((p?.positions ?? []).filter((x: Position) => x.net > 0 && (x.value ?? 0) >= 0.01));
+    // merge: on-chain balances are the source of truth for amount/value; the swap index adds avg entry + realized PnL
+    const idx = new Map<string, Position>(((p?.positions ?? []) as Position[]).map((x) => [x.token.toLowerCase(), x]));
+    const merged: Position[] = [];
+    const seen = new Set<string>();
+    const holdings = chain && !("error" in chain) ? chain.holdings : [];
+    for (const hld of holdings) {
+      const k = hld.token.toLowerCase();
+      seen.add(k);
+      const ix = idx.get(k);
+      const amount = hld.amount;
+      if (amount <= 0) continue;
+      // on-chain quote (quoter / curve / screener via getPortfolio) is the truth; the index price is only a fallback
+      const price = hld.valueUsdc != null && amount > 0 ? hld.valueUsdc / amount : (ix?.price ?? null);
+      const value = hld.valueUsdc ?? (price ? price * amount : null);
+      merged.push({
+        token: hld.token, symbol: ix?.symbol ?? hld.symbol, net: amount, avg: ix?.avg ?? 0, price, value,
+        unrealized: ix && ix.avg && price ? (price - ix.avg) * amount : null,
+        realized: ix?.realized ?? 0, cost: ix?.cost ?? 0, proceeds: ix?.proceeds ?? 0, n: ix?.n ?? 0, last_ts: ix?.last_ts ?? 0,
+        onchain: true, external: !ix,
+      });
+    }
+    // index positions the indexer did not list (indexer lag right after a buy): keep them until the next refresh
+    for (const [k, ix] of idx) if (!seen.has(k) && ix.net > 0 && (ix.value ?? 0) >= 0.01 && holdings.length === 0) merged.push(ix);
+    merged.sort((x, y) => (y.value ?? 0) - (x.value ?? 0));
+    setPos(merged.filter((x) => (x.value ?? 0) >= 0.005 || x.external));
     setHist(h);
     setMoves(((m?.rows ?? []) as Move[]).filter((x) => x.wallet.toLowerCase() === w));
   }, []);
@@ -130,7 +156,7 @@ function Profile() {
                   {[
                     ["Total equity", usd(totals.equity), "USDC + positions at last price"],
                     ["USDC balance", bal !== null ? `${bal.toFixed(2)}` : "…", "available to trade or withdraw"],
-                    ["Positions value", usd(totals.value), `${pos.length} open`],
+                    ["Positions value", usd(totals.value), `${pos.length} tokens held`],
                     ["Unrealized PnL", usd(totals.unreal), "vs average entry", totals.unreal],
                     ["Realized 30d", totals.s30 ? usd(totals.s30.pnl_realized) : "—", totals.s30 ? `win-rate ${Math.round(totals.s30.winrate)}% · ${totals.s30.closed} closed` : "no closed positions yet", totals.s30?.pnl_realized],
                     ["Volume all-time", usd((hist?.summary.bought ?? 0) + (hist?.summary.sold ?? 0)), `${hist?.summary.n ?? 0} trades · ${hist?.summary.tokens ?? 0} tokens`],
@@ -158,9 +184,9 @@ function Profile() {
                         {pos.length === 0 && <tr><td className="arc-mono" colSpan={9} style={{ ...td, color: "var(--arc-muted)" }}>No open positions. Buy something on <a href="/trade" style={{ color: "var(--arc-cobalt)" }}>/trade</a>.</td></tr>}
                         {pos.map((p) => (
                           <tr key={p.token}>
-                            <td style={td}><a href={`/token/${p.token}`} style={{ color: "var(--arc-ink)" }}><strong>{p.symbol ?? short(p.token)}</strong></a></td>
+                            <td style={td}><a href={`/token/${p.token}`} style={{ color: "var(--arc-ink)" }}><strong>{p.symbol ?? short(p.token)}</strong></a>{p.external && <span className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 3, color: "var(--arc-muted)", fontSize: 9, marginLeft: 6, padding: "0 4px" }} title="Held on-chain but not bought through a swap from this wallet (transferred in) — no entry price, so no PnL">transferred in</span>}</td>
                             <td className="arc-mono" style={td}>{num(p.net)}</td>
-                            <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{priceStr(p.avg || null)}</td>
+                            <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{p.avg ? priceStr(p.avg) : "—"}</td>
                             <td className="arc-mono" style={td}>{priceStr(p.price)}</td>
                             <td className="arc-mono" style={{ ...td, fontWeight: 700 }}>{usd(p.value)}</td>
                             <td className="arc-mono" style={{ ...td, color: (p.unrealized ?? 0) >= 0 ? UP : DOWN }}>{p.unrealized != null ? `${usd(p.unrealized)}${p.avg && p.price ? ` (${(((p.price - p.avg) / p.avg) * 100).toFixed(0)}%)` : ""}` : "—"}</td>
@@ -244,7 +270,7 @@ function Profile() {
                 <li>USDC balance: live from the chain.</li>
                 <li>Positions and trades: our chain-wide swap index for this address (every venue on Arc).</li>
                 <li>Prices: last indexed trade per token; PnL uses average cost.</li>
-                <li>Tokens bought elsewhere and sent here show up in the explorer, not in PnL.</li>
+                <li>Holdings: every ERC-20 the wallet holds (arc-scan indexer), so transferred-in tokens appear too — marked "transferred in", sellable and withdrawable, but without entry price.</li>
               </ul>
             </div>
           </div>
