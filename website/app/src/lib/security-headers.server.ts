@@ -22,6 +22,15 @@ export function applySecurityHeaders(response: Response): Response {
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   headers.set("X-XSS-Protection", "0");
+  // HTML must always revalidate: hashed /assets/* are immutable, but a heuristically cached
+  // HTML shell keeps pointing at old bundles and users see a stale site after every deploy.
+  const ct = headers.get("Content-Type") ?? "";
+  if (ct.includes("text/html")) {
+    headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
+    headers.set("Pragma", "no-cache");
+  } else if (!headers.has("Cache-Control") && /\/assets\//.test(response.url ?? "")) {
+    headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  }
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
