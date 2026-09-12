@@ -275,7 +275,7 @@ async def api_positions(request: web.Request) -> web.Response:
     if not _is_addr(w):
         return web.json_response({"error": "bad wallet"}, status=400, headers=API_CORS)
     rows = await db.fetchall(text("""
-        SELECT s.token, sym.symbol,
+        SELECT s.token, MAX(sym.symbol) AS symbol,
                SUM(CASE WHEN s.side='buy' THEN s.tokens ELSE 0 END) AS bought,
                SUM(CASE WHEN s.side='sell' THEN s.tokens ELSE 0 END) AS sold,
                SUM(CASE WHEN s.side='buy' THEN s.usdc ELSE 0 END) AS cost,
@@ -283,7 +283,7 @@ async def api_positions(request: web.Request) -> web.Response:
                COUNT(*) AS n, MAX(s.ts) AS last_ts,
                (SELECT price1m FROM swaps p WHERE p.token = s.token AND p.price1m > 0 AND p.usdc >= 0.5 ORDER BY p.ts DESC LIMIT 1) AS price1m
         FROM swaps s LEFT JOIN token_symbols sym ON sym.token = s.token
-        WHERE s.wallet = :w GROUP BY s.token, sym.symbol ORDER BY MAX(s.ts) DESC LIMIT 60""").bindparams(w=w))
+        WHERE s.wallet = :w GROUP BY s.token ORDER BY MAX(s.ts) DESC LIMIT 60""").bindparams(w=w))
     out = []
     for r in rows:
         d = dict(r)
@@ -296,3 +296,24 @@ async def api_positions(request: web.Request) -> web.Response:
         out.append(d)
     await _fill_symbols(out)
     return web.json_response({"wallet": w, "positions": out}, headers=API_CORS)
+
+
+async def api_wallet_trades(request: web.Request) -> web.Response:
+    """Full trade history of a wallet from the index (newest first, paginated) + summary."""
+    w = (request.query.get("wallet") or "").lower()
+    if not _is_addr(w):
+        return web.json_response({"error": "bad wallet"}, status=400, headers=API_CORS)
+    limit = min(500, int(request.query.get("limit", "200")))
+    offset = max(0, int(request.query.get("offset", "0")))
+    rows = await db.fetchall(text(
+        "SELECT s.tx, s.log_index, s.ts, s.token, s.side, s.usdc, s.tokens, s.price1m, s.venue, sym.symbol "
+        "FROM swaps s LEFT JOIN token_symbols sym ON sym.token = s.token WHERE s.wallet = :w "
+        "ORDER BY s.ts DESC, s.log_index DESC LIMIT :l OFFSET :o").bindparams(w=w, l=limit, o=offset))
+    agg = await db.fetchone(text(
+        "SELECT COUNT(*) AS n, SUM(CASE WHEN side='buy' THEN usdc ELSE 0 END) AS bought, "
+        "SUM(CASE WHEN side='sell' THEN usdc ELSE 0 END) AS sold, MIN(ts) AS first_ts, COUNT(DISTINCT token) AS tokens "
+        "FROM swaps WHERE wallet = :w").bindparams(w=w))
+    st = await db.fetchall(text("SELECT range, pnl_realized, pnl_unrealized, pnl_total, winrate, closed, volume FROM wallet_stats WHERE wallet = :w").bindparams(w=w))
+    out = [dict(r) for r in rows]
+    await _fill_symbols(out)
+    return web.json_response({"wallet": w, "trades": out, "summary": dict(agg) if agg else {}, "stats": [dict(x) for x in st]}, headers=API_CORS)

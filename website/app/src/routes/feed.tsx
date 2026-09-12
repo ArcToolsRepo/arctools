@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
+import { QuickBuy } from "@/components/quick-buy";
 import { padList } from "@/lib/arcpad";
 import {
   getMcaps,
@@ -256,6 +257,7 @@ function TokenRow({ t }: { t: PadToken }) {
         <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, minWidth: 34, textAlign: "right" }}>
           {ago(t.createdAt)}
         </span>
+        <span onClick={(e) => e.preventDefault()} style={{ marginLeft: 6 }}><QuickBuy compact symbol={t.symbol} token={t.token} /></span>
         <span className="arc-mono" style={{ color: "var(--arc-cobalt)", fontSize: 13 }}>
           {open ? "▴" : "▾"}
         </span>

@@ -6,6 +6,8 @@ import { SocialCheck } from "@/components/social-check";
 import { TvChart, type Candle } from "@/components/tv-chart";
 import { ARC_V4_ROUTER, SWAP_FEE_ROUTER, tokenPage, venueData, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
 import { routeSwap, type RouteResult } from "@/lib/arc-route";
+import { hotAddress, hotSend, isUnlocked, onHotChange } from "@/lib/arc-hotwallet";
+import { QuickBuy } from "@/components/quick-buy";
 import { ARC_AGGREGATOR, encodeAggregatorSwap } from "@/lib/arc-wallet";
 import { padHolders } from "@/lib/arcpad";
 import {
@@ -128,6 +130,9 @@ function TokenPage() {
   // aggregator handles every USDC-paired venue (V3 tiers, V4 pools, ArcToolsPad USDC curves) with best-price + split routing
   const useAgg = !!info && ((info.venue === "v3" && !info.quoteToken) || info.venue === "v4" || info.venue === "curve" || (info.venue === "pad" && !info.quoteToken));
   const [route, setRoute] = useState<RouteResult | null>(null);
+  const [hot, setHot] = useState(false);          // sign with the in-browser trading wallet instead of the connected wallet
+  const [hotOk, setHotOk] = useState(false);
+  useEffect(() => { setHotOk(isUnlocked()); setHot(isUnlocked()); return onHotChange(() => { setHotOk(isUnlocked()); if (!isUnlocked()) setHot(false); }); }, []);
   // graduowany token v3 w parze z innym tokenem (np. BTOLLY/TOLLY): pula jest token/quote, nie token/USDC
   const v3Quote = info?.venue === "v3" && !!info.quoteToken;
 
@@ -175,13 +180,15 @@ function TokenPage() {
 
   // ---- wallet
   const refreshBalances = useCallback(async (addr: string | null) => {
+    if (hot && isUnlocked() && hotAddress()) addr = hotAddress();
     if (!addr || !ca) return;
     try {
       const [u, t] = await Promise.all([quoteTok ? tokenBalance(quoteTok, addr).then((b) => Number(b / 10n ** 12n) / 1e6) : nativeBalance(addr), tokenBalance(ca, addr)]);
       setBalUsdc(u);
       setBalTok(Number(t / BigInt(10) ** BigInt(Math.max(0, dec - 6))) / 1e6);
     } catch { /* ignore */ }
-  }, [ca, dec, quoteTok]);
+  }, [ca, dec, quoteTok, hot]);
+  useEffect(() => { void refreshBalances(wallet); }, [hot, refreshBalances, wallet]);
   useEffect(() => {
     let saved: string | null = null;
     try { saved = localStorage.getItem("arctools_wallet"); } catch { /* ignore */ }
@@ -261,8 +268,12 @@ function TokenPage() {
     setMsg(null); setErr(null);
     try {
       if (!info) return;
-      const from = wallet ?? (await connectWallet());
-      setWallet(from);
+      const useHotNow = hot && useAgg && isUnlocked() && !!hotAddress();
+      const from = useHotNow ? hotAddress()! : (wallet ?? (await connectWallet()));
+      if (!useHotNow) setWallet(from);
+      const send = useHotNow
+        ? (tx: { to: string; data: string; value?: bigint; from: string }) => hotSend({ to: tx.to, data: tx.data, value: tx.value })
+        : sendTx;
       const n = Number(amount);
       if (!n || n <= 0) throw new Error("Enter an amount.");
       if (quote === null) throw new Error("No quote yet.");
@@ -274,17 +285,17 @@ function TokenPage() {
           const spend = legs.reduce((s, l) => s + BigInt(l.amount), 0n);
           const value = spend + spend / 100n;
           const minOut = BigInt(Math.round(quote * (1 - slippage / 100) * 1e6)) * BigInt(10) ** BigInt(Math.max(0, dec - 6));
-          hash = await sendTx({ data: encodeAggregatorSwap("buy", ca, legs, minOut, from, 100), from, to: ARC_AGGREGATOR, value });
+          hash = await send({ data: encodeAggregatorSwap("buy", ca, legs, minOut, from, 100), from, to: ARC_AGGREGATOR, value });
         } else {
           const tokIn = legs.reduce((s, l) => s + BigInt(l.amount), 0n);
           const minOut = BigInt(Math.round(quote * (1 - slippage / 100) * 1e6)) * 10n ** 12n;   // post-fee native USDC
           const al = await ethCall(ca, SEL.allowance + p32(from) + p32(ARC_AGGREGATOR));
           if (!al || BigInt(al) < tokIn) {
             setBusy(`Approve ${info.symbol}...`);
-            await waitReceipt(await sendTx({ data: SEL.approve + p32(ARC_AGGREGATOR) + "f".repeat(64), from, to: ca }));
+            await waitReceipt(await send({ data: SEL.approve + p32(ARC_AGGREGATOR) + "f".repeat(64), from, to: ca }));
             setBusy("Confirm in wallet...");
           }
-          hash = await sendTx({ data: encodeAggregatorSwap("sell", ca, legs, minOut, from, 100), from, to: ARC_AGGREGATOR });
+          hash = await send({ data: encodeAggregatorSwap("sell", ca, legs, minOut, from, 100), from, to: ARC_AGGREGATOR });
         }
       } else if (info.venue === "pad") {
         const minOut = BigInt(Math.round(quote * (1 - slippage / 100) * 1e6)) * 10n ** 12n;
@@ -619,8 +630,19 @@ function TokenPage() {
                 </div>
                 {err && <p className="arc-mono" style={{ color: "var(--arc-error)", fontSize: 11 }}>{err}</p>}
                 {msg && <p className="arc-mono" style={{ color: "#22c580", fontSize: 11 }}>{msg}</p>}
+                {useAgg && (
+                  <div className="arc-mono" style={{ alignItems: "center", display: "flex", fontSize: 11, gap: 8, justifyContent: "space-between", margin: "2px 0 6px" }}>
+                    <span style={{ color: "var(--arc-muted)" }}>sign with</span>
+                    <span>
+                      <button className="arc-mono" onClick={() => setHot(false)} style={{ background: !hot ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (!hot ? "var(--arc-cobalt)" : "var(--arc-line)"), color: !hot ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "2px 8px" }} type="button">connected wallet</button>
+                      {hotOk
+                        ? <button className="arc-mono" onClick={() => setHot(true)} style={{ background: hot ? "rgba(34,197,128,0.18)" : "transparent", border: "1px solid " + (hot ? "var(--arc-up)" : "var(--arc-line)"), color: hot ? "var(--arc-up)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, marginLeft: 4, padding: "2px 8px" }} type="button">⚡ trading wallet</button>
+                        : <a className="arc-mono" href={`/trade?buy=${ca}`} style={{ color: "var(--arc-up)", fontSize: 11, marginLeft: 8 }}>⚡ trading wallet ↗</a>}
+                    </span>
+                  </div>
+                )}
                 <button className="arc-cta" disabled={!!busy} onClick={() => void swap()} style={{ background: side === "buy" ? "#22c580" : "#f0534f", border: "none", color: "#06090f", cursor: busy ? "wait" : "pointer", fontWeight: 700, marginTop: 4, width: "100%" }} type="button">
-                  {busy ?? (wallet ? `${side === "buy" ? "Buy" : "Sell"} ${info.symbol}` : "Connect & trade")}
+                  {busy ?? (hot && hotOk && useAgg ? `⚡ ${side === "buy" ? "Buy" : "Sell"} ${info.symbol} · no popup` : wallet ? `${side === "buy" ? "Buy" : "Sell"} ${info.symbol}` : "Connect & trade")}
                 </button>
                 <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, marginTop: 8 }}>
                   {info.venue === "pad" ? `1% platform fee, 10% of it to ARCT stakers.${info.padMode === "curve" && info.targetQuote ? ` Graduates to Uniswap at ${fmt(info.targetQuote)} ${qSym} real reserve.` : ""}` : v3Quote ? `Uniswap V3 pool ${info.symbol}/${qSym}, swapped directly (pool fee 1%, no service fee).` : "1% service fee, best price across every venue (V3, V4, curves)."} Need TP/SL or limit orders? Use the sniper bot.

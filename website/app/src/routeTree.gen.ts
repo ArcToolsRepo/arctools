@@ -14,6 +14,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ScanRouteImport } from './routes/scan'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as RewardsRouteImport } from './routes/rewards'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as LaunchpadRouteImport } from './routes/launchpad'
 import { Route as IntelRouteImport } from './routes/intel'
@@ -52,6 +53,11 @@ const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
 const RewardsRoute = RewardsRouteImport.update({
   id: '/rewards',
   path: '/rewards',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PortfolioRoute = PortfolioRouteImport.update({
@@ -135,6 +141,7 @@ export interface FileRoutesByFullPath {
   '/intel': typeof IntelRoute
   '/launchpad': typeof LaunchpadRoute
   '/portfolio': typeof PortfolioRoute
+  '/profile': typeof ProfileRoute
   '/rewards': typeof RewardsRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/scan': typeof ScanRoute
@@ -156,6 +163,7 @@ export interface FileRoutesByTo {
   '/intel': typeof IntelRoute
   '/launchpad': typeof LaunchpadRoute
   '/portfolio': typeof PortfolioRoute
+  '/profile': typeof ProfileRoute
   '/rewards': typeof RewardsRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/scan': typeof ScanRoute
@@ -178,6 +186,7 @@ export interface FileRoutesById {
   '/intel': typeof IntelRoute
   '/launchpad': typeof LaunchpadRoute
   '/portfolio': typeof PortfolioRoute
+  '/profile': typeof ProfileRoute
   '/rewards': typeof RewardsRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/scan': typeof ScanRoute
@@ -201,6 +210,7 @@ export interface FileRouteTypes {
     | '/intel'
     | '/launchpad'
     | '/portfolio'
+    | '/profile'
     | '/rewards'
     | '/robots.txt'
     | '/scan'
@@ -222,6 +232,7 @@ export interface FileRouteTypes {
     | '/intel'
     | '/launchpad'
     | '/portfolio'
+    | '/profile'
     | '/rewards'
     | '/robots.txt'
     | '/scan'
@@ -243,6 +254,7 @@ export interface FileRouteTypes {
     | '/intel'
     | '/launchpad'
     | '/portfolio'
+    | '/profile'
     | '/rewards'
     | '/robots.txt'
     | '/scan'
@@ -265,6 +277,7 @@ export interface RootRouteChildren {
   IntelRoute: typeof IntelRoute
   LaunchpadRoute: typeof LaunchpadRoute
   PortfolioRoute: typeof PortfolioRoute
+  ProfileRoute: typeof ProfileRoute
   RewardsRoute: typeof RewardsRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   ScanRoute: typeof ScanRoute
@@ -312,6 +325,13 @@ declare module '@tanstack/react-router' {
       path: '/rewards'
       fullPath: '/rewards'
       preLoaderRoute: typeof RewardsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/portfolio': {
@@ -425,6 +445,7 @@ const rootRouteChildren: RootRouteChildren = {
   IntelRoute: IntelRoute,
   LaunchpadRoute: LaunchpadRoute,
   PortfolioRoute: PortfolioRoute,
+  ProfileRoute: ProfileRoute,
   RewardsRoute: RewardsRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   ScanRoute: ScanRoute,

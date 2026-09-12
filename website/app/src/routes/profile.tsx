@@ -1,0 +1,255 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { ArcNav } from "@/components/arc-nav";
+import { WalletPanel } from "@/components/wallet-panel";
+import { hotAddress, hotBalance, hotCall, hotSend, hotWait, isUnlocked, onHotChange } from "@/lib/arc-hotwallet";
+import { routeSwap } from "@/lib/arc-route";
+import { ARC_AGGREGATOR, encodeAggregatorSwap, p32, pnum } from "@/lib/arc-wallet";
+import "../arc-site.css";
+
+const API = "https://bot-production-4200.up.railway.app";
+
+export const Route = createFileRoute("/profile")({
+  head: () => ({ meta: [{ title: "ArcTools Profile: trading wallet balance, holdings, trades, PnL" }, { content: "Your in-browser trading wallet on Arc: deposited USDC, open positions with PnL, full trade history, deposits and withdrawals.", name: "description" }] }),
+  component: Profile,
+});
+
+type Position = { token: string; symbol: string | null; net: number; avg: number; price: number | null; value: number | null; unrealized: number | null; realized: number; cost: number; proceeds: number; n: number; last_ts: number };
+type Trade = { tx: string; ts: number; token: string; side: string; usdc: number; tokens: number; price1m: number | null; venue: string; symbol: string | null };
+type Hist = { trades: Trade[]; summary: { n: number; bought: number; sold: number; first_ts: number; tokens: number }; stats: { range: string; pnl_realized: number; pnl_unrealized: number; pnl_total: number; winrate: number; closed: number; volume: number }[] };
+type Move = { wallet: string; ts: number; balance: number; delta: number };
+
+const usd = (v: number | null | undefined) => (v == null ? "—" : Math.abs(v) < 0.005 ? "$0.00" : `${v < 0 ? "−" : ""}$${Math.abs(v) >= 1e6 ? (Math.abs(v) / 1e6).toFixed(2) + "M" : Math.abs(v) >= 1e4 ? (Math.abs(v) / 1e3).toFixed(1) + "K" : Math.abs(v) >= 1000 ? Math.abs(v).toFixed(0) : Math.abs(v).toFixed(2)}`);
+const num = (v: number) => (v >= 1e9 ? `${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `${(v / 1e6).toFixed(2)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(1)}K` : v.toFixed(2));
+const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+const when = (ts: number) => new Date(ts * 1000).toLocaleString(undefined, { day: "2-digit", hour: "2-digit", minute: "2-digit", month: "short" });
+const priceStr = (p: number | null) => (p == null ? "—" : p >= 1 ? `$${p.toFixed(4)}` : `$${p.toFixed(Math.max(2, -Math.floor(Math.log10(p)) + 3))}`);
+const UP = "var(--arc-up)", DOWN = "var(--arc-down, #f0534f)";
+const card: React.CSSProperties = { background: "var(--arc-paper)", border: "1px solid var(--arc-line)", padding: 16 };
+const th: React.CSSProperties = { color: "var(--arc-muted)", fontSize: 10, fontWeight: 400, padding: "0 10px 8px 0", textAlign: "left", textTransform: "uppercase" };
+const td: React.CSSProperties = { borderTop: "1px solid var(--arc-line)", fontSize: 13, padding: "9px 10px 9px 0", whiteSpace: "nowrap" };
+const SEL = { balanceOf: "0x70a08231", allowance: "0xdd62ed3e", approve: "0x095ea7b3", transfer: "0xa9059cbb" };
+
+function Profile() {
+  const [addr, setAddr] = useState<string | null>(isUnlocked() ? hotAddress() : null);
+  const [bal, setBal] = useState<number | null>(null);
+  const [pos, setPos] = useState<Position[]>([]);
+  const [hist, setHist] = useState<Hist | null>(null);
+  const [moves, setMoves] = useState<Move[]>([]);
+  const [tab, setTab] = useState<"holdings" | "trades" | "flows">("holdings");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ ok: boolean; text: string; tx?: string } | null>(null);
+  const [sendTok, setSendTok] = useState<{ token: string; to: string; pct: number } | null>(null);
+  const [tradeFilter, setTradeFilter] = useState("");
+
+  const load = useCallback(async () => {
+    const a = isUnlocked() ? hotAddress() : null;
+    setAddr(a);
+    if (!a) { setPos([]); setHist(null); setBal(null); return; }
+    const w = a.toLowerCase();
+    const [b, p, h, m] = await Promise.all([
+      hotBalance(a).catch(() => null),
+      fetch(`${API}/api/positions?wallet=${w}`).then((r) => r.json()).catch(() => null),
+      fetch(`${API}/api/wallet-trades?wallet=${w}&limit=300`).then((r) => r.json()).catch(() => null),
+      fetch(`${API}/api/balance-moves?hours=336&min_usd=1`).then((r) => r.json()).catch(() => null),
+    ]);
+    setBal(b);
+    setPos((p?.positions ?? []).filter((x: Position) => x.net > 0 && (x.value ?? 0) >= 0.01));
+    setHist(h);
+    setMoves(((m?.rows ?? []) as Move[]).filter((x) => x.wallet.toLowerCase() === w));
+  }, []);
+  useEffect(() => { void load(); const id = setInterval(load, 20_000); const off = onHotChange(() => void load()); return () => { clearInterval(id); off(); }; }, [load]);
+
+  const totals = useMemo(() => {
+    const value = pos.reduce((s, p) => s + (p.value ?? 0), 0);
+    const unreal = pos.reduce((s, p) => s + (p.unrealized ?? 0), 0);
+    const s30 = hist?.stats.find((x) => x.range === "30d");
+    const sAll = hist?.stats.find((x) => x.range === "all");
+    return { value, unreal, s30, sAll, equity: (bal ?? 0) + value };
+  }, [pos, hist, bal]);
+
+  const sell = async (p: Position, pct: number) => {
+    if (!addr) return;
+    setBusy(p.token); setToast(null);
+    try {
+      const balRaw = BigInt((await hotCall(p.token, SEL.balanceOf + p32(addr))) || "0x0");
+      const amt = (balRaw * BigInt(pct)) / 100n;
+      if (amt <= 0n) throw new Error("Nothing to sell.");
+      const r = await routeSwap({ data: { token: p.token, side: "sell", amount: amt.toString() } });
+      if (r.error || r.legs.length === 0) throw new Error("No route to sell this token right now.");
+      const al = BigInt((await hotCall(p.token, SEL.allowance + p32(addr) + p32(ARC_AGGREGATOR))) || "0x0");
+      if (al < amt) await hotWait(await hotSend({ to: p.token, data: SEL.approve + p32(ARC_AGGREGATOR) + "f".repeat(64), gasLimit: 80_000n }));
+      const minOut = (BigInt(r.out) * 99n * 90n) / 10_000n;
+      const legs = r.legs.map((l) => ({ venue: l.venue, target: l.target, fee: l.fee, key: l.key, amount: l.amount }));
+      const h = await hotSend({ to: ARC_AGGREGATOR, data: encodeAggregatorSwap("sell", p.token, legs, minOut, addr, 100) });
+      setToast({ ok: true, text: `Selling ${pct}% of ${p.symbol ?? short(p.token)}…`, tx: h });
+      const rc = await hotWait(h);
+      setToast({ ok: rc.status === 1, text: rc.status === 1 ? `Sold ${pct}% of ${p.symbol ?? short(p.token)} → USDC in the wallet.` : "Sell reverted.", tx: h });
+      void load();
+    } catch (e) { setToast({ ok: false, text: (e as Error).message }); }
+    setBusy(null);
+  };
+  const sendToken = async () => {
+    if (!addr || !sendTok || !/^0x[0-9a-fA-F]{40}$/.test(sendTok.to)) { setToast({ ok: false, text: "Enter a valid destination address." }); return; }
+    setBusy(sendTok.token); setToast(null);
+    try {
+      const balRaw = BigInt((await hotCall(sendTok.token, SEL.balanceOf + p32(addr))) || "0x0");
+      const amt = (balRaw * BigInt(sendTok.pct)) / 100n;
+      const h = await hotSend({ to: sendTok.token, data: SEL.transfer + p32(sendTok.to) + pnum(amt), gasLimit: 90_000n });
+      setToast({ ok: true, text: `Sending ${sendTok.pct}% of the token…`, tx: h });
+      const rc = await hotWait(h);
+      setToast({ ok: rc.status === 1, text: rc.status === 1 ? "Token withdrawal confirmed." : "Transfer reverted.", tx: h });
+      setSendTok(null); void load();
+    } catch (e) { setToast({ ok: false, text: (e as Error).message }); }
+    setBusy(null);
+  };
+
+  const trades = (hist?.trades ?? []).filter((t) => !tradeFilter || `${t.symbol ?? ""} ${t.token}`.toLowerCase().includes(tradeFilter.toLowerCase()));
+
+  return (
+    <main className="arc-site" style={{ minHeight: "100dvh" }}>
+      <ArcNav active="/profile" />
+      <section className="arc-section" style={{ maxWidth: 1360, paddingTop: 118 }}>
+        <div style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr) 340px" }}>
+          <div>
+            <h1 style={{ fontSize: 26, margin: "0 0 4px" }}>Profile</h1>
+            <p style={{ color: "var(--arc-muted)", fontSize: 13, margin: "0 0 14px" }}>Your trading wallet: what is in it, what it is worth, what it did. {addr && <span className="arc-mono">{addr}</span>}</p>
+
+            {!addr && (
+              <div style={{ ...card, border: "1px solid var(--arc-cobalt)" }}>
+                <p style={{ fontSize: 15, margin: 0 }}>Unlock or create the trading wallet on the right to see your balance, holdings and history.</p>
+                <p style={{ color: "var(--arc-muted)", fontSize: 12, margin: "6px 0 0" }}>Everything here is read from the chain and our swap index for that address — nothing is stored on our side.</p>
+              </div>
+            )}
+
+            {addr && (
+              <>
+                {/* summary */}
+                <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", marginBottom: 14 }}>
+                  {[
+                    ["Total equity", usd(totals.equity), "USDC + positions at last price"],
+                    ["USDC balance", bal !== null ? `${bal.toFixed(2)}` : "…", "available to trade or withdraw"],
+                    ["Positions value", usd(totals.value), `${pos.length} open`],
+                    ["Unrealized PnL", usd(totals.unreal), "vs average entry", totals.unreal],
+                    ["Realized 30d", totals.s30 ? usd(totals.s30.pnl_realized) : "—", totals.s30 ? `win-rate ${Math.round(totals.s30.winrate)}% · ${totals.s30.closed} closed` : "no closed positions yet", totals.s30?.pnl_realized],
+                    ["Volume all-time", usd((hist?.summary.bought ?? 0) + (hist?.summary.sold ?? 0)), `${hist?.summary.n ?? 0} trades · ${hist?.summary.tokens ?? 0} tokens`],
+                  ].map(([k, v, sub, sign]) => (
+                    <div key={k as string} style={card}>
+                      <p style={{ color: "var(--arc-muted)", fontSize: 12, margin: 0 }}>{k}</p>
+                      <p className="arc-mono" style={{ color: typeof sign === "number" ? (sign >= 0 ? UP : DOWN) : "var(--arc-ink)", fontSize: 22, margin: "6px 0 2px" }}>{v}</p>
+                      <p style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>{sub}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* tabs */}
+                <div style={{ borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 2, marginBottom: 8 }}>
+                  {([["holdings", `Holdings (${pos.length})`], ["trades", `Trades (${hist?.summary.n ?? 0})`], ["flows", "Deposits & withdrawals"]] as const).map(([k, l]) => (
+                    <button key={k} onClick={() => setTab(k)} style={{ background: "transparent", border: "none", borderBottom: "2px solid " + (tab === k ? "var(--arc-cobalt)" : "transparent"), color: tab === k ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 14, fontWeight: tab === k ? 700 : 400, padding: "8px 14px" }} type="button">{l}</button>
+                  ))}
+                </div>
+
+                <div style={{ overflowX: "auto" }}>
+                  {tab === "holdings" && (
+                    <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                      <thead><tr><th style={th}>token</th><th style={th}>amount</th><th style={th}>avg entry</th><th style={th}>price</th><th style={th}>value</th><th style={th}>unrealized</th><th style={th}>realized</th><th style={th}>sell</th><th style={th}>withdraw</th></tr></thead>
+                      <tbody>
+                        {pos.length === 0 && <tr><td className="arc-mono" colSpan={9} style={{ ...td, color: "var(--arc-muted)" }}>No open positions. Buy something on <a href="/trade" style={{ color: "var(--arc-cobalt)" }}>/trade</a>.</td></tr>}
+                        {pos.map((p) => (
+                          <tr key={p.token}>
+                            <td style={td}><a href={`/token/${p.token}`} style={{ color: "var(--arc-ink)" }}><strong>{p.symbol ?? short(p.token)}</strong></a></td>
+                            <td className="arc-mono" style={td}>{num(p.net)}</td>
+                            <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{priceStr(p.avg || null)}</td>
+                            <td className="arc-mono" style={td}>{priceStr(p.price)}</td>
+                            <td className="arc-mono" style={{ ...td, fontWeight: 700 }}>{usd(p.value)}</td>
+                            <td className="arc-mono" style={{ ...td, color: (p.unrealized ?? 0) >= 0 ? UP : DOWN }}>{p.unrealized != null ? `${usd(p.unrealized)}${p.avg && p.price ? ` (${(((p.price - p.avg) / p.avg) * 100).toFixed(0)}%)` : ""}` : "—"}</td>
+                            <td className="arc-mono" style={{ ...td, color: p.realized >= 0 ? UP : DOWN }}>{usd(p.realized)}</td>
+                            <td style={td}>{[25, 50, 100].map((pc) => <button key={pc} className="arc-mono" disabled={busy === p.token} onClick={() => void sell(p, pc)} style={{ background: "transparent", border: "1px solid " + DOWN, borderRadius: 4, color: DOWN, cursor: "pointer", fontSize: 11, marginRight: 4, padding: "3px 7px" }} type="button">{pc}%</button>)}</td>
+                            <td style={td}><button className="arc-mono" onClick={() => setSendTok({ token: p.token, to: "", pct: 100 })} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "3px 7px" }} type="button">send</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                  {tab === "trades" && (
+                    <>
+                      <input className="arc-mono" onChange={(e) => setTradeFilter(e.target.value)} placeholder="filter by symbol / CA" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 12, marginBottom: 8, padding: "6px 10px", width: 260 }} value={tradeFilter} />
+                      <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                        <thead><tr><th style={th}>time</th><th style={th}>side</th><th style={th}>token</th><th style={th}>USDC</th><th style={th}>tokens</th><th style={th}>price</th><th style={th}>venue</th><th style={th}>tx</th></tr></thead>
+                        <tbody>
+                          {trades.length === 0 && <tr><td className="arc-mono" colSpan={8} style={{ ...td, color: "var(--arc-muted)" }}>No trades indexed for this wallet yet.</td></tr>}
+                          {trades.map((t) => (
+                            <tr key={t.tx + t.ts}>
+                              <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{when(t.ts)}</td>
+                              <td className="arc-mono" style={{ ...td, color: t.side === "buy" ? UP : DOWN, fontWeight: 700 }}>{t.side.toUpperCase()}</td>
+                              <td style={td}><a href={`/token/${t.token}`} style={{ color: "var(--arc-ink)" }}>{t.symbol ?? short(t.token)}</a></td>
+                              <td className="arc-mono" style={td}>{usd(t.usdc)}</td>
+                              <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{num(t.tokens)}</td>
+                              <td className="arc-mono" style={td}>{priceStr(t.price1m ? t.price1m / 1e6 : null)}</td>
+                              <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{t.venue}</td>
+                              <td style={td}><a className="arc-mono" href={`https://arc-scan.org/tx/${t.tx}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)", fontSize: 11 }} target="_blank">↗</a></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </>
+                  )}
+                  {tab === "flows" && (
+                    <>
+                      <p style={{ color: "var(--arc-muted)", fontSize: 12, margin: "0 0 8px" }}>USDC balance changes between snapshots (every 10 min) that were not swaps: deposits, withdrawals, bridge arrivals. Snapshots start once the wallet has traded at least once.</p>
+                      <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                        <thead><tr><th style={th}>time</th><th style={th}>change</th><th style={th}>balance after</th></tr></thead>
+                        <tbody>
+                          {moves.length === 0 && <tr><td className="arc-mono" colSpan={3} style={{ ...td, color: "var(--arc-muted)" }}>No recorded deposits or withdrawals yet. Use the explorer for the full ledger: <a href={`https://arc-scan.org/address/${addr}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)" }} target="_blank">arc-scan ↗</a></td></tr>}
+                          {moves.map((m) => (
+                            <tr key={m.ts}>
+                              <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{when(m.ts)}</td>
+                              <td className="arc-mono" style={{ ...td, color: m.delta >= 0 ? UP : DOWN, fontWeight: 700 }}>{m.delta >= 0 ? "+" : "−"}{Math.abs(m.delta).toFixed(2)} USDC</td>
+                              <td className="arc-mono" style={td}>{m.balance.toFixed(2)} USDC</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div style={{ display: "grid", gap: 12, height: "fit-content", position: "sticky", top: 96 }}>
+            <WalletPanel onReady={() => void load()} />
+            {toast && (
+              <div style={{ background: "var(--arc-paper)", border: "1px solid " + (toast.ok ? UP : DOWN), fontSize: 13, padding: 12 }}>
+                <p style={{ margin: 0 }}>{toast.text}</p>
+                {toast.tx && <a className="arc-mono" href={`https://arc-scan.org/tx/${toast.tx}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)", fontSize: 11 }} target="_blank">{toast.tx.slice(0, 18)}… ↗</a>}
+              </div>
+            )}
+            {sendTok && (
+              <div style={{ ...card, border: "1px solid var(--arc-cobalt)" }}>
+                <p style={{ fontWeight: 700, margin: "0 0 6px" }}>Withdraw token</p>
+                <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: "0 0 8px" }}>{short(sendTok.token)}</p>
+                <input className="arc-mono" onChange={(e) => setSendTok({ ...sendTok, to: e.target.value })} placeholder="to 0x…" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 12, marginBottom: 6, padding: "8px 10px", width: "100%" }} value={sendTok.to} />
+                <div style={{ display: "flex", gap: 6 }}>
+                  {[25, 50, 100].map((pc) => <button key={pc} className="arc-mono" onClick={() => setSendTok({ ...sendTok, pct: pc })} style={{ background: sendTok.pct === pc ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (sendTok.pct === pc ? "var(--arc-cobalt)" : "var(--arc-line)"), color: sendTok.pct === pc ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "3px 8px" }} type="button">{pc}%</button>)}
+                  <button className="arc-cta" disabled={!!busy} onClick={() => void sendToken()} style={{ marginLeft: "auto" }} type="button">Send</button>
+                  <button className="arc-mono" onClick={() => setSendTok(null)} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11 }} type="button">cancel</button>
+                </div>
+              </div>
+            )}
+            <div style={{ ...card, fontSize: 12 }}>
+              <p style={{ fontWeight: 700, margin: "0 0 6px" }}>Where the numbers come from</p>
+              <ul style={{ color: "var(--arc-muted)", margin: 0, paddingLeft: 18 }}>
+                <li>USDC balance: live from the chain.</li>
+                <li>Positions and trades: our chain-wide swap index for this address (every venue on Arc).</li>
+                <li>Prices: last indexed trade per token; PnL uses average cost.</li>
+                <li>Tokens bought elsewhere and sent here show up in the explorer, not in PnL.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}

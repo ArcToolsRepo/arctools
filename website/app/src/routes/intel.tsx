@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
+import { QuickBuy } from "@/components/quick-buy";
 import "../arc-site.css";
 
 const API = "https://bot-production-4200.up.railway.app";
@@ -255,7 +256,7 @@ function Intel() {
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{ago(r.ts)}</td>
                       <td className="arc-mono" style={{ ...td, color: r.side === "buy" ? UP : DOWN }}>{r.side.toUpperCase()}</td>
                       <td className="arc-mono" style={{ ...td, fontWeight: 700 }}>{usd(r.usdc)}</td>
-                      <td style={td}><a href={`/token/${r.token}`} style={{ color: "var(--arc-ink)" }}>${r.symbol ?? short(r.token)}</a></td>
+                      <td style={td}><a href={`/token/${r.token}`} style={{ color: "var(--arc-ink)" }}>${r.symbol ?? short(r.token)}</a> <QuickBuy compact symbol={r.symbol ?? short(r.token)} token={r.token} /></td>
                       <td className="arc-mono" style={td}>
                         <button className="arc-mono" onClick={() => setQ(r.wallet)} style={{ background: "none", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: 0 }} type="button">{short(r.wallet)}</button>
                         {r.rank && <span style={{ background: "rgba(46,124,255,0.15)", border: "1px solid var(--arc-cobalt)", borderRadius: 3, color: "var(--arc-cobalt)", fontSize: 9, marginLeft: 6, padding: "0 4px" }}>#{r.rank}</span>}
@@ -309,7 +310,7 @@ function Intel() {
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>#{r.ranks.split(",").slice(0, 5).join(" #")}</td>
                       <td className="arc-mono" style={td}>{usd(r.usd)}</td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{ago(r.last_ts)}</td>
-                      <td style={td}><a className="arc-mono" href={`${SNIPER}?start=ca_${r.token.slice(2)}`} rel="noreferrer" style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} target="_blank">snipe</a></td>
+                      <td style={td}><QuickBuy compact symbol={r.symbol ?? short(r.token)} token={r.token} /> <a className="arc-mono" href={`${SNIPER}?start=ca_${r.token.slice(2)}`} rel="noreferrer" style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, marginLeft: 4, padding: "3px 8px" }} target="_blank">snipe</a></td>
                     </tr>
                   ))}
                   {clusters && clusters.rows.length === 0 && <tr><td colSpan={6} className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>No token with 2+ insiders in this window.</td></tr>}
@@ -349,7 +350,7 @@ function Intel() {
                 <tbody>
                   {(movers?.rows ?? []).map((r) => (
                     <tr key={r.token}>
-                      <td style={td}><a href={`/token/${r.token}`} style={{ color: "var(--arc-ink)" }}>${r.symbol ?? short(r.token)}</a></td>
+                      <td style={td}><a href={`/token/${r.token}`} style={{ color: "var(--arc-ink)" }}>${r.symbol ?? short(r.token)}</a> <QuickBuy compact symbol={r.symbol ?? short(r.token)} token={r.token} /></td>
                       <td className="arc-mono" style={{ ...td, color: r.chg >= 0 ? UP : DOWN, fontWeight: 700 }}>{r.chg >= 0 ? "+" : ""}{r.chg.toFixed(1)}%</td>
                       <td className="arc-mono" style={td}>{price(r.p1)}</td>
                       <td className="arc-mono" style={td}>{usd(r.vol)}</td>

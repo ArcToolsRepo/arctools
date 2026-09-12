@@ -1096,6 +1096,8 @@ async def start_api():
     app.router.add_get("/api/v4launches", api_v4launches)
     from .watchlist import api_whales, api_movers, api_insider_activity, api_wallet_watch_count, api_positions
     app.router.add_get("/api/positions", api_positions)
+    from .watchlist import api_wallet_trades
+    app.router.add_get("/api/wallet-trades", api_wallet_trades)
     app.router.add_get("/api/whales", api_whales)
     app.router.add_get("/api/movers", api_movers)
     app.router.add_get("/api/insider-activity", api_insider_activity)

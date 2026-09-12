@@ -17,6 +17,20 @@ let _key: Uint8Array | null = null;
 let _addr: string | null = null;
 let _timer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<() => void>();
+const SESSION = "arctools_hot_session";   // unlocked key for this tab only (cleared on tab close / lock / 30 min)
+
+function saveSession() {
+  try { if (_key && _addr) sessionStorage.setItem(SESSION, JSON.stringify({ k: hex(_key), a: _addr, exp: Date.now() + UNLOCK_MS })); } catch { /* ignore */ }
+}
+function restoreSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION);
+    if (!raw) return;
+    const s = JSON.parse(raw) as { k: string; a: string; exp: number };
+    if (Date.now() > s.exp) { sessionStorage.removeItem(SESSION); return; }
+    _key = unhex(s.k); _addr = s.a; armLock();
+  } catch { /* ignore */ }
+}
 
 export function onHotChange(fn: () => void) { listeners.add(fn); return () => listeners.delete(fn); }
 const emit = () => listeners.forEach((f) => f());
@@ -53,8 +67,10 @@ export function hotAddress(): string | null { return _addr ?? storedAddress(); }
 function armLock() {
   if (_timer) clearTimeout(_timer);
   _timer = setTimeout(lock, UNLOCK_MS);
+  saveSession();
 }
-export function lock() { _key = null; if (_timer) clearTimeout(_timer); _timer = null; emit(); }
+export function lock() { _key = null; if (_timer) clearTimeout(_timer); _timer = null; try { sessionStorage.removeItem(SESSION); } catch { /* ignore */ } emit(); }
+if (typeof window !== "undefined") restoreSession();
 
 async function persist(priv: Uint8Array, pass: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
