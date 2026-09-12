@@ -1,3 +1,4 @@
+import time
 """ArcTools RPC relay: forwards JSON-RPC to Arc nodes from Railway egress.
 
 Cloudflare Worker IPs get 429'd by rpc.arc-scan.org and the shared Infura key
@@ -16,7 +17,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 
 UPSTREAMS = [
     "https://rpc.arc-scan.org",
-    "https://arc-mainnet.infura.io/v3/b6bf7d3508c941499b10025c0776eaf8",
+    "https://5042.rpc.thirdweb.com",
+    "https://arc-mainnet.infura.io/v3/b6bf7d3508c941499b10025c0776eaf8",   # shared key, often over quota
 ]
 
 ALLOWED = {
@@ -56,8 +58,53 @@ async def relay(request: web.Request) -> web.Response:
              "error": {"code": -32601, "message": "method not allowed (read-only relay)"}},
             status=403, headers=CORS)
     payload = json.dumps(body)
+    # short read cache + in-flight dedupe: the site's edge isolates and the bots ask the same questions within
+    # the same second (multicalls, getCode, blockNumber). One upstream call serves all of them.
+    ckey = None
+    if isinstance(body, dict) and body.get("method") in CACHEABLE:
+        ckey = body["method"] + json.dumps(body.get("params"), sort_keys=True, separators=(",", ":"))
+        hit = _rcache.get(ckey)
+        if hit and time.time() - hit[0] < CACHE_TTL.get(body["method"], 2.0):
+            txt = hit[1]
+            if isinstance(body.get("id"), (int, str)):
+                txt = _reid(txt, body["id"])
+            return web.Response(text=txt, content_type="application/json", headers={**CORS, "X-Relay-Cache": "hit"})
+        fut = _inflight.get(ckey)
+        if fut is not None:
+            txt = await fut
+            if txt is not None:
+                return web.Response(text=_reid(txt, body.get("id")), content_type="application/json", headers={**CORS, "X-Relay-Cache": "join"})
+        loop = asyncio.get_event_loop(); fut = loop.create_future(); _inflight[ckey] = fut
+    try:
+        return await _upstream(payload, ckey, fut if ckey else None, body.get("id") if isinstance(body, dict) else None)
+    finally:
+        if ckey and not fut.done():
+            fut.set_result(None)
+        _inflight.pop(ckey, None)
+
+
+CACHEABLE = {"eth_call", "eth_getCode", "eth_getBalance", "eth_blockNumber", "eth_getLogs", "eth_getTransactionReceipt",
+             "eth_getBlockByNumber", "eth_chainId", "eth_gasPrice", "eth_getStorageAt"}
+CACHE_TTL = {"eth_blockNumber": 0.8, "eth_gasPrice": 5.0, "eth_chainId": 3600.0, "eth_getCode": 600.0, "eth_getLogs": 3.0,
+             "eth_getTransactionReceipt": 30.0, "eth_call": 2.0, "eth_getBalance": 2.0, "eth_getBlockByNumber": 2.0, "eth_getStorageAt": 2.0}
+_rcache: dict[str, tuple[float, str]] = {}
+_inflight: dict[str, asyncio.Future] = {}
+
+
+def _reid(txt: str, rid):
+    """Swap the JSON-RPC id in a cached response (cheap string op; ids are always at the top level)."""
+    try:
+        d = json.loads(txt); d["id"] = rid; return json.dumps(d, separators=(",", ":"))
+    except Exception:  # noqa
+        return txt
+
+
+async def _upstream(payload: str, ckey, fut, rid) -> web.Response:
     last_status, last_text = 502, "no upstream"
-    # 3 rounds over all upstreams with growing backoff: arc-scan rate-limits in short bursts, Infura has quota blips
+    if len(_rcache) > 20000:
+        now = time.time()
+        for k in [k for k, v in _rcache.items() if now - v[0] > 600][:10000]:
+            _rcache.pop(k, None)
     for attempt in range(3):
         for up in UPSTREAMS:
             try:
@@ -65,6 +112,10 @@ async def relay(request: web.Request) -> web.Response:
                                         headers={"Content-Type": "application/json"}) as r:
                     text = await r.text()
                     if r.status == 200 and '"error"' not in text[:200].replace(" ", ""):
+                        if ckey:
+                            _rcache[ckey] = (time.time(), text)
+                            if fut and not fut.done():
+                                fut.set_result(text)
                         return web.Response(text=text, content_type="application/json", headers=CORS)
                     # 200 with rpc error object: still return it unless quota/rate
                     low = text[:300].lower()

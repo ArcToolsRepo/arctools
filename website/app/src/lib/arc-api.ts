@@ -442,7 +442,7 @@ export type TokenPageInfo = {
 export const tokenPage = createServerFn({ method: "POST" })
   .inputValidator((input: { token: string }) => input)
   .handler(({ data }) =>
-    memo(`tokenpage:${data.token.toLowerCase()}`, 20_000, async (): Promise<TokenPageInfo | { error: string }> => {
+    memo(`tokenpage:${data.token.toLowerCase()}`, 45_000, async (): Promise<TokenPageInfo | { error: string }> => {
       const token = data.token.trim();
       if (!/^0x[0-9a-fA-F]{40}$/.test(token)) return { error: "That is not a contract address." };
       const lc = token.toLowerCase();

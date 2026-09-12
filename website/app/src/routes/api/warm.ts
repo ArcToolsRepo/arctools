@@ -21,7 +21,9 @@ export const Route = createFileRoute("/api/warm")({
           screenerIcons().catch(() => null),
         ]);
         // token pages of what people click most (trending + newest) — 6 at a time so upstreams stay happy
-        const hot = [...new Set([...trend.slice(0, 12).map((t) => t.token), ...all.slice(0, 8).map((t) => t.token)])].slice(0, 20);
+        // token pages: only every 4th run (~60 s) — they cost RPC; between runs stale-while-revalidate keeps them instant
+        const runPages = Math.floor(Date.now() / 15_000) % 4 === 0;
+        const hot = runPages ? [...new Set([...trend.slice(0, 12).map((t) => t.token), ...all.slice(0, 8).map((t) => t.token)])].slice(0, 20) : [];
         let warmed = 0;
         for (let i = 0; i < hot.length; i += 6) {
           await Promise.all(hot.slice(i, i + 6).map((t) => tokenPage({ data: { token: t } }).then(() => { warmed++; }).catch(() => null)));
