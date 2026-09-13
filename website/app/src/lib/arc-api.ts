@@ -259,6 +259,30 @@ function quoteCalldata(token: string, amount: bigint): string {
   return SEL.quote + pad32(token) + pad32(USDC) + padNum(amount) + padNum(10000n) + padNum(0n);
 }
 
+/** USD price of ONE unit of a quote token (ArcToolsPad non-USDC pairs).
+ *  long.supply wrapped stocks → their reference price (what their pools and buyers use); anything else → QuoterV2 for
+ *  1 token (not 1M: a thin USDC pool quoted for 1M CRCL returns ~$0.0017/CRCL instead of ~$45). Cached 60 s. */
+export async function quoteUsd(token: string): Promise<number> { return quoteUsdOf(token); }
+async function quoteUsdOf(token: string): Promise<number> {
+  const lc = token.toLowerCase();
+  if (lc === USDC || /^0x0{40}$/.test(lc)) return 1;
+  return memo(`quoteusd:${lc}`, 60_000, async () => {
+    try {
+      const LS = await import("@/lib/longsupply");
+      const st = (await LS.longStocks()).find((x) => x.token === lc);
+      if (st && st.usd > 0) return st.usd;
+    } catch { /* long.supply API down: fall back to the pool */ }
+    for (const fee of [10000, 3000, 500]) {
+      try {
+        const res = (await rpc("eth_call", [{ data: SEL.quote + pad32(lc) + pad32(USDC) + padNum(10n ** 18n) + padNum(BigInt(fee)) + padNum(0n), to: QUOTER_V2 }, "latest"])) as string;
+        const v = Number(BigInt("0x" + res.slice(2, 66))) / 1e6;
+        if (v > 0) return v;
+      } catch { /* next tier */ }
+    }
+    return 0;
+  }, (v) => v > 0);
+}
+
 /** Value `amount` of `token` in USDC: Uniswap V3 quoter -> ArcToolsPad curve (v2/v3, quote converted) -> RadarDex price. */
 async function quoteToUsdc(token: string, amount: bigint): Promise<number | null> {
   if (amount <= 0n) return null;
@@ -507,10 +531,10 @@ export const tokenPage = createServerFn({ method: "POST" })
         if (quoteToken) {
           const [qs, qp] = await Promise.all([
             rpc("eth_call", [{ data: SEL.symbol, to: quoteToken }, "latest"]).catch(() => null),
-            quoteToUsdc(quoteToken, 10n ** 18n * 1_000_000n),
+            quoteUsdOf(quoteToken),
           ]);
           quoteSymbol = decodeString(qs as string | null) || "?";
-          quoteUsd = qp && qp > 0 ? qp / 1e6 : 0;
+          quoteUsd = qp > 0 ? qp : 0;
         }
         if (graduated) {
           venue = "v3";
@@ -1771,7 +1795,9 @@ export const ALL_PADS = ["RadarDex", "ArcPad", "Warp", "Tolly", "UniswapV3", "Ar
 export async function listAllTokensImpl(): Promise<PadToken[]> {
   const { padList } = await import("@/lib/arcpad");
   const [pad, ...rest] = await Promise.all([
-    padList().then((ps) => ps.map((x) => ({ createdAt: x.createdAt ? new Date(x.createdAt * 1000).toISOString() : null, logo: x.image, mcapUsd: x.pricePer1M > 0 ? x.pricePer1M * 1000 : null, name: x.name, pad: "ArcToolsPad", pool: null, priceUsd: null, symbol: x.symbol, telegram: x.telegram, token: x.token, twitter: x.twitter, venueUrl: `/token/${x.token}`, volUsd: x.volumeUsdc, website: x.website }) as PadToken)).catch(() => [] as PadToken[]),
+    padList().then((ps) => ps.map((x) => ({ createdAt: x.createdAt ? new Date(x.createdAt * 1000).toISOString() : null, logo: x.image, mcapUsd: x.pricePer1M > 0 ? x.pricePer1M * 1000 : null, name: x.name, pad: "ArcToolsPad", pool: x.pool ?? null, priceUsd: x.pricePer1M > 0 ? x.pricePer1M / 1e6 : null, symbol: x.symbol, telegram: x.telegram, token: x.token, twitter: x.twitter, venueUrl: `/token/${x.token}`, volUsd: x.volumeUsdc, website: x.website,
+      stage: x.graduated ? "graduated" : x.mode === "instant" ? "instant" : x.mode === "v2" ? "curve" : `curve ${(x.targetQuote ?? 0) > 0 ? Math.min(100, Math.round((x.usdcReal / Math.max(1e-9, x.quoteUsd ?? 1)) / (x.targetQuote ?? 1) * 100)) : 0}%`,
+      ...(x.quoteToken ? { quote: x.quoteToken, quoteSymbol: x.quoteSymbol } : {}) }) as PadToken)).catch(() => [] as PadToken[]),
     ...ALL_PADS.map((p) => listTokens({ data: { pad: p } }).catch(() => [] as PadToken[])),
   ]);
   const seen = new Set<string>();

@@ -20,7 +20,7 @@ export const Route = createFileRoute("/api/warm")({
         const purge = url.searchParams.get("purge");
         if (purge) {
           const kv = bindings().KV;
-          const keys = purge === "lists" ? ["memo:list:__all", "memo:list:__full", "memo:radar:screener", "memo:trend:1440", "memo:v2:tokens", ...["RadarDex", "ArcPad", "Warp", "Tolly", "UniswapV3", "Archemist", "UniswapV4", "Arguspad"].map((p) => `memo:list:${p}`)]
+          const keys = purge === "lists" ? ["memo:list:__all", "memo:list:__full", "memo:radar:screener", "memo:trend:1440", "memo:v2:tokens", "memo:padlist", "memo:long:launches", "memo:long:stocks", ...["RadarDex", "ArcPad", "Warp", "Tolly", "UniswapV3", "Archemist", "UniswapV4", "Arguspad"].map((p) => `memo:list:${p}`)]
             : purge.startsWith("token:") ? [`memo:tokenpage:${purge.slice(6).toLowerCase()}`] : [];
           if (kv) await Promise.all(keys.map((k) => kv.delete(k).catch(() => null)));
           return Response.json({ ok: true, purged: keys.length }, { headers: { "Cache-Control": "no-store" } });

@@ -4,7 +4,7 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 
-import { decodeString, memo, multicall, pad32, padNum, rpc, toNum, topicAddr } from "./arc-api";
+import { decodeString, memo, multicall, pad32, padNum, quoteUsd, rpc, toNum, topicAddr } from "./arc-api";
 import { bindings } from "./bindings.server";
 import { ipfsToHttp, normSocial, screenerIcons } from "@/lib/arc-api";
 
@@ -59,6 +59,14 @@ export type PadListItem = {
   website: string | null;
   twitter: string | null;
   telegram: string | null;
+  pad?: string;
+  pool?: string | null;
+  graduated?: boolean;
+  mode?: "v2" | "curve" | "instant";
+  quoteToken?: string | null;
+  quoteSymbol?: string;
+  quoteUsd?: number;
+  targetQuote?: number;
 };
 
 const VIRTUAL = 3000;
@@ -114,11 +122,17 @@ export const padList = createServerFn({ method: "POST" }).handler(() =>
     const addrs = owners.map((o) => o[0]);
     if (addrs.length === 0) return [];
 
+    // a dropped multicall chunk (relay 502) must not produce "?" rows that then get cached: retry any all-null batch once
+    const mc = async (calls: { data: string; target: string }[], chunk: number) => {
+      let r = await multicall(calls, chunk);
+      if (calls.length && r.every((x) => x === null)) { await new Promise((res) => setTimeout(res, 300)); r = await multicall(calls, chunk); }
+      return r;
+    };
     const [curveRes, nameRes, symRes, launchRes, metas, icons] = await Promise.all([
-      multicall(owners.map(([a, pad]) => ({ data: SEL.curve + pad32(a), target: pad })), 150),
-      multicall(addrs.map((a) => ({ data: SEL.name, target: a })), 200),
-      multicall(addrs.map((a) => ({ data: SEL.symbol, target: a })), 200),
-      multicall(a3.map((a) => ({ data: SEL_LAUNCH + pad32(a), target: PAD_V3 })), 150),
+      mc(owners.map(([a, pad]) => ({ data: SEL.curve + pad32(a), target: pad })), 150),
+      mc(addrs.map((a) => ({ data: SEL.name, target: a })), 200),
+      mc(addrs.map((a) => ({ data: SEL.symbol, target: a })), 200),
+      mc(a3.map((a) => ({ data: SEL_LAUNCH + pad32(a), target: PAD_V3 })), 150),
       metaRows(addrs, true),
       screenerIcons().catch(() => new Map<string, string>()),
     ]);
@@ -180,7 +194,8 @@ export const padList = createServerFn({ method: "POST" }).handler(() =>
         website: normSocial("web", (m?.website as string) || null),
       };
     });
-  }),
+  // never cache a list where the relay dropped names/symbols ("?") — recompute on the next call instead
+  }, (v) => v.length > 0 && v.every((x) => x.symbol !== "?" && x.name !== "?")),
 );
 
 export type PadTokenPage = PadListItem & {

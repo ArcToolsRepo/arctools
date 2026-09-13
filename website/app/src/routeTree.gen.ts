@@ -36,6 +36,7 @@ import { Route as ApiStocksRouteImport } from './routes/api/stocks'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
 import { Route as ApiRpcRouteImport } from './routes/api/rpc'
 import { Route as ApiRefCreditRouteImport } from './routes/api/ref-credit'
+import { Route as ApiPadlistRouteImport } from './routes/api/padlist'
 import { Route as ApiPadLogoCaRouteImport } from './routes/api/pad-logo.$ca'
 import { Route as ApiLogoIpfsCidRouteImport } from './routes/api/logo.ipfs.$cid'
 
@@ -174,6 +175,11 @@ const ApiRefCreditRoute = ApiRefCreditRouteImport.update({
   path: '/api/ref-credit',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPadlistRoute = ApiPadlistRouteImport.update({
+  id: '/api/padlist',
+  path: '/api/padlist',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPadLogoCaRoute = ApiPadLogoCaRouteImport.update({
   id: '/api/pad-logo/$ca',
   path: '/api/pad-logo/$ca',
@@ -203,6 +209,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/trade': typeof TradeRoute
   '/wallets': typeof WalletsRoute
+  '/api/padlist': typeof ApiPadlistRoute
   '/api/ref-credit': typeof ApiRefCreditRoute
   '/api/rpc': typeof ApiRpcRoute
   '/api/search': typeof ApiSearchRoute
@@ -234,6 +241,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/trade': typeof TradeRoute
   '/wallets': typeof WalletsRoute
+  '/api/padlist': typeof ApiPadlistRoute
   '/api/ref-credit': typeof ApiRefCreditRoute
   '/api/rpc': typeof ApiRpcRoute
   '/api/search': typeof ApiSearchRoute
@@ -266,6 +274,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/trade': typeof TradeRoute
   '/wallets': typeof WalletsRoute
+  '/api/padlist': typeof ApiPadlistRoute
   '/api/ref-credit': typeof ApiRefCreditRoute
   '/api/rpc': typeof ApiRpcRoute
   '/api/search': typeof ApiSearchRoute
@@ -299,6 +308,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/trade'
     | '/wallets'
+    | '/api/padlist'
     | '/api/ref-credit'
     | '/api/rpc'
     | '/api/search'
@@ -330,6 +340,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/trade'
     | '/wallets'
+    | '/api/padlist'
     | '/api/ref-credit'
     | '/api/rpc'
     | '/api/search'
@@ -361,6 +372,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/trade'
     | '/wallets'
+    | '/api/padlist'
     | '/api/ref-credit'
     | '/api/rpc'
     | '/api/search'
@@ -393,6 +405,7 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TradeRoute: typeof TradeRoute
   WalletsRoute: typeof WalletsRoute
+  ApiPadlistRoute: typeof ApiPadlistRoute
   ApiRefCreditRoute: typeof ApiRefCreditRoute
   ApiRpcRoute: typeof ApiRpcRoute
   ApiSearchRoute: typeof ApiSearchRoute
@@ -598,6 +611,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiRefCreditRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/padlist': {
+      id: '/api/padlist'
+      path: '/api/padlist'
+      fullPath: '/api/padlist'
+      preLoaderRoute: typeof ApiPadlistRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/pad-logo/$ca': {
       id: '/api/pad-logo/$ca'
       path: '/api/pad-logo/$ca'
@@ -633,6 +653,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TradeRoute: TradeRoute,
   WalletsRoute: WalletsRoute,
+  ApiPadlistRoute: ApiPadlistRoute,
   ApiRefCreditRoute: ApiRefCreditRoute,
   ApiRpcRoute: ApiRpcRoute,
   ApiSearchRoute: ApiSearchRoute,
