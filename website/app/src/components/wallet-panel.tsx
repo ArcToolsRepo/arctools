@@ -68,6 +68,8 @@ export function WalletPanel({ onReady }: { onReady: (addr: string | null) => voi
   useEffect(() => {
     const off = onHotChange(() => { force((x) => x + 1); setMode((m) => (m === "recover" && !isUnlocked() ? m : isUnlocked() ? "open" : hasWallet() ? "unlock" : "create")); onReady(isUnlocked() ? hotAddress() : null); });
     if (isUnlocked()) setMode("open");
+    // session auto-unlock happens before this panel mounts → tell the page about the address now, not only on the next change
+    onReady(isUnlocked() ? hotAddress() : null);
     void refresh();
     const id = setInterval(refresh, 15_000);
     return () => { off(); clearInterval(id); };

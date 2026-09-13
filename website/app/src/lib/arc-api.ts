@@ -10,9 +10,11 @@ import { keepAlive, memoKV } from "@/lib/memo-kv";
 
 // Primary: our Railway relay (arc-scan via Railway egress: no CF 429, no quota).
 // Fallbacks: Infura shared key (daily quota), then arc-scan direct.
+// relay twice (it batches + rate-limits towards arc-scan for us), arc-scan direct as last resort (429s CF egress);
+// the shared Infura key is over quota every day → not worth an attempt
 const RPCS = [
   "https://rpc-production-ba7a.up.railway.app",
-  "https://arc-mainnet.infura.io/v3/b6bf7d3508c941499b10025c0776eaf8",
+  "https://rpc-production-ba7a.up.railway.app",
   "https://rpc.arc-scan.org",
 ];
 const RPC = RPCS[0];

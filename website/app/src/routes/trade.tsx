@@ -204,7 +204,10 @@ function Trade() {
       setToast({ ok: rc.status === 1, text: rc.status === 1 ? `Bought ${symbol} for ${buyAmt} USDC.` : `Buy of ${symbol} reverted (slippage?).`, tx: h });
       if (rc.status === 1) creditRef(addr, h, Number(spend) / 1e18 * 0.015);
       void loadPositions();
-    } catch (e) { setToast({ ok: false, text: (e as Error).message }); }
+    } catch (e) {
+      const m = (e as Error).message;
+      setToast({ ok: false, text: /OutOfFunds|insufficient funds/i.test(m) ? `Not enough USDC in the trading wallet: this buy needs ${buyAmt} USDC + ~0.02 gas. Deposit or top up below.` : /no liquidity/i.test(m) ? "Quote failed — the pool did not answer (RPC busy or empty pool). Try again in a second." : m });
+    }
     setBusy(null);
   };
   const sell = async (p: Position, pct: number) => {
