@@ -297,8 +297,11 @@ async def api_smart_flow(request: web.Request) -> web.Response:
     """GET /api/smart-flow?minutes=60 — per token: net USD flow of the top-100 insiders (buys − sells), how many bought
     and sold, latest action. Sorted by net inflow. minutes=0 → all-time. The Terminal's SMART column."""
     mins = int(request.query.get("minutes", "60")); mins = 0 if mins <= 0 else min(1440, mins)
-    limit = min(300, int(request.query.get("limit", "150")))
-    rows = await db.fetchall(text("""
+    limit = min(1000, int(request.query.get("limit", "150")))
+    toks = [t.strip().lower() for t in (request.query.get("tokens") or "").split(",") if t.strip().startswith("0x")][:400]
+    from sqlalchemy import bindparam
+    tok_sql = " AND s.token IN :toks" if toks else ""
+    rows = await db.fetchall(text(f"""
         WITH top AS (SELECT wallet, ROW_NUMBER() OVER (ORDER BY pnl_total DESC) AS rank FROM wallet_stats WHERE range='30d' AND bot_suspect = 0 ORDER BY pnl_total DESC LIMIT 100)
         SELECT s.token, sym.symbol,
                SUM(CASE WHEN s.side='buy' THEN s.usdc ELSE -s.usdc END) AS net,
@@ -306,7 +309,8 @@ async def api_smart_flow(request: web.Request) -> web.Response:
                COUNT(DISTINCT CASE WHEN s.side='buy' THEN s.wallet END) AS buyers, COUNT(DISTINCT CASE WHEN s.side='sell' THEN s.wallet END) AS sellers,
                MIN(t.rank) AS best_rank, MAX(s.ts) AS last_ts
         FROM swaps s JOIN top t ON t.wallet = s.wallet LEFT JOIN token_symbols sym ON sym.token = s.token
-        WHERE s.ts >= :s GROUP BY s.token, sym.symbol ORDER BY 3 DESC LIMIT :l""").bindparams(s=(int(time.time()) - mins * 60) if mins else 0, l=limit))
+        WHERE s.ts >= :s{tok_sql} GROUP BY s.token, sym.symbol ORDER BY ABS(SUM(CASE WHEN s.side='buy' THEN s.usdc ELSE -s.usdc END)) DESC LIMIT :l""")
+        .bindparams(s=(int(time.time()) - mins * 60) if mins else 0, l=limit, *([bindparam("toks", value=toks, expanding=True)] if toks else [])))
     return web.json_response({"minutes": mins, "rows": [dict(r) for r in rows]}, headers={**API_CORS, "Cache-Control": "public, max-age=15"})
 
 

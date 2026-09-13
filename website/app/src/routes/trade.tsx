@@ -342,6 +342,11 @@ function Trade() {
         if (!alive || !j.rows) return;
         setExtraStats((o) => { const n = { ...o }; for (const r of j.rows!) n[r.token.toLowerCase()] = r; return n; });
       }).catch(() => null);
+      // smart-money flow for exactly the visible rows (incl. negative net — insiders selling)
+      fetch(`${API}/api/smart-flow?tokens=${vis.join(",")}&minutes=${tf}&limit=${vis.length}`).then((r) => r.json()).then((j: { rows?: Smart[] }) => {
+        if (!alive || !Array.isArray(j.rows)) return;
+        setSmart((o) => { const m = new Map(o.map((x) => [x.token.toLowerCase(), x])); for (const r of j.rows!) m.set(r.token.toLowerCase(), r); return [...m.values()]; });
+      }).catch(() => null);
     };
     load();
     const id = setInterval(() => { if (!document.hidden) load(); }, 30_000);
