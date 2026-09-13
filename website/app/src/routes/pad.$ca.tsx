@@ -43,6 +43,23 @@ function CreatorMetaEditor({ t, wallet, onSaved }: { t: PadTokenPage; wallet: st
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // a launch whose metadata save failed leaves the logo + socials in localStorage → retry silently now that the creator is here
+  useEffect(() => {
+    const key = `arctools_padmeta_${t.token.toLowerCase()}`;
+    let raw: string | null = null;
+    try { raw = localStorage.getItem(key); } catch { /* ignore */ }
+    if (!raw) return;
+    try {
+      const pend = JSON.parse(raw) as { creator: string; image: string; telegram: string; twitter: string; website: string };
+      if (pend.creator?.toLowerCase() !== wallet.toLowerCase()) return;
+      setBusy(true); setMsg("Saving the logo & socials from your launch…");
+      void padMetaSet({ data: { creator: wallet, image: pend.image, name: t.name, symbol: t.symbol, telegram: pend.telegram, token: t.token, twitter: pend.twitter, website: pend.website } })
+        .then((r) => { const ok = (r as { ok: boolean }).ok; setMsg(ok ? "Logo & socials saved." : `Save failed: ${(r as { reason?: string }).reason ?? "unknown"}`); if (ok) { try { localStorage.removeItem(key); } catch { /* ignore */ } onSaved(); } })
+        .catch(() => setMsg("Save failed: network")).finally(() => setBusy(false));
+    } catch { /* corrupt entry */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t.token, wallet]);
+
   const pick = async (f: File | null) => {
     if (!f) return;
     try {

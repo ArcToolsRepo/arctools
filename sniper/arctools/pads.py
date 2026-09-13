@@ -13,6 +13,7 @@ router_kind:
            natywne USDC (0x0) jako msg.value albo fasada 0x3600 przez approve+transferFrom (6 dec).
            PoolKey z eventu Initialize (przy launchu) albo z API Arc Insider (/api/v4pool), fallback: skan logow.
 """
+import asyncio
 import logging
 import time
 from eth_abi import encode as abi_encode
@@ -386,43 +387,37 @@ async def quote_token_usdc(token: str, amount_tokens: int) -> float | None:
     Failover przez wszystkie RPC + fallback fee tierow + fallback ArcPad curve."""
     if not (CFG.univ3_quoter and CHAIN) or amount_tokens <= 0:
         return None
-    for fee in (10000, 3000, 500):
-        try:
-            data = _sel("quoteExactInputSingle((address,address,uint256,uint24,uint160))") + abi_encode(
-                ["(address,address,uint256,uint24,uint160)"],
-                [(to_checksum_address(token), to_checksum_address(CFG.wrapped_usdc),
-                  int(amount_tokens), fee, 0)])
-            res = await CHAIN.call_any(
-                lambda w3, d=data: w3.eth.call({"to": to_checksum_address(CFG.univ3_quoter), "data": d}))
-            out = int.from_bytes(res[:32], "big")
-            if out > 0:
-                return out / 10 ** USDC_FACADE_DECIMALS
-        except Exception:  # noqa - brak poola na tym fee -> kolejny tier
-            continue
-    # token z naszego launchpada (brak poola V3): quoteSell na curve
-    v = await _arcpad_quote("d98b2f5c", token, amount_tokens)
-    return v / 1e18 if v is not None else None
+    # all fee tiers + the ArcToolsPad curve quoted in PARALLEL (was sequential: 3 reverting tiers × RPC failover = seconds)
+    async def tier(fee: int):
+        data = _sel("quoteExactInputSingle((address,address,uint256,uint24,uint160))") + abi_encode(
+            ["(address,address,uint256,uint24,uint160)"],
+            [(to_checksum_address(token), to_checksum_address(CFG.wrapped_usdc), int(amount_tokens), fee, 0)])
+        res = await CHAIN.call_any(lambda w3, d=data: w3.eth.call({"to": to_checksum_address(CFG.univ3_quoter), "data": d}))
+        return int.from_bytes(res[:32], "big")
+    results = await asyncio.gather(*[tier(f) for f in (10000, 3000, 500)], _arcpad_quote("d98b2f5c", token, amount_tokens), return_exceptions=True)
+    best = max((r for r in results[:3] if isinstance(r, int) and r > 0), default=0)
+    if best > 0:
+        return best / 10 ** USDC_FACADE_DECIMALS
+    v = results[3]
+    return v / 1e18 if isinstance(v, int) and v > 0 else None
 
 
 async def quote_usdc_to_token(token: str, amount_usdc: float) -> int | None:
     """Estimated tokens out for `amount_usdc` via QuoterV2 (fee tier fallback)."""
     if not (CFG.univ3_quoter and CHAIN) or amount_usdc <= 0:
         return None
-    for fee in (10000, 3000, 500):
-        try:
-            data = _sel("quoteExactInputSingle((address,address,uint256,uint24,uint160))") + abi_encode(
-                ["(address,address,uint256,uint24,uint160)"],
-                [(to_checksum_address(CFG.wrapped_usdc), to_checksum_address(token),
-                  usdc_units(amount_usdc), fee, 0)])
-            res = await CHAIN.call_any(
-                lambda w3, d=data: w3.eth.call({"to": to_checksum_address(CFG.univ3_quoter), "data": d}))
-            out = int.from_bytes(res[:32], "big")
-            if out > 0:
-                return out
-        except Exception:  # noqa
-            continue
-    # ArcPad curve fallback: quoteBuy (kwoty natywne 1e18)
-    return await _arcpad_quote("0d7a94f6", token, usdc_native(amount_usdc))
+    async def tier(fee: int):
+        data = _sel("quoteExactInputSingle((address,address,uint256,uint24,uint160))") + abi_encode(
+            ["(address,address,uint256,uint24,uint160)"],
+            [(to_checksum_address(CFG.wrapped_usdc), to_checksum_address(token), usdc_units(amount_usdc), fee, 0)])
+        res = await CHAIN.call_any(lambda w3, d=data: w3.eth.call({"to": to_checksum_address(CFG.univ3_quoter), "data": d}))
+        return int.from_bytes(res[:32], "big")
+    results = await asyncio.gather(*[tier(f) for f in (10000, 3000, 500)], _arcpad_quote("0d7a94f6", token, usdc_native(amount_usdc)), return_exceptions=True)
+    best = max((r for r in results[:3] if isinstance(r, int) and r > 0), default=0)
+    if best > 0:
+        return best
+    v = results[3]
+    return v if isinstance(v, int) and v > 0 else None
 
 
 async def token_overview(token: str) -> dict:
@@ -431,15 +426,16 @@ async def token_overview(token: str) -> dict:
     if not CHAIN:
         return out
     ca = to_checksum_address(token)
-    try:
-        out["symbol"] = await CHAIN.call_any(
-            lambda w3: CHAIN.erc20(ca, w3).functions.symbol().call())
-    except Exception:  # noqa
-        pass
-    try:
-        out["decimals"] = int(await CHAIN.call_any(
-            lambda w3: CHAIN.erc20(ca, w3).functions.decimals().call()))
-    except Exception:  # noqa
-        pass
-    out["price_1m"] = await quote_token_usdc(token, 10 ** out["decimals"] * 1_000_000)
+    sym, dec, px = await asyncio.gather(
+        CHAIN.call_any(lambda w3: CHAIN.erc20(ca, w3).functions.symbol().call()),
+        CHAIN.call_any(lambda w3: CHAIN.erc20(ca, w3).functions.decimals().call()),
+        quote_token_usdc(token, 10 ** 18 * 1_000_000),
+        return_exceptions=True)
+    if isinstance(sym, str):
+        out["symbol"] = sym
+    if isinstance(dec, int):
+        out["decimals"] = dec
+    out["price_1m"] = px if isinstance(px, (int, float)) else None
+    if isinstance(dec, int) and dec != 18:
+        out["price_1m"] = await quote_token_usdc(token, 10 ** dec * 1_000_000)
     return out

@@ -6,7 +6,7 @@ import { SocialCheck } from "@/components/social-check";
 import { RiskCard, StockCard, Tags, useWalletLabels } from "@/components/risk";
 import { TokenLogo } from "@/components/token-logo";
 import { TvChart, type Candle } from "@/components/tv-chart";
-import { ARC_V4_ROUTER, SWAP_FEE_ROUTER, tokenPage, venueData, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
+import { ARC_V4_ROUTER, SWAP_FEE_ROUTER, tokenPage, venueData, type PadToken, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
 import { creditRef } from "@/lib/arc-ref";
 import { routeSwap, type RouteResult } from "@/lib/arc-route";
 import { hotAddress, hotSend, isUnlocked, onHotChange } from "@/lib/arc-hotwallet";
@@ -18,15 +18,25 @@ import {
 } from "@/lib/arc-wallet";
 import "../arc-site.css";
 
-function TokenSkeleton() {
+function TokenSkeleton({ lite }: { lite?: PadToken | null } = {}) {
+  const money = (v: number | null | undefined) => (v == null ? "—" : v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v >= 1e4 ? `$${(v / 1e3).toFixed(1)}K` : `$${v.toFixed(0)}`);
   return (
     <main className="arc-site" style={{ minHeight: "100dvh" }}>
       <ArcNav active="/trade" />
       <section className="arc-section" style={{ maxWidth: 1360, paddingTop: 118 }}>
-        <div style={{ alignItems: "center", display: "flex", gap: 14, marginBottom: 18 }}>
+        {lite && (
+          <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 18 }}>
+            <TokenLogo size={56} radius={12} src={lite.logo} symbol={lite.symbol} />
+            <div>
+              <h1 style={{ fontSize: 26, margin: 0 }}>{lite.name || lite.symbol} <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 14 }}>${lite.symbol}</span></h1>
+              <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, marginTop: 4 }}>{lite.pad}{lite.stage ? ` · ${lite.stage}` : ""}{lite.mcapUsd ? ` · MC ${money(lite.mcapUsd)}` : ""} · loading chart, trades and risk…</div>
+            </div>
+          </div>
+        )}
+        {!lite && <div style={{ alignItems: "center", display: "flex", gap: 14, marginBottom: 18 }}>
           <div className="arc-skel" style={{ height: 56, width: 56 }} />
           <div style={{ display: "grid", gap: 8 }}><div className="arc-skel" style={{ height: 26, width: 220 }} /><div className="arc-skel" style={{ height: 14, width: 320 }} /></div>
-        </div>
+        </div>}
         <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(4, 1fr)", marginBottom: 16 }}>{[0, 1, 2, 3].map((i) => <div className="arc-skel" key={i} style={{ height: 64 }} />)}</div>
         <div className="arc-2col" style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr) 340px" }}>
           <div className="arc-skel" style={{ height: 420 }} />
@@ -48,8 +58,14 @@ export const Route = createFileRoute("/token/$ca")({
     // in the background, so the client's call lands on the same in-flight result).
     const p = tokenPage({ data: { token: params.ca } });
     const r = await Promise.race([p, new Promise<"__slow">((res) => setTimeout(() => res("__slow"), 900))]);
-    if (r === "__slow") { void p.catch(() => null); return { info: null, error: null, pending: true as const }; }
-    return { info: "error" in r ? null : r, error: "error" in r ? r.error : null, pending: false as const };
+    if (r === "__slow") {
+      void p.catch(() => null);
+      // instant header from the cached Terminal list (name, symbol, logo, MC, socials) while the full page computes
+      const { listFullTokens } = await import("@/lib/arc-api");
+      const lite = await Promise.race([listFullTokens().then((l) => l.find((t) => t.token.toLowerCase() === params.ca.toLowerCase()) ?? null), new Promise<null>((res) => setTimeout(() => res(null), 400))]).catch(() => null);
+      return { info: null, error: null, pending: true as const, lite };
+    }
+    return { info: "error" in r ? null : r, error: "error" in r ? r.error : null, pending: false as const, lite: null };
   },
   head: ({ loaderData }) => {
     const i = loaderData?.info;
@@ -511,7 +527,7 @@ function TokenPage() {
     return candles;
   }, [candles, venue, tf, trades]);
 
-  if (!info && stillLoading) return <TokenSkeleton />;
+  if (!info && stillLoading) return <TokenSkeleton lite={(loaded as { lite?: PadToken | null }).lite ?? null} />;
   if (!info) {
     return (
       <main className="arc-site" style={{ minHeight: "100dvh" }}>
@@ -718,6 +734,11 @@ function TokenPage() {
         </div>
 
         {/* ---------- social check: who is behind the token ---------- */}
+        {info.venue === "pad" && info.padAddress && (
+          <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginTop: 10 }}>
+            ArcToolsPad launch · <Link params={{ ca }} style={{ color: "var(--arc-cobalt)" }} to="/pad/$ca">curve details & creator tools (logo, socials) →</Link>
+          </div>
+        )}
         {info.stock ? <StockCard stock={info.stock} token={ca} /> : <RiskCard official={ca.toLowerCase() === "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52"} token={ca} />}
         {info.longPool && !info.stock && (
           <section style={{ border: "1px solid var(--arc-line)", marginTop: 14, padding: "10px 14px" }}>

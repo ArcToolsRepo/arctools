@@ -253,8 +253,12 @@ function CreateForm() {
       setBusy("Waiting for confirmation...");
       const rcpt = await waitReceipt(hash);
       if (Number(rcpt.status) !== 1) throw new Error("Transaction reverted on-chain (state changed between simulation and inclusion) — try again.");
-      // the new token is the first log emitter (its mint Transfer) that isn't the launchpad
-      const tokenAddr = rcpt.logs.find((l) => l.address.toLowerCase() !== PAD_V3.toLowerCase())?.address;
+      // the new token = emitter of the mint Transfer (from 0x0). NOT "first non-pad log": with an ERC-20 quote the pad's
+      // approve(quote) emits an Approval from the quote token first, which used to send people to the stock's page.
+      const TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+      const ZERO32 = "0x" + "0".repeat(64);
+      const mint = rcpt.logs.find((l) => l.address.toLowerCase() !== PAD_V3.toLowerCase() && (l.topics?.[0] ?? "").toLowerCase() === TRANSFER && (l.topics?.[1] ?? "").toLowerCase() === ZERO32);
+      const tokenAddr = mint?.address ?? rcpt.logs.find((l) => l.address.toLowerCase() !== PAD_V3.toLowerCase() && l.address.toLowerCase() !== quoteAddr.toLowerCase())?.address;
       if (tokenAddr) {
         const meta = await padMetaSet({
           data: {
@@ -263,7 +267,9 @@ function CreateForm() {
           },
         }).catch(() => ({ ok: false, reason: "network" }));
         if (!(meta as { ok: boolean }).ok) {
-          setError("Token launched, but saving the logo/socials failed — add them on the token page.");
+          // keep the logo + socials locally; the /pad page retries the save automatically when the creator opens it
+          try { localStorage.setItem(`arctools_padmeta_${tokenAddr.toLowerCase()}`, JSON.stringify({ creator: from, image: img, name: name.trim(), symbol: symbol.trim().toUpperCase(), telegram: telegram.trim(), twitter: twitter.trim(), website: website.trim() })); } catch { /* ignore */ }
+          setError("Token launched, but saving the logo/socials failed — open the token page, it will retry automatically.");
         }
         setDone(tokenAddr);
       } else {
@@ -571,7 +577,8 @@ function LaunchpadPage() {
                 alignItems: "center", borderBottom: "1px solid var(--arc-line)", color: "var(--arc-ink)",
                 display: "flex", gap: 14, padding: "12px 4px", textDecoration: "none",
               }}
-              to="/pad/$ca"
+              preload="intent"
+              to="/token/$ca"
             >
               <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, width: 24 }}>{i + 1}</span>
               <span

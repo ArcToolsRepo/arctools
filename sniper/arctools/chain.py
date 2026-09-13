@@ -28,7 +28,7 @@ class Chain:
     def __init__(self, rpc_urls: list[str], chain_id: int):
         assert rpc_urls, "ARC_RPC_URLS puste"
         self.urls = list(rpc_urls)
-        self.w3s = [AsyncWeb3(AsyncHTTPProvider(u, request_kwargs={"timeout": 8})) for u in rpc_urls]
+        self.w3s = [AsyncWeb3(AsyncHTTPProvider(u, request_kwargs={"timeout": 6})) for u in rpc_urls]
         self.chain_id = chain_id
         self._i = 0
         self._down: dict[int, float] = {}  # idx -> unix ts do kiedy w kwarantannie
@@ -60,6 +60,11 @@ class Chain:
                 return await fn(self.w3s[idx])
             except Exception as e:  # noqa
                 last = e
+                msg = str(e).lower()
+                # deterministic on-chain outcome (revert / no pool / bad call): every RPC would answer the same —
+                # failing over just multiplies the latency by the number of RPCs
+                if any(k in msg for k in ("execution reverted", "revert", "contractlogicerror", "outoffunds", "invalid opcode", "out of gas")):
+                    raise
                 self._mark_down(idx, e)
         raise last or RuntimeError("all RPC failed")
 
