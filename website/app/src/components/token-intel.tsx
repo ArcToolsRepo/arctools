@@ -9,8 +9,9 @@ const usd = (v: number) => (Math.abs(v) >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : M
 const signed = (v: number) => (v >= 0 ? "+" : "−") + usd(Math.abs(v));
 const ago = (ts: number) => { const s = Math.max(0, Date.now() / 1000 - ts); return s < 60 ? `${s | 0}s` : s < 3600 ? `${(s / 60) | 0}m` : s < 86400 ? `${(s / 3600) | 0}h` : `${(s / 86400) | 0}d`; };
 const UP = "#22c580", DOWN = "#f0534f";
+const fmtK = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e5 ? 0 : 1)}K` : String(n));
 
-export type TokenEvent = { ts: number; side: "buy" | "sell"; usdc: number; wallet: string; kind: "dev" | "insider" | "pro"; meta: number | null; tx: string; n: number };
+export type TokenEvent = { ts: number; side: "buy" | "sell"; usdc: number; wallet: string; kind: "dev" | "insider" | "pro" | "kol"; meta: number | null; tx: string; n: number; text?: string };
 export type EventsResp = { events: TokenEvent[]; total: number; devs: string[]; insiders_seen: number; pros_seen: number };
 
 /** Poll notable trades for the chart; returns markers + the raw feed. */
@@ -26,8 +27,8 @@ export function useTokenEvents(token: string | null | undefined, limit = 14, sin
   }, [token, limit, since - (since % 900)]);
   const markers: ChartMarker[] = (data?.events ?? []).map((e) => ({
     kind: e.kind, side: e.side, t: e.ts,
-    text: `${e.kind === "dev" ? "D" : e.kind === "insider" ? "I" : "P"}${e.side === "buy" ? "B" : "S"}`,
-    title: `${e.kind === "dev" ? "deployer" : e.kind === "insider" ? `insider #${e.meta}` : `${e.meta}% win-rate wallet`} ${e.side} ${usd(e.usdc)}${e.n > 1 ? ` (${e.n} fills)` : ""}`,
+    text: e.kind === "kol" ? "K" : `${e.kind === "dev" ? "D" : e.kind === "insider" ? "I" : "P"}${e.side === "buy" ? "B" : "S"}`,
+    title: e.kind === "kol" ? `@${e.wallet} (${fmtK(e.meta ?? 0)} followers) mentioned this token: ${e.text ?? ""}` : `${e.kind === "dev" ? "deployer" : e.kind === "insider" ? `insider #${e.meta}` : `${e.meta}% win-rate wallet`} ${e.side} ${usd(e.usdc)}${e.n > 1 ? ` (${e.n} fills)` : ""}`,
   }));
   return { markers, data };
 }
@@ -37,7 +38,7 @@ export function MarkerLegend({ data, visible }: { data: EventsResp | null; visib
   const Dot = ({ c, t }: { c: string; t: string }) => <span style={{ alignItems: "center", display: "inline-flex", gap: 4 }}><span style={{ background: c, borderRadius: "50%", display: "inline-block", height: 8, width: 8 }} />{t}</span>;
   return (
     <div className="arc-mono" style={{ color: "var(--arc-muted)", display: "flex", flexWrap: "wrap", fontSize: 10.5, gap: 12, padding: "4px 10px 6px" }}>
-      <Dot c="#22c580" t="DB dev buy" /><Dot c="#f0534f" t="DS dev sell" /><Dot c="#2e7cff" t="IB/IS insider (top-100)" /><Dot c="#9b7bff" t="PB/PS pro wallet (75%+ win)" />
+      <Dot c="#22c580" t="DB dev buy" /><Dot c="#f0534f" t="DS dev sell" /><Dot c="#2e7cff" t="IB/IS insider (top-100)" /><Dot c="#9b7bff" t="PB/PS pro wallet (75%+ win)" /><Dot c="#ff5fd2" t="K  KOL tweet" />
       <span style={{ marginLeft: "auto" }}>{visible != null ? `${visible} on chart · ` : ""}{data.events.length} of {data.total} notable trades{visible != null && visible < data.events.length ? ` (${data.events.length - visible} older than this timeframe — zoom out)` : ""}{data.devs.length ? ` · deployer ${data.devs.map(short).join(", ")}` : " · deployer unknown"}</span>
     </div>
   );
@@ -200,5 +201,39 @@ export function DevTokens({ dev, current }: { dev: string | null | undefined; cu
         </table>
       </div>
     </div>
+  );
+}
+
+
+// ---------------- KOL mentions ----------------
+type Mention = { tweet_id: string; kol: string; ts: number; text: string; url: string; likes: number; retweets: number; views: number; match: string; followers: number | null; name: string | null; avatar: string | null };
+export function KolMentions({ token }: { token: string }) {
+  const [d, setD] = useState<{ mentions: Mention[]; enabled: boolean } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetch(`${API}/api/kol-mentions?token=${token}&limit=20`).then((r) => r.json()).then((j) => alive && j.mentions && setD(j)).catch(() => null);
+    load();
+    const id = setInterval(load, 60_000);
+    return () => { alive = false; clearInterval(id); };
+  }, [token]);
+  if (!d || !d.enabled || d.mentions.length === 0) return null;
+  return (
+    <section style={{ border: "1px solid #ff5fd2", marginTop: 14, padding: "12px 14px" }}>
+      <div className="arc-mono" style={{ color: "#ff5fd2", fontSize: 11, letterSpacing: "0.08em" }}>KOL MENTIONS · {d.mentions.length}</div>
+      <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+        {d.mentions.slice(0, 6).map((m) => (
+          <a key={m.tweet_id} href={m.url} rel="noreferrer" style={{ border: "1px solid var(--arc-line)", borderRadius: 6, color: "var(--arc-ink)", display: "block", padding: "8px 10px", textDecoration: "none" }} target="_blank">
+            <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
+              {m.avatar ? <img alt="" height={22} src={m.avatar} style={{ borderRadius: "50%" }} width={22} /> : <span style={{ background: "var(--arc-line)", borderRadius: "50%", display: "inline-block", height: 22, width: 22 }} />}
+              <span style={{ fontSize: 12.5, fontWeight: 700 }}>{m.name ?? `@${m.kol}`}</span>
+              <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>@{m.kol} · {fmtK(m.followers ?? 0)} followers · {ago(m.ts)} ago</span>
+              <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: "auto" }}>♥ {fmtK(m.likes)} · {fmtK(m.views)} views</span>
+            </div>
+            <div style={{ color: "var(--arc-ink)", fontSize: 12.5, lineHeight: 1.45, marginTop: 6, opacity: 0.9 }}>{m.text.length > 220 ? m.text.slice(0, 220) + "…" : m.text}</div>
+          </a>
+        ))}
+      </div>
+      <div style={{ color: "var(--arc-muted)", fontSize: 11, marginTop: 8 }}>Tweets by tracked Arc KOLs (10k+ followers) that name this token by contract, unique $cashtag or its X handle. Also drawn as K badges on the chart.</div>
+    </section>
   );
 }

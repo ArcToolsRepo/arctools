@@ -79,6 +79,13 @@ async def token_events(token: str, limit: int, since: int = 0) -> dict:
         dev_all = sorted({id(e): e for e in big + recent}.values(), key=lambda e: e["ts"])
     rest = sorted((e for e in merged if e["kind"] != "dev" and e["usdc"] >= 20), key=lambda e: -e["usdc"])
     keep = dev_all + rest[: max(4, limit - len(dev_all))]
+    # KOL mentions are rare and high-signal → always on the chart (own kind, not counted against the trade cap)
+    try:
+        from .kols import token_mentions
+        for m in await token_mentions(token, since, 40):
+            keep.append({"ts": int(m["ts"]), "side": "buy", "usdc": float(m.get("likes") or 0), "wallet": m["kol"], "kind": "kol", "meta": int(m.get("followers") or 0), "tx": m["url"], "n": 1, "text": (m.get("text") or "")[:140]})
+    except Exception as e:  # noqa
+        log.debug("kol mentions for chart: %s", e)
     keep.sort(key=lambda e: e["ts"])
     return {"token": token, "events": keep, "total": len(merged), "devs": sorted(devs), "insiders_seen": len({e["wallet"] for e in merged if e["kind"] == "insider"}),
             "pros_seen": len({e["wallet"] for e in merged if e["kind"] == "pro"})}

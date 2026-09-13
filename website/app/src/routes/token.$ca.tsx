@@ -7,7 +7,7 @@ import { SmartFollowers } from "@/components/smart-followers";
 import { RiskCard, StockCard, Tags, useWalletLabels } from "@/components/risk";
 import { TokenLogo } from "@/components/token-logo";
 import { TvChart, type Candle } from "@/components/tv-chart";
-import { DevTokens, MarkerLegend, MyPosition, TopTraders, useTokenEvents } from "@/components/token-intel";
+import { DevTokens, KolMentions, MarkerLegend, MyPosition, TopTraders, useTokenEvents } from "@/components/token-intel";
 import { ARC_V4_ROUTER, SWAP_FEE_ROUTER, tokenPage, venueData, type PadToken, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
 import { creditRef } from "@/lib/arc-ref";
 import { routeSwap, type RouteResult } from "@/lib/arc-route";
@@ -178,6 +178,14 @@ function TokenPage() {
   // ---- swap state
   const [wallet, setWallet] = useState<string | null>(null);
   const [side, setSide] = useState<"buy" | "sell">("buy");
+  // deep links from position lists elsewhere: /token/<ca>?side=sell (or ?buy=1) preselect the swap panel
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const want = sp.get("side") === "sell" ? "sell" : sp.get("side") === "buy" || sp.get("buy") ? "buy" : null;
+      if (want) { setSide(want); setTimeout(() => document.querySelector(".arc-swap-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }), 300); }
+    } catch { /* ignore */ }
+  }, []);
   const [amount, setAmount] = useState("");
   const [quote, setQuote] = useState<number | null>(null);
   const [slippage, setSlippage] = useState(5);
@@ -613,7 +621,7 @@ function TokenPage() {
           </div>
 
           {/* ---------- swap panel ---------- */}
-          <aside style={{ border: "1px solid var(--arc-line)", padding: 14 }}>
+          <aside className="arc-swap-panel" style={{ border: "1px solid var(--arc-line)", padding: 14 }}>
             <div className="arc-token__stats">
               <Cell k="MCAP" v={mcap !== null ? money(mcap, 0) : "—"} />
               <Cell k="LIQ" v={money(liquidity, 0)} />
@@ -758,6 +766,7 @@ function TokenPage() {
         )}
         <SocialCheck deployer={info.deployer} tg={info.telegram} token={ca} web={info.website} x={info.twitter} />
         <SmartFollowers x={info.twitter} />
+        <KolMentions token={ca} />
 
         {/* ---------- tabs ---------- */}
         <div style={{ border: "1px solid var(--arc-line)", marginTop: 14 }}>

@@ -36,10 +36,10 @@ ADMIN_AUTH = os.getenv("REF_AUTH", "")
 
 # Curated: official / ecosystem / builders. Follower counts are fetched, not assumed. Lower-case handles.
 SEED_KOLS: dict[str, str] = {
-    "arc": "ecosystem", "circle": "ecosystem", "jerallaire": "ecosystem", "arcscan_org": "ecosystem",
-    "radardex": "launchpad", "warpdotfun": "launchpad", "tollydotfun": "launchpad", "arcpad_fun": "launchpad",
-    "arctoolsfun": "ecosystem",
+    "arc": "ecosystem", "circle": "ecosystem", "jerallaire": "ecosystem", "arcdexscan": "ecosystem",
+    "tollylabs": "launchpad", "warpdotfun": "launchpad",
 }
+DEAD_SEEDS = {"arcscan_org", "radardex", "arcpad_fun", "tollydotfun", "arctoolsfun"}   # handles that do not exist on X
 ARC_QUERIES = [
     '"Arc mainnet" circle',
     '"on Arc" (usdc OR circle OR memecoin OR launchpad)',
@@ -59,14 +59,19 @@ async def init():
     await db.execute(text("CREATE TABLE IF NOT EXISTS kols (handle VARCHAR(64) PRIMARY KEY, user_id VARCHAR(32), name TEXT, followers BIGINT DEFAULT 0, avatar TEXT, category VARCHAR(16), active INTEGER DEFAULT 1, ts BIGINT, synced BIGINT DEFAULT 0, full_sync INTEGER DEFAULT 0)"))
     await db.execute(text("CREATE TABLE IF NOT EXISTS kol_following (kol VARCHAR(64), handle VARCHAR(64), ts BIGINT, PRIMARY KEY (kol, handle))"))
     await db.execute(text("CREATE INDEX IF NOT EXISTS kol_following_handle ON kol_following (handle)"))
+    await db.execute(text("CREATE TABLE IF NOT EXISTS kol_mentions (tweet_id VARCHAR(32) PRIMARY KEY, kol VARCHAR(64), token VARCHAR(64), ts BIGINT, text TEXT, url TEXT, likes INTEGER DEFAULT 0, retweets INTEGER DEFAULT 0, views BIGINT DEFAULT 0, match VARCHAR(12))"))
+    await db.execute(text("CREATE INDEX IF NOT EXISTS kol_mentions_token ON kol_mentions (token, ts)"))
     await db.execute(text("CREATE TABLE IF NOT EXISTS x_accounts (handle VARCHAR(64) PRIMARY KEY, user_id VARCHAR(32), name TEXT, followers BIGINT, following BIGINT, created_at TEXT, avatar TEXT, description TEXT, verified INTEGER DEFAULT 0, ts BIGINT)"))
     now = int(time.time())
     for h, cat in SEED_KOLS.items():
-        await db.execute(text("INSERT INTO kols (handle, category, active, ts) VALUES (:h, :c, 1, :ts) ON CONFLICT (handle) DO NOTHING").bindparams(h=h, c=cat, ts=now))
+        await db.execute(text("INSERT INTO kols (handle, category, active, ts) VALUES (:h, :c, 1, 0) ON CONFLICT (handle) DO NOTHING").bindparams(h=h, c=cat))
+    for h in DEAD_SEEDS:
+        await db.execute(text("UPDATE kols SET active = 0 WHERE handle = :h").bindparams(h=h))
     if enabled():
         asyncio.create_task(kol_discover_loop(), name="kol-discover")
         asyncio.create_task(kol_follow_loop(), name="kol-follow")
         asyncio.create_task(x_accounts_loop(), name="x-accounts")
+        asyncio.create_task(mentions_loop(), name="kol-mentions")
         log.info("kols: enabled (min followers %s)", KOL_MIN_FOLLOWERS)
     else:
         log.info("kols: TWITTERAPI_KEY missing — smart followers disabled")
@@ -137,7 +142,7 @@ async def kol_discover():
             ON CONFLICT (handle) DO UPDATE SET user_id=EXCLUDED.user_id, name=EXCLUDED.name, followers=EXCLUDED.followers, avatar=EXCLUDED.avatar""")
                          .bindparams(h=h, id=str(a.get("id") or ""), n=a.get("name") or "", f=int(a.get("followers") or 0), a=a.get("profilePicture") or "", ts=now))
     # refresh seed/manual profiles (followers, avatar) once a day
-    rows = await db.fetchall(text("SELECT handle FROM kols WHERE category <> 'auto' AND (ts IS NULL OR ts < :old)").bindparams(old=now - 86400 + 60))
+    rows = await db.fetchall(text("SELECT handle FROM kols WHERE active = 1 AND category <> 'auto' AND (ts IS NULL OR ts < :old OR COALESCE(followers, 0) = 0)").bindparams(old=now - 86400 + 60))
     for r in rows:
         d = await user_info(r["handle"])
         if d:
@@ -237,6 +242,130 @@ async def x_accounts_loop():
         await asyncio.sleep(3600)
 
 
+# ---------------- KOL mentions → chart badges ----------------
+import re as _re
+from email.utils import parsedate_to_datetime as _pd
+_CA = _re.compile(r"0x[a-fA-F0-9]{40}")
+_CASH = _re.compile(r"\$([A-Za-z][A-Za-z0-9]{1,14})")
+_AT = _re.compile(r"@([A-Za-z0-9_]{1,20})")
+_tokmap: dict = {"ts": 0, "by_ca": {}, "by_sym": {}, "by_x": {}}
+
+
+async def _token_maps():
+    """CA → token, unique $SYMBOL → token, X handle → token, from the site feed (refreshed every 10 min)."""
+    if time.time() - _tokmap["ts"] < 600:
+        return _tokmap
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=40)) as s:
+            async with s.get("https://arctools.fun/api/tokens") as r:
+                data = await r.json()
+        from .risk_score import x_handle
+        by_ca, by_sym, by_x, dup = {}, {}, {}, set()
+        for t in data if isinstance(data, list) else []:
+            if not isinstance(t, dict) or not t.get("token"):
+                continue
+            ca = t["token"].lower(); by_ca[ca] = ca
+            sym = (t.get("symbol") or "").upper()
+            if len(sym) >= 3:
+                if sym in by_sym and by_sym[sym] != ca:
+                    dup.add(sym)
+                by_sym.setdefault(sym, ca)
+            h = x_handle(t.get("twitter"))
+            if h:
+                by_x[h] = ca
+        for d in dup:                      # ambiguous cashtags ($ARC, $CAT…) are not evidence for one token
+            by_sym.pop(d, None)
+        _tokmap.update(ts=time.time(), by_ca=by_ca, by_sym=by_sym, by_x=by_x)
+    except Exception as e:  # noqa
+        log.debug("token maps: %s", e)
+    return _tokmap
+
+
+def _match_tokens(text_: str, maps: dict) -> list[tuple[str, str]]:
+    out = []
+    for ca in _CA.findall(text_):
+        if ca.lower() in maps["by_ca"]:
+            out.append((ca.lower(), "ca"))
+    for sym in _CASH.findall(text_):
+        ca = maps["by_sym"].get(sym.upper())
+        if ca:
+            out.append((ca, "cashtag"))
+    for h in _AT.findall(text_):
+        ca = maps["by_x"].get(h.lower())
+        if ca:
+            out.append((ca, "handle"))
+    seen = set(); res = []
+    for ca, kind in out:
+        if ca not in seen:
+            seen.add(ca); res.append((ca, kind))
+    return res
+
+
+async def mentions_scan() -> int:
+    maps = await _token_maps()
+    if not maps["by_ca"]:
+        return 0
+    kols = [r["handle"] for r in await db.fetchall(text("SELECT handle FROM kols WHERE active = 1 ORDER BY followers DESC LIMIT 200"))]
+    found = 0
+    for i in range(0, len(kols), 18):                       # X search accepts ~20 from: clauses per query
+        batch = kols[i:i + 18]
+        q = "(" + " OR ".join(f"from:{h}" for h in batch) + ")"
+        j = await _get("/twitter/tweet/advanced_search", query=q, queryType="Latest")
+        for t in (j or {}).get("tweets") or []:
+            txt = t.get("text") or ""
+            hits = _match_tokens(txt, maps)
+            if not hits:
+                continue
+            try:
+                ts = int(_pd(t["createdAt"]).timestamp())
+            except Exception:  # noqa
+                ts = int(time.time())
+            a = t.get("author") or {}
+            for ca, kind in hits:
+                try:
+                    await db.execute(text("""INSERT INTO kol_mentions (tweet_id, kol, token, ts, text, url, likes, retweets, views, match)
+                        VALUES (:id, :k, :t, :ts, :x, :u, :l, :r, :v, :m) ON CONFLICT (tweet_id) DO UPDATE SET likes = EXCLUDED.likes, retweets = EXCLUDED.retweets, views = EXCLUDED.views""")
+                        .bindparams(id=str(t["id"]), k=(a.get("userName") or "").lower(), t=ca, ts=ts, x=txt[:600], u=t.get("url") or "", l=int(t.get("likeCount") or 0), r=int(t.get("retweetCount") or 0), v=int(t.get("viewCount") or 0), m=kind))
+                    found += 1
+                except Exception as e:  # noqa
+                    log.debug("mention upsert: %s", e)
+    return found
+
+
+async def mentions_loop():
+    await asyncio.sleep(600)
+    while True:
+        try:
+            n = await mentions_scan()
+            log.info("kol mentions: %s matched", n)
+        except Exception as e:  # noqa
+            log.warning("kol mentions: %s", e)
+        await asyncio.sleep(900)
+
+
+async def token_mentions(token: str, since: int = 0, limit: int = 50) -> list[dict]:
+    rows = await db.fetchall(text("""SELECT m.tweet_id, m.kol, m.ts, m.text, m.url, m.likes, m.retweets, m.views, m.match, k.followers, k.name, k.avatar
+        FROM kol_mentions m LEFT JOIN kols k ON k.handle = m.kol WHERE m.token = :t AND m.ts >= :s ORDER BY m.ts DESC LIMIT :l""").bindparams(t=token.lower(), s=since, l=limit))
+    return [dict(r) for r in rows]
+
+
+async def api_kol_mentions(req: web.Request):
+    t = (req.query.get("token") or "").lower()
+    if not (t.startswith("0x") and len(t) == 42):
+        return web.json_response({"error": "token"}, status=400, headers=CORS)
+    rows = await token_mentions(t, int(req.query.get("since", "0") or 0), min(200, int(req.query.get("limit", "50"))))
+    return web.json_response({"token": t, "enabled": enabled(), "mentions": rows}, headers={**CORS, "Cache-Control": "public, max-age=60"})
+
+
+async def api_kol_mentions_feed(req: web.Request):
+    """GET /api/kol-mentions-feed?hours=24 — chain-wide: which tokens are KOLs talking about right now."""
+    hrs = min(168, int(req.query.get("hours", "24")))
+    rows = await db.fetchall(text("""SELECT m.tweet_id, m.kol, m.token, m.ts, m.text, m.url, m.likes, m.views, k.followers, s.symbol
+        FROM kol_mentions m LEFT JOIN kols k ON k.handle = m.kol LEFT JOIN token_symbols s ON s.token = m.token
+        WHERE m.ts >= :s ORDER BY m.ts DESC LIMIT 100""").bindparams(s=int(time.time()) - hrs * 3600))
+    return web.json_response({"hours": hrs, "rows": [dict(r) for r in rows]}, headers={**CORS, "Cache-Control": "public, max-age=60"})
+
+
 # ---------------- API ----------------
 async def smart_followers(handle: str) -> dict:
     h = handle.lower().lstrip("@")
@@ -287,4 +416,6 @@ async def api_kols_admin(req: web.Request):
 def register(app: web.Application):
     app.router.add_get("/api/kol-follows", api_kol_follows)
     app.router.add_get("/api/kols", api_kols)
+    app.router.add_get("/api/kol-mentions", api_kol_mentions)
+    app.router.add_get("/api/kol-mentions-feed", api_kol_mentions_feed)
     app.router.add_post("/api/kols", api_kols_admin)

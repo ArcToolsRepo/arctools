@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
  */
 export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number; vb: number; n: number };
 /** Badge drawn on a bar: DB/DS = dev buy/sell, IB/IS = insider, PB/PS = pro wallet (75%+ win rate). */
-export type ChartMarker = { t: number; side: "buy" | "sell"; kind: "dev" | "insider" | "pro"; text: string; title?: string };
+export type ChartMarker = { t: number; side: "buy" | "sell"; kind: "dev" | "insider" | "pro" | "kol"; text: string; title?: string };
 
 type Props = {
   candles: Candle[];
@@ -37,6 +37,7 @@ const MARKER_COLOR: Record<ChartMarker["kind"], { buy: string; sell: string }> =
   dev: { buy: "#22c580", sell: "#f0534f" },
   insider: { buy: "#2e7cff", sell: "#ff8a3d" },
   pro: { buy: "#9b7bff", sell: "#f5c542" },
+  kol: { buy: "#ff5fd2", sell: "#ff5fd2" },
 };
 
 export function TvChart({ candles, scale, mode, height = 440, markers, onVisible }: Props) {
@@ -144,9 +145,9 @@ export function TvChart({ candles, scale, mode, height = 440, markers, onVisible
     // only events inside the loaded candle range — older ones would all pile up on the first bar
     const list = (markers ?? []).filter((m) => m.t >= first && m.t < lastT).map((m) => ({
       color: MARKER_COLOR[m.kind][m.side],
-      position: (m.side === "buy" ? "belowBar" : "aboveBar") as "belowBar" | "aboveBar",
-      shape: (m.side === "buy" ? "arrowUp" : "arrowDown") as "arrowUp" | "arrowDown",
-      size: m.kind === "dev" ? 1.6 : 1.1,
+      position: (m.kind === "kol" ? "aboveBar" : m.side === "buy" ? "belowBar" : "aboveBar") as "belowBar" | "aboveBar",
+      shape: (m.kind === "kol" ? "circle" : m.side === "buy" ? "arrowUp" : "arrowDown") as "arrowUp" | "arrowDown" | "circle",
+      size: m.kind === "dev" ? 1.6 : m.kind === "kol" ? 1.4 : 1.1,
       text: m.text,
       time: snap(m.t) as import("lightweight-charts").UTCTimestamp,
     })).sort((a, b) => (a.time as number) - (b.time as number));
