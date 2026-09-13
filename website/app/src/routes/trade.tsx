@@ -113,7 +113,8 @@ function Trade() {
   const toggleFav = (t: string) => setFavs((f) => { const n = new Set(f); if (n.has(t)) n.delete(t); else n.add(t); try { localStorage.setItem(FAV_KEY, JSON.stringify([...n])); } catch { /* ignore */ } return n; });
   useEffect(() => {
     let alive = true;
-    const load = () => fetch(`${API}/api/trending?minutes=${tf}&limit=120`).then((r) => r.json()).then((j) => alive && setTrend(j.rows ?? [])).catch(() => null);
+    // never replace a good trending set with an empty/failed fetch (that is what made vol/txs/ATH blink to "—")
+    const load = () => fetch(`${API}/api/trending?minutes=${tf}&limit=120`).then((r) => r.json()).then((j) => { if (alive && Array.isArray(j.rows) && j.rows.length) setTrend(j.rows); }).catch(() => null);
     void load();
     const id = setInterval(load, 15_000);
     return () => { alive = false; clearInterval(id); };
@@ -149,7 +150,20 @@ function Trade() {
     const load = async () => {
       try {
         const all = await fetch("/api/tokens?full=1").then((r) => r.json()).then((j: { tokens?: PadToken[] }) => (j.tokens?.length ?? 0) > 100 ? j.tokens! : null).catch(() => null) ?? await listAllTokens();
-        if (alive) setRows(all);
+        // merge: a refresh that lost a field upstream (logo, name, mcap…) must not blank a cell that was fine a second ago
+        if (alive) setRows((prev) => {
+          const pm = new Map(prev.map((r) => [r.token.toLowerCase(), r]));
+          return all.map((r) => {
+            const o = pm.get(r.token.toLowerCase());
+            if (!o) return r;
+            const m: PadToken = { ...r };
+            for (const k of ["logo", "name", "symbol", "mcapUsd", "priceUsd", "volUsd", "twitter", "telegram", "website", "createdAt", "stage"] as const) {
+              const nv = (m as Record<string, unknown>)[k], ov = (o as Record<string, unknown>)[k];
+              if ((nv == null || nv === "" || nv === "?") && ov != null && ov !== "" && ov !== "?") (m as Record<string, unknown>)[k] = ov;
+            }
+            return m;
+          });
+        });
       } catch { /* ignore */ }
       fetch(`${API}/api/movers?minutes=1440`).then((r) => r.json()).then((j) => alive && setMovers(j.rows ?? [])).catch(() => null);
       fetch(`${API}/api/clusters?minutes=1440&n=2`).then((r) => r.json()).then((j) => alive && setClusters(j.rows ?? [])).catch(() => null);

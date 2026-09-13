@@ -17,9 +17,23 @@ export function TokenLogo({ src, fallback, symbol, size = 38, radius = 8, style,
     <span style={{ alignItems: "center", background: "#0e1118", border: "1px solid var(--arc-line)", borderRadius: radius, display: "inline-flex", flex: "none", height: size, justifyContent: "center", overflow: "hidden", width: size, ...style }} title={ok ? undefined : "No logo added by the creator"}>
       {ok
         ? <img alt="" height={size} key={cur!} loading="lazy" onError={onErr} src={cur!} style={{ height: "100%", objectFit: "cover", width: "100%" }} width={size} />
-        : monogram
-          ? <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: Math.max(11, Math.round(size * 0.36)) }}>{(symbol || "?").slice(0, 1).toUpperCase()}</span>
-          : <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: Math.max(7, Math.round(size * 0.2)), letterSpacing: "0.04em", lineHeight: 1.1, opacity: 0.8, textAlign: "center", textTransform: "uppercase" }}>no<br />logo</span>}
+        : <Monogram size={size} symbol={symbol} />}
+    </span>
+  );
+}
+
+
+/** Deterministic identicon for tokens whose creators never added artwork: two letters on a gradient derived from the
+ *  symbol — the table stays uniform instead of screaming "NO LOGO" on a third of the rows (hover explains it). */
+function Monogram({ symbol, size }: { symbol: string; size: number }) {
+  const s = (symbol || "?").replace(/[^a-z0-9]/gi, "").toUpperCase();
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  const hue = h % 360, hue2 = (hue + 40 + (h >> 8) % 60) % 360;
+  const txt = s.slice(0, s.length >= 4 ? 2 : 1) || "?";
+  return (
+    <span className="arc-mono" style={{ alignItems: "center", background: `linear-gradient(135deg, hsl(${hue} 55% 38%), hsl(${hue2} 60% 24%))`, color: "rgba(255,255,255,0.92)", display: "flex", fontSize: Math.max(9, Math.round(size * (txt.length > 1 ? 0.34 : 0.42))), fontWeight: 700, height: "100%", justifyContent: "center", letterSpacing: "0.02em", width: "100%" }} title="No logo added by the creator">
+      {txt}
     </span>
   );
 }

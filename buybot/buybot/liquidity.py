@@ -207,6 +207,25 @@ async def _risk_one(s: aiohttp.ClientSession, token: str) -> dict:
     c = _risk_cache.get(token)
     if c and time.time() - c[0] < 60:
         return c[1]
+    if c and time.time() - c[0] < 900:
+        # stale-while-revalidate: answer instantly from the ≤15 min value, refresh in the background
+        if token not in _risk_inflight:
+            _risk_inflight.add(token)
+            async def _bg():
+                try:
+                    async with aiohttp.ClientSession() as s2:
+                        await _risk_compute(s2, token)
+                finally:
+                    _risk_inflight.discard(token)
+            asyncio.create_task(_bg())
+        return c[1]
+    return await _risk_compute(s, token)
+
+
+_risk_inflight: set[str] = set()
+
+
+async def _risk_compute(s: aiohttp.ClientSession, token: str) -> dict:
     out = {"holders": 0, "top10": None, "top1": None, "dev": None, "dev_pct": None, "bundle_pct": None, "bundlers": 0}
     try:
         pools = await _known_pools()
@@ -264,7 +283,30 @@ async def api_holder_risk(req: web.Request):
                              headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=60"})
 
 
+async def risk_warm_loop():
+    """Keep holder-risk warm for what the Terminal shows (top 200 by activity + ArcToolsPad + newest), so the SCORE and
+    DEV/BUNDLE columns render without the "…" wait. Runs every 45 s, 6 tokens at a time (arc-scan is rate limited)."""
+    await asyncio.sleep(60)
+    while True:
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get("https://arctools.fun/api/tokens", headers={"User-Agent": "ArcTools-buybot/1.0"}, timeout=aiohttp.ClientTimeout(total=60)) as r:
+                    j = await r.json()
+                toks = j.get("tokens") or []
+                want = [t["token"].lower() for t in toks if t.get("pad") == "ArcToolsPad"]
+                want += [t["token"].lower() for t in toks[:220]]
+                want = list(dict.fromkeys(want))
+                for i in range(0, len(want), 6):
+                    await asyncio.gather(*[_risk_one(s, t) for t in want[i:i + 6]], return_exceptions=True)
+                    await asyncio.sleep(0.3)
+            log.info("risk warm: %d tokens", len(want))
+        except Exception as e:  # noqa
+            log.warning("risk warm: %s", e)
+        await asyncio.sleep(45)
+
+
 def register_risk(app: web.Application):
+    asyncio.create_task(risk_warm_loop(), name="risk-warm")
     from .risk_score import register as _reg_score
     _reg_score(app)
     app.router.add_get("/api/holder-risk", api_holder_risk)
