@@ -79,6 +79,7 @@ function Trade() {
     void navigate({ to: "/token/$ca", params: { ca: token } });
   };
   const [hotAddr, setHotAddr] = useState<string | null>(null);
+  const [pendingBuy, setPendingBuy] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState<"" | "settings" | "filters">("");
   // who signs: the in-browser trading wallet (one click) or the connected browser wallet (MetaMask/Rabby — confirm each tx)
   const [signer, setSigner] = useState<"hot" | "browser">("hot");
@@ -157,8 +158,14 @@ function Trade() {
     const a = quickAmount();
     if ([1, 5, 20, 100].includes(a)) setAmount(a); else setCustom(String(a));
     const ca = new URLSearchParams(window.location.search).get("buy");
-    if (ca && /^0x[0-9a-fA-F]{40}$/.test(ca)) setQ(ca);
+    if (ca && /^0x[0-9a-fA-F]{40}$/.test(ca)) { setQ(ca); setPendingBuy(ca.toLowerCase()); }
   }, []);
+  // ?buy=<ca>: if the token is not in any of our lists once they loaded, the token page is the right place (it has the swap panel)
+  useEffect(() => {
+    if (!pendingBuy || rows.length === 0) return;
+    const t = setTimeout(() => { if (!rows.some((r) => r.token.toLowerCase() === pendingBuy)) void navigate({ to: "/token/$ca", params: { ca: pendingBuy } }); setPendingBuy(null); }, 1500);
+    return () => clearTimeout(t);
+  }, [pendingBuy, rows]);
 
   useEffect(() => {
     let alive = true;

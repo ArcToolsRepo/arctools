@@ -26,7 +26,8 @@ export function QuickBuy({ token, symbol, compact = false }: { token: string; sy
   const run = async (e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
     const addr = hotAddress();
-    if (!ready || !addr) { window.location.href = `/trade?buy=${token}`; return; }
+    // no unlocked trading wallet: the token page has the full swap panel (connect wallet or open the trading wallet there)
+    if (!ready || !addr) { window.location.href = `/token/${token}?buy=1`; return; }
     setBusy(true); setMsg(null);
     try {
       const spend = (BigInt(Math.round(amt * 1e6)) * 10n ** 12n * 1000n) / 1015n;
@@ -50,7 +51,7 @@ export function QuickBuy({ token, symbol, compact = false }: { token: string; sy
       disabled={busy}
       onClick={run}
       style={{ background: msg ? (msg.ok ? "rgba(34,197,128,0.18)" : "rgba(240,83,79,0.18)") : ready ? "var(--arc-up)" : "transparent", border: "1px solid " + (msg && !msg.ok ? "#f0534f" : "var(--arc-up)"), borderRadius: 4, color: msg ? (msg.ok ? "var(--arc-up)" : "#f0534f") : ready ? "#06130b" : "var(--arc-up)", cursor: "pointer", fontSize: compact ? 11 : 12, fontWeight: 700, padding: compact ? "3px 8px" : "5px 10px", whiteSpace: "nowrap" }}
-      title={ready ? `Buy ${amt} USDC of ${symbol} with the trading wallet (best venue, 10% max slippage)` : "Open the trading wallet in the Terminal"}
+      title={ready ? `Buy ${amt} USDC of ${symbol} with the trading wallet (best venue, 10% max slippage)` : "Open the token page to buy (connect a wallet or unlock the trading wallet)"}
       type="button"
     >
       {label}

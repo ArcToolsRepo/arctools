@@ -43,7 +43,20 @@ function InsiderPage() {
     return () => { alive = false; clearInterval(id); };
   }, [w]);
 
-  const st = useMemo(() => stats?.find((x) => x.range === range) ?? stats?.[0] ?? null, [stats, range]);
+  // not ranked (too few closed trades / volume) → derive the headline numbers from the live positions so the cards are never empty
+  const derived = useMemo<Stat | null>(() => {
+    if (!positions || positions.length === 0) return null;
+    const closed = positions.filter((p) => p.value <= 1 && p.n > 0);
+    const wins = closed.filter((p) => p.realized > 0).length;
+    const best = [...positions].sort((a, b) => (b.realized + b.unrealized) - (a.realized + a.unrealized))[0];
+    const cost = positions.reduce((s, p) => s + p.cost, 0);
+    const realized = positions.reduce((s, p) => s + p.realized, 0);
+    const unrealized = positions.reduce((s, p) => s + p.unrealized, 0);
+    return { range: "live", pnl_realized: realized, pnl_unrealized: unrealized, pnl_total: realized + unrealized, pnl_pct: cost > 0 ? ((realized + unrealized) / cost) * 100 : 0,
+      winrate: closed.length ? (wins / closed.length) * 100 : 0, trades: positions.reduce((s, p) => s + p.n, 0), closed: closed.length, volume: positions.reduce((s, p) => s + p.cost + p.proceeds, 0),
+      best_symbol: best?.symbol ?? null, best_token: best?.token ?? null, best_pnl: best ? best.realized + best.unrealized : 0, last_trade: Math.max(0, ...positions.map((p) => p.last_ts)), open_positions: positions.filter((p) => p.value > 1).length };
+  }, [positions]);
+  const st = useMemo(() => stats?.find((x) => x.range === range) ?? stats?.[0] ?? derived, [stats, range, derived]);
   const open = useMemo(() => (positions ?? []).filter((p) => p.value > 1).sort((a, b) => b.value - a.value), [positions]);
   const closed = useMemo(() => (positions ?? []).filter((p) => p.value <= 1 && p.n > 0).sort((a, b) => b.realized - a.realized), [positions]);
   // what this wallet trades most: token → number of trades + net USD
@@ -90,7 +103,7 @@ function InsiderPage() {
           <Cell k="BEST TRADE" tone="up" v={st?.best_symbol ? `${st.best_symbol} ${signed(st.best_pnl)}` : "—"} />
           <Cell k="LAST TRADE" v={st?.last_trade ? `${ago(st.last_trade)} ago` : "—"} />
         </div>
-        {stats && stats.length === 0 && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, marginTop: 10 }}>Not ranked (fewer than 3 closed trades or under $200 volume) — positions and trades below are still live.</p>}
+        {stats && stats.length === 0 && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, marginTop: 10 }}>Not on the leaderboard yet (fewer than 3 closed trades or under $200 volume) — numbers above are computed live from this wallet\u2019s open and closed positions.</p>}
 
         <div className="arc-2col" style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 1fr)", marginTop: 20 }}>
           <div>
