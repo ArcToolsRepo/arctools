@@ -733,3 +733,9 @@
   .arc-token__table th:last-child, .arc-token__table td:last-child { display: none; } /* tx link column: tap the row → explorer via wallet */
   .arc-nav__links { -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 28px), transparent); }
 }
+
+/* native <select> dropdowns: the browser painted a white list with our light ink text (unreadable) — force the dark scheme */
+select { color-scheme: dark; }
+select option, select optgroup { background: #0e1118; color: #e6e9f2; }
+select option:checked, select option:hover { background: #1d3a6e; color: #fff; }
+select option:disabled { color: #6b7385; }
