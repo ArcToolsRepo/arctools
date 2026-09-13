@@ -249,6 +249,8 @@ _CA = _re.compile(r"0x[a-fA-F0-9]{40}")
 _CASH = _re.compile(r"\$([A-Za-z][A-Za-z0-9]{1,14})")
 _AT = _re.compile(r"@([A-Za-z0-9_]{1,20})")
 _tokmap: dict = {"ts": 0, "by_ca": {}, "by_sym": {}, "by_x": {}}
+_X_BLOCK = {"arc", "circle", "jerallaire", "grok", "x", "elonmusk", "basedbot", "arcdexscan", "tollylabs", "warpdotfun", "uniswap", "robinhoodapp", "binance", "coinbase"}
+_ARC_CTX = _re.compile(r"\barc\b|arc-scan|arcscan|arcpad|radardex|tolly|warp\.fun|arctools|circle", _re.I)
 
 
 async def _token_maps():
@@ -260,8 +262,14 @@ async def _token_maps():
             async with s.get("https://arctools.fun/api/tokens") as r:
                 data = await r.json()
         from .risk_score import x_handle
-        by_ca, by_sym, by_x, dup = {}, {}, {}, set()
-        for t in data if isinstance(data, list) else []:
+        by_ca, by_sym, by_x, dup, dupx = {}, {}, {}, set(), set()
+        # handles that are KOLs / ecosystem accounts themselves are never evidence for a token (every memecoin links @arc)
+        # a token's X handle counts only when we KNOW it is a small project account (< 20k followers): scam tokens paste
+        # @tazapay / @arc / celebrity handles into their metadata, and unknown accounts stay out until x_accounts has them
+        small = {r["handle"] for r in await db.fetchall(text("SELECT handle FROM x_accounts WHERE followers >= 0 AND followers < 20000"))}
+        big = {r["handle"] for r in await db.fetchall(text("SELECT handle FROM kols"))} | _X_BLOCK
+        toks = data if isinstance(data, list) else (data.get("tokens") or data.get("rows") or [])
+        for t in toks:
             if not isinstance(t, dict) or not t.get("token"):
                 continue
             ca = t["token"].lower(); by_ca[ca] = ca
@@ -271,10 +279,14 @@ async def _token_maps():
                     dup.add(sym)
                 by_sym.setdefault(sym, ca)
             h = x_handle(t.get("twitter"))
-            if h:
-                by_x[h] = ca
+            if h and h not in big and h in small:
+                if h in by_x and by_x[h] != ca:
+                    dupx.add(h)
+                by_x.setdefault(h, ca)
         for d in dup:                      # ambiguous cashtags ($ARC, $CAT…) are not evidence for one token
             by_sym.pop(d, None)
+        for d in dupx:                     # one X account claimed by several tokens → not evidence either
+            by_x.pop(d, None)
         _tokmap.update(ts=time.time(), by_ca=by_ca, by_sym=by_sym, by_x=by_x)
     except Exception as e:  # noqa
         log.debug("token maps: %s", e)
@@ -286,9 +298,10 @@ def _match_tokens(text_: str, maps: dict) -> list[tuple[str, str]]:
     for ca in _CA.findall(text_):
         if ca.lower() in maps["by_ca"]:
             out.append((ca.lower(), "ca"))
+    arc_ctx = bool(_ARC_CTX.search(text_)) or bool(_CA.search(text_))
     for sym in _CASH.findall(text_):
         ca = maps["by_sym"].get(sym.upper())
-        if ca:
+        if ca and arc_ctx:                 # $STONK exists on five chains — a cashtag counts only with Arc context in the tweet
             out.append((ca, "cashtag"))
     for h in _AT.findall(text_):
         ca = maps["by_x"].get(h.lower())
@@ -309,7 +322,7 @@ async def mentions_scan() -> int:
     found = 0
     for i in range(0, len(kols), 18):                       # X search accepts ~20 from: clauses per query
         batch = kols[i:i + 18]
-        q = "(" + " OR ".join(f"from:{h}" for h in batch) + ")"
+        q = "(" + " OR ".join(f"from:{h}" for h in batch) + ") -filter:replies"   # calls are top-level posts; replies are noise that crowds out the 20-tweet page
         j = await _get("/twitter/tweet/advanced_search", query=q, queryType="Latest")
         for t in (j or {}).get("tweets") or []:
             txt = t.get("text") or ""
@@ -340,7 +353,7 @@ async def mentions_loop():
             log.info("kol mentions: %s matched", n)
         except Exception as e:  # noqa
             log.warning("kol mentions: %s", e)
-        await asyncio.sleep(900)
+        await asyncio.sleep(1800)
 
 
 async def token_mentions(token: str, since: int = 0, limit: int = 50) -> list[dict]:
