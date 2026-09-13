@@ -186,7 +186,12 @@ async def chk_display(s):
         if pg.get("error") or pg.get("mcapUsd") is None:
             problems.append(f"pad token page {rows[-1]['symbol']}: {str(pg)[:80]}")
             await _warm(s, purge=f"token:{t}")
-        rt = await _json(s, f"{SITE}/api/swaproute?token={t}&side=buy&amount=1000000000000000000", timeout=60) or {}
+        rt = {}
+        for attempt in range(3):   # quotes go through the relay: one dropped call must not raise an alarm
+            rt = await _json(s, f"{SITE}/api/swaproute?token={t}&side=buy&amount=1000000000000000000", timeout=60) or {}
+            if rt.get("legs") and not rt.get("error"):
+                break
+            await asyncio.sleep(4)
         if rt.get("error") or not rt.get("legs"):
             problems.append(f"route {rows[-1]['symbol']}: {rt.get('error') or 'no legs'}")
     if problems:
