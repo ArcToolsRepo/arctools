@@ -250,6 +250,26 @@ async def quote_pools_loop():
                 await db.execute(text("INSERT INTO pool_backfill (pool, done) VALUES (:p, 0) ON CONFLICT (pool) DO NOTHING").bindparams(p=pool))
                 await db.execute(text("INSERT INTO token_symbols (token, symbol) VALUES (:t, :s) ON CONFLICT (token) DO NOTHING").bindparams(t=tok, s=str(l.get("symbol") or "")[:32]))
             log.info("quote pools: %d launches, %d new, %d quotes priced", len(launches), new, len(_quote_usd))
+            # backfill the stock-quoted pools ourselves (from their launch block) — the hourly repair loop is too slow for this
+            todo = await db.fetchall(text(
+                "SELECT q.pool, q.from_block FROM quote_pools q JOIN pool_backfill b ON b.pool = q.pool WHERE b.done = 0 ORDER BY q.from_block DESC NULLS LAST LIMIT 60"))
+            if todo:
+                head_now = await CHAIN._bn()
+                sem = asyncio.Semaphore(3)
+
+                async def bf(pool, fb):
+                    async with sem:
+                        try:
+                            _pool_cache.pop(pool, None)
+                            if not await _resolve_pool(pool):
+                                return
+                            blocks = max(1000, head_now - int(fb) + 200) if fb else 400_000
+                            n = await backfill_pool(pool, blocks)
+                            await db.execute(text("UPDATE pool_backfill SET done = 1, swaps = :n WHERE pool = :p").bindparams(n=n, p=pool))
+                        except Exception as e:  # noqa
+                            log.warning("quote backfill %s: %s", pool[:10], e)
+                log.info("quote pools: backfilling %d pools", len(todo))
+                await asyncio.gather(*[bf(r["pool"], r["from_block"]) for r in todo])
         except Exception as e:  # noqa
             log.warning("quote pools loop: %s", e)
         await asyncio.sleep(300)
