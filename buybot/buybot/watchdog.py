@@ -153,7 +153,51 @@ async def chk_own_api(s):
     return ok, f"trending={bool(j)} liq={bool(j2)}"
 
 
-CHECKS = [("pages", chk_pages), ("tokens", chk_tokens_api), ("relay", chk_relay), ("index", chk_index), ("api", chk_own_api)]
+async def chk_display(s):
+    """What a user actually sees: launchpad list complete with logos, stock pairs listed, a pad token's page + route
+    answer, Terminal rows carry stats. Self-heals by purging the relevant caches."""
+    problems = []
+    pl = await _json(s, f"{SITE}/api/padlist", timeout=60) or {}
+    rows = pl.get("rows") or []
+    n = len(rows)
+    prev = _healed.get("_pad_n", 0)
+    if n < prev:
+        problems.append(f"pad list shrank {prev}->{n}")
+        await _warm(s, purge="lists")
+    else:
+        _healed["_pad_n"] = n
+    garbled = [r["symbol"] for r in rows if r.get("symbol") in ("?", "") or not r.get("name")]
+    if garbled:
+        problems.append(f"pad rows garbled: {garbled}")
+        await _warm(s, purge="lists")
+    nologo = [r["symbol"] for r in rows if not r.get("image")]
+    prev_nl = _healed.get("_pad_nologo")
+    if prev_nl is not None and len(nologo) > prev_nl:
+        problems.append(f"pad logos disappeared: {nologo}")
+        await _warm(s, purge="lists")
+    _healed["_pad_nologo"] = min(len(nologo), prev_nl if prev_nl is not None else len(nologo))
+    st = await _json(s, f"{SITE}/api/stocks", timeout=60) or {}
+    stocks = st.get("stocks") or []
+    if len(stocks) < 10 or not any(x.get("usdcPool") for x in stocks):
+        problems.append(f"stocks list {len(stocks)} / pools {sum(1 for x in stocks if x.get('usdcPool'))}")
+    if rows:
+        t = rows[-1]["token"]
+        pg = await _json(s, f"{SITE}/api/tokenpage?ca={t}", timeout=60) or {}
+        if pg.get("error") or pg.get("mcapUsd") is None:
+            problems.append(f"pad token page {rows[-1]['symbol']}: {str(pg)[:80]}")
+            await _warm(s, purge=f"token:{t}")
+        rt = await _json(s, f"{SITE}/api/swaproute?token={t}&side=buy&amount=1000000000000000000", timeout=60) or {}
+        if rt.get("error") or not rt.get("legs"):
+            problems.append(f"route {rows[-1]['symbol']}: {rt.get('error') or 'no legs'}")
+    if problems:
+        _healed["display"] = _healed.get("display", 0) + 1
+        return False, " · ".join(problems)[:300]
+    return True, f"pad {n} tokens, {n - len(nologo)} logos · stocks {len(stocks)} · page+route ok"
+
+
+CHECKS = [("pages", chk_pages), ("tokens", chk_tokens_api), ("relay", chk_relay), ("index", chk_index), ("api", chk_own_api), ("display", chk_display)]
+REPORT_EVERY = int(os.getenv("WATCHDOG_REPORT_EVERY", "3600"))   # hourly "all good" summary to the admin
+_last_report = 0.0
 
 
 async def run_once() -> dict[str, tuple[bool, str]]:
@@ -195,6 +239,14 @@ async def watchdog_loop():
                     await _tg(f"🔴 <b>ArcTools watchdog</b>: <code>{name}</code> failing for {_fail_streak[name]} rounds\n{detail}\n"
                               f"self-heal attempts: {_healed.get(name, 0)}")
             log.info("watchdog: %s", {k: ("ok" if v[0] else "FAIL") for k, v in res.items()})
+            # periodic review summary (what the user asked for: "check every 30-60 min that everything displays fine")
+            global _last_report
+            if REPORT_EVERY and now - _last_report >= REPORT_EVERY:
+                _last_report = now
+                ok_all = all(v[0] for v in res.values())
+                lines = [f"{'🟢' if v[0] else '🔴'} <code>{k}</code> — {v[1][:120]}" for k, v in res.items()]
+                await _tg(f"{'🟢' if ok_all else '🔴'} <b>ArcTools review</b> ({time.strftime('%H:%M UTC', time.gmtime(now))})\n" + "\n".join(lines)
+                          + (f"\nself-heals since start: {sum(v for k, v in _healed.items() if not k.startswith('_'))}" ))
             LAST.update(ts=int(now), ok=all(v[0] for v in res.values()), rounds=LAST["rounds"] + 1,
                         checks={k: {"ok": v[0], "detail": v[1][:160], "streak": _fail_streak.get(k, 0)} for k, v in res.items()})
         except Exception as e:  # noqa
