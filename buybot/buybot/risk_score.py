@@ -32,7 +32,12 @@ _board_cache: tuple[float, dict[str, int]] = (0.0, {})
 async def init():
     await db.execute(text("CREATE TABLE IF NOT EXISTS token_dev (token VARCHAR(64) PRIMARY KEY, dev VARCHAR(64), source VARCHAR(12), ts BIGINT)"))
     await db.execute(text("CREATE INDEX IF NOT EXISTS token_dev_dev ON token_dev (dev)"))
+    # wallet ↔ X handle links. source: 'pad' (creator wrote it on-chain on ArcToolsPad/ArcPad → verified),
+    # 'meta' (declared in RadarDex/Warp/other pad metadata → declared, spoofable). One row per (wallet, handle, token).
+    await db.execute(text("CREATE TABLE IF NOT EXISTS wallet_x (wallet VARCHAR(64), handle VARCHAR(64), token VARCHAR(64), source VARCHAR(12), ts BIGINT, PRIMARY KEY (wallet, handle, token))"))
+    await db.execute(text("CREATE INDEX IF NOT EXISTS wallet_x_handle ON wallet_x (handle)"))
     asyncio.create_task(_backfill())
+    asyncio.create_task(x_sync_loop())
 
 
 async def _backfill():
@@ -105,8 +110,136 @@ async def dev_history(dev: str) -> dict:
             log.debug("dev_history %s/%s: %s", dev, t, e)
     out.sort(key=lambda d: -d["first_ts"])
     res = {"dev": dev, "launches": len(out), "rugs": sum(1 for d in out if d["dumped"]), "tokens": out}
+    try:
+        res["x"] = (await wallet_x([dev])).get(dev, [])
+    except Exception:  # noqa
+        res["x"] = []
     _hist_cache[dev] = (time.time(), res)
     return res
+
+
+# ---------------- wallet ↔ X ----------------
+_X_BAD = {"i", "intent", "search", "home", "status", "share", "hashtag", "explore", "settings", "login", "signup", "compose", "messages", "notifications", "x", "twitter", "communities"}
+VERIFIED_PADS = {"arctoolspad", "arcpad"}
+
+
+def x_handle(url: str | None) -> str | None:
+    """'https://x.com/Foo?s=21' → 'foo'. None for non-profile links."""
+    if not url:
+        return None
+    u = url.strip()
+    if u.startswith("@"):
+        u = u[1:]
+    u = u.replace("https://", "").replace("http://", "").replace("www.", "").replace("mobile.", "")
+    for host in ("x.com/", "twitter.com/"):
+        if u.lower().startswith(host):
+            u = u[len(host):]
+            break
+    else:
+        if "/" in u or "." in u:
+            return None
+    h = u.split("/")[0].split("?")[0].split("#")[0].strip().lower()
+    if not h or h in _X_BAD or len(h) > 20 or not all(c.isalnum() or c == "_" for c in h):
+        return None
+    return h
+
+
+async def x_sync():
+    """Pull token socials from the site feed, join with token_dev, upsert wallet_x."""
+    import aiohttp
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=40)) as sess:
+        async with sess.get("https://arctools.fun/api/tokens") as r:
+            data = await r.json()
+    toks = data if isinstance(data, list) else (data.get("tokens") or data.get("rows") or [])
+    pairs = [(t["token"].lower(), x_handle(t.get("twitter")), (t.get("pad") or "").lower()) for t in toks if isinstance(t, dict) and t.get("token") and x_handle(t.get("twitter"))]
+    if not pairs:
+        return 0
+    from sqlalchemy import bindparam
+    devs = await db.fetchall(text("SELECT token, dev, source FROM token_dev WHERE token IN :ts").bindparams(bindparam("ts", value=[p[0] for p in pairs], expanding=True)))
+    dev_of = {r["token"].lower(): (r["dev"].lower(), r["source"]) for r in devs if r["dev"]}
+    n = 0
+    now = int(time.time())
+    for tok, handle, pad in pairs:
+        d = dev_of.get(tok)
+        if not d or d[1] != "radar":  # only real deployers (radar = factory event), not first buyers
+            continue
+        src = "pad" if pad in VERIFIED_PADS else "meta"
+        try:
+            await db.execute(text("INSERT INTO wallet_x (wallet, handle, token, source, ts) VALUES (:w, :h, :t, :s, :ts) ON CONFLICT (wallet, handle, token) DO UPDATE SET source = EXCLUDED.source")
+                             .bindparams(w=d[0], h=handle, t=tok, s=src, ts=now))
+            n += 1
+        except Exception as e:  # noqa
+            log.debug("wallet_x upsert %s: %s", tok, e)
+    _x_cache.clear()
+    return n
+
+
+async def x_sync_loop():
+    await asyncio.sleep(90)
+    while True:
+        try:
+            n = await x_sync()
+            log.info("wallet_x sync: %s links", n)
+        except Exception as e:  # noqa
+            log.warning("wallet_x sync: %s", e)
+        await asyncio.sleep(900)
+
+
+_x_cache: dict[str, tuple[float, list[dict]]] = {}
+
+
+async def wallet_x(wallets: list[str]) -> dict[str, list[dict]]:
+    """{wallet: [{handle, verified, shared, tokens:[symbols]}]}. A handle used by ≥3 different deployer wallets is
+    'shared' (celebrity / project spoof) and is not shown as that wallet's identity."""
+    from sqlalchemy import bindparam
+    ws = [w.lower() for w in wallets][:80]
+    out: dict[str, list[dict]] = {w: [] for w in ws}
+    miss = [w for w in ws if not (w in _x_cache and time.time() - _x_cache[w][0] < 600)]
+    for w in ws:
+        if w in _x_cache and w not in miss:
+            out[w] = _x_cache[w][1]
+    if miss:
+        rows = await db.fetchall(text("""
+            SELECT x.wallet, x.handle, x.source, s.symbol, x.token,
+                   (SELECT COUNT(DISTINCT wallet) FROM wallet_x x2 WHERE x2.handle = x.handle) AS owners
+            FROM wallet_x x LEFT JOIN token_symbols s ON s.token = x.token WHERE x.wallet IN :ws ORDER BY x.source, x.ts""").bindparams(bindparam("ws", value=miss, expanding=True)))
+        by: dict[str, dict[str, dict]] = {w: {} for w in miss}
+        for r in rows:
+            d = by[r["wallet"].lower()].setdefault(r["handle"], {"handle": r["handle"], "verified": False, "shared": int(r["owners"] or 1) >= 3, "tokens": []})
+            d["verified"] = d["verified"] or r["source"] == "pad"
+            d["tokens"].append(r["symbol"] or r["token"][:6])
+        for w in miss:
+            lst = sorted(by[w].values(), key=lambda d: (not d["verified"], d["shared"], -len(d["tokens"])))
+            _x_cache[w] = (time.time(), lst)
+            out[w] = lst
+    return out
+
+
+async def api_x(req: web.Request):
+    """GET /api/x/{handle} — every deployer wallet that declared this X account, their tokens and dump history."""
+    h = x_handle(req.match_info["handle"])
+    if not h:
+        return web.json_response({"error": "handle"}, status=400, headers=CORS)
+    rows = await db.fetchall(text("SELECT x.wallet, x.token, x.source, s.symbol FROM wallet_x x LEFT JOIN token_symbols s ON s.token = x.token WHERE x.handle = :h ORDER BY x.ts").bindparams(h=h))
+    wallets: dict[str, dict] = {}
+    for r in rows:
+        w = wallets.setdefault(r["wallet"].lower(), {"wallet": r["wallet"].lower(), "verified": False, "tokens": []})
+        w["verified"] = w["verified"] or r["source"] == "pad"
+        w["tokens"].append({"token": r["token"], "symbol": r["symbol"]})
+    for w in wallets.values():
+        hist = await dev_history(w["wallet"])
+        w["launches"], w["rugs"] = hist["launches"], hist["rugs"]
+        dumped = {t["token"] for t in hist["tokens"] if t["dumped"]}
+        for t in w["tokens"]:
+            t["dumped"] = t["token"] in dumped
+    return web.json_response({"handle": h, "url": f"https://x.com/{h}", "wallets": list(wallets.values()), "shared": len(wallets) >= 3,
+                              "launches": sum(w["launches"] for w in wallets.values()), "rugs": sum(w["rugs"] for w in wallets.values())},
+                             headers={**CORS, "Cache-Control": "public, max-age=120"})
+
+
+async def api_wallet_x(req: web.Request):
+    ws = [w.strip() for w in (req.query.get("wallets") or "").split(",") if w.strip().startswith("0x") and len(w.strip()) == 42]
+    return web.json_response({"x": await wallet_x(ws)}, headers={**CORS, "Cache-Control": "public, max-age=120"})
 
 
 def score(k: dict, official: bool = False) -> tuple[int, str, list[str]]:
@@ -200,6 +333,21 @@ async def wallet_labels(wallets: list[str], token: str | None = None) -> dict[st
                 out[w].append({"kind": "ruger", "text": f"dumped {h['rugs']} token{'s' if h['rugs'] > 1 else ''}"})
     except Exception as e:  # noqa
         log.debug("labels dev: %s", e)
+    try:
+        xs = await wallet_x(ws)
+        for w, lst in xs.items():
+            own = [d for d in lst if not d["shared"]]
+            if own:
+                d = own[0]
+                # a wallet that pastes one famous handle under 3+ unrelated tokens, or several different handles, is claiming, not identifying
+                related = any(t and (t.lower()[:4] in d["handle"] or d["handle"][:4] in t.lower()) for t in d["tokens"])
+                claim = (not d["verified"]) and (len(own) > 1 or (len(d["tokens"]) >= 3 and not related))
+                out[w].append({"kind": "x", "text": (f"claims @{d['handle']}" if claim else f"@{d['handle']}") + (" ✓" if d["verified"] else "") + (f" +{len(own) - 1}" if len(own) > 1 else ""),
+                               "url": f"https://x.com/{d['handle']}", "verified": d["verified"], "conflict": len(own) > 1, "shared": claim})
+            elif lst:
+                out[w].append({"kind": "x", "text": f"claims @{lst[0]['handle']}", "url": f"https://x.com/{lst[0]['handle']}", "verified": False, "shared": True})
+    except Exception as e:  # noqa
+        log.debug("labels x: %s", e)
     try:
         since = int(time.time()) - 86400
         fr = await db.fetchall(text("SELECT wallet, MIN(ts) AS t0, COUNT(*) AS n FROM swaps WHERE wallet IN :ws GROUP BY wallet")
@@ -326,3 +474,5 @@ def register(app: web.Application):
     app.router.add_get("/api/dev-history", api_dev_history)
     app.router.add_get("/api/wallet-labels", api_wallet_labels)
     app.router.add_get("/api/rugs", api_rugs)
+    app.router.add_get("/api/wallet-x", api_wallet_x)
+    app.router.add_get("/api/x/{handle}", api_x)

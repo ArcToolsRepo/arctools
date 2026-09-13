@@ -26,6 +26,7 @@ import { Route as DiagRouteImport } from './routes/diag'
 import { Route as BridgeRouteImport } from './routes/bridge'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as XHandleRouteImport } from './routes/x.$handle'
 import { Route as TokenCaRouteImport } from './routes/token.$ca'
 import { Route as PadCaRouteImport } from './routes/pad.$ca'
 import { Route as InsiderWalletRouteImport } from './routes/insider.$wallet'
@@ -125,6 +126,11 @@ const AppRoute = AppRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const XHandleRoute = XHandleRouteImport.update({
+  id: '/x/$handle',
+  path: '/x/$handle',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TokenCaRoute = TokenCaRouteImport.update({
@@ -234,6 +240,7 @@ export interface FileRoutesByFullPath {
   '/insider/$wallet': typeof InsiderWalletRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
+  '/x/$handle': typeof XHandleRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
   '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
 }
@@ -268,6 +275,7 @@ export interface FileRoutesByTo {
   '/insider/$wallet': typeof InsiderWalletRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
+  '/x/$handle': typeof XHandleRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
   '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
 }
@@ -303,6 +311,7 @@ export interface FileRoutesById {
   '/insider/$wallet': typeof InsiderWalletRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
+  '/x/$handle': typeof XHandleRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
   '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
 }
@@ -339,6 +348,7 @@ export interface FileRouteTypes {
     | '/insider/$wallet'
     | '/pad/$ca'
     | '/token/$ca'
+    | '/x/$handle'
     | '/api/pad-logo/$ca'
     | '/api/logo/ipfs/$cid'
   fileRoutesByTo: FileRoutesByTo
@@ -373,6 +383,7 @@ export interface FileRouteTypes {
     | '/insider/$wallet'
     | '/pad/$ca'
     | '/token/$ca'
+    | '/x/$handle'
     | '/api/pad-logo/$ca'
     | '/api/logo/ipfs/$cid'
   id:
@@ -407,6 +418,7 @@ export interface FileRouteTypes {
     | '/insider/$wallet'
     | '/pad/$ca'
     | '/token/$ca'
+    | '/x/$handle'
     | '/api/pad-logo/$ca'
     | '/api/logo/ipfs/$cid'
   fileRoutesById: FileRoutesById
@@ -442,6 +454,7 @@ export interface RootRouteChildren {
   InsiderWalletRoute: typeof InsiderWalletRoute
   PadCaRoute: typeof PadCaRoute
   TokenCaRoute: typeof TokenCaRoute
+  XHandleRoute: typeof XHandleRoute
   ApiPadLogoCaRoute: typeof ApiPadLogoCaRoute
   ApiLogoIpfsCidRoute: typeof ApiLogoIpfsCidRoute
 }
@@ -565,6 +578,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/x/$handle': {
+      id: '/x/$handle'
+      path: '/x/$handle'
+      fullPath: '/x/$handle'
+      preLoaderRoute: typeof XHandleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/token/$ca': {
@@ -706,6 +726,7 @@ const rootRouteChildren: RootRouteChildren = {
   InsiderWalletRoute: InsiderWalletRoute,
   PadCaRoute: PadCaRoute,
   TokenCaRoute: TokenCaRoute,
+  XHandleRoute: XHandleRoute,
   ApiPadLogoCaRoute: ApiPadLogoCaRoute,
   ApiLogoIpfsCidRoute: ApiLogoIpfsCidRoute,
 }

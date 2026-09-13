@@ -8,8 +8,9 @@ export type Risk = {
   bundle_wallets?: string[]; dev_rugs?: number; dev_launches?: number; dev_sold_usd?: number; dev_sells?: number; dev_last_sell?: number | null;
   bundle_sold_usd?: number; bundle_sells?: number; bundle_last_sell?: number | null; bundle_sellers?: number; lookalike?: boolean; score?: number; grade?: "A" | "B" | "C" | "D"; flags?: string[];
 };
-export type DevHistory = { dev: string; launches: number; rugs: number; tokens: { token: string; symbol: string | null; dev_sold_usd: number; drawdown: number | null; dumped: boolean; first_ts: number; swaps: number }[] };
-export type Label = { kind: "insider" | "dev" | "ruger" | "fresh" | "whale" | "bundle" | "bot"; text: string };
+export type XLink = { handle: string; verified: boolean; shared: boolean; tokens: string[] };
+export type DevHistory = { dev: string; launches: number; rugs: number; x?: XLink[]; tokens: { token: string; symbol: string | null; dev_sold_usd: number; drawdown: number | null; dumped: boolean; first_ts: number; swaps: number }[] };
+export type Label = { kind: "insider" | "dev" | "ruger" | "fresh" | "whale" | "bundle" | "bot" | "x"; text: string; url?: string; verified?: boolean; conflict?: boolean; shared?: boolean };
 
 export const gradeColor = (g?: string | null) => (g === "A" ? "var(--arc-up)" : g === "B" ? "#7cc4ff" : g === "C" ? "#f5c542" : g === "D" ? "#f0534f" : "var(--arc-muted)");
 const usd = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v >= 1e4 ? `$${(v / 1e3).toFixed(1)}K` : v >= 1000 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`);
@@ -93,6 +94,18 @@ export function RiskCard({ token, official = false }: { token: string; official?
           <Row k="top-10 holders (LP/vaults excluded)" v={risk.top10 == null ? "—" : `${risk.top10.toFixed(0)}%`} warn={!official && (risk.top10 ?? 0) > 60} />
           <Row k="dev sold · 24h" v={risk.dev_sold_usd ? `${usd(risk.dev_sold_usd)} (${risk.dev_sells}×)` : "nothing"} warn={!!risk.dev_sold_usd} />
           <Row k="bundle sold · 24h" v={risk.bundle_sold_usd ? `${usd(risk.bundle_sold_usd)} by ${risk.bundle_sellers}` : "nothing"} warn={!!risk.bundle_sold_usd} />
+          {hist?.x && hist.x.length > 0 && (
+            <div style={{ display: "flex", fontSize: 12.5, justifyContent: "space-between", padding: "5px 0" }}>
+              <span style={{ color: "var(--arc-muted)" }}>deployer's X</span>
+              <span style={{ display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "flex-end" }}>
+                {hist.x.slice(0, 3).map((x) => (
+                  <a key={x.handle} href={`/x/${x.handle}`} style={{ color: x.shared ? "var(--arc-muted)" : "#6cc0ff", textDecoration: "none" }} title={x.shared ? "declared by 3+ different deployer wallets — likely spoofed" : x.verified ? "set on-chain by the creator (verified)" : "declared in token metadata (unverified)"}>
+                    @{x.handle}{x.verified ? " ✓" : x.shared ? " (spoof?)" : " (declared)"}
+                  </a>
+                ))}
+              </span>
+            </div>
+          )}
           <Row k="deployer history" v={hist ? `${hist.launches} launch${hist.launches === 1 ? "" : "es"} · ${hist.rugs} dumped` : risk.dev ? "…" : "unknown deployer"} warn={(risk.dev_rugs ?? 0) > 0} />
           {risk.dev && (
             <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginTop: 4 }}>
@@ -120,11 +133,17 @@ export function RiskCard({ token, official = false }: { token: string; official?
 const TAG_STYLE: Record<Label["kind"], { bg: string; fg: string }> = {
   insider: { bg: "rgba(46,124,255,0.18)", fg: "var(--arc-cobalt)" }, dev: { bg: "rgba(245,197,66,0.16)", fg: "#f5c542" }, ruger: { bg: "rgba(240,83,79,0.18)", fg: "#f0534f" },
   fresh: { bg: "rgba(255,255,255,0.08)", fg: "var(--arc-muted)" }, whale: { bg: "rgba(34,197,128,0.14)", fg: "var(--arc-up)" }, bundle: { bg: "rgba(240,83,79,0.12)", fg: "#f0534f" }, bot: { bg: "rgba(255,255,255,0.08)", fg: "var(--arc-muted)" },
+  x: { bg: "rgba(29,155,240,0.14)", fg: "#6cc0ff" },
 };
 
 export function Tag({ l, wallet }: { l: Label; wallet?: string }) {
   const s = TAG_STYLE[l.kind] ?? TAG_STYLE.fresh;
   const el = <span className="arc-mono" style={{ background: s.bg, border: `1px solid ${s.fg}`, borderRadius: 4, color: s.fg, fontSize: 9.5, lineHeight: 1, marginLeft: 5, padding: "2px 5px", whiteSpace: "nowrap" }}>{l.text}</span>;
+  if (l.kind === "x" && l.url) {
+    const h = l.url.split("/").pop() ?? "";
+    const title = l.shared ? "This X account is declared by 3+ different deployer wallets — likely a celebrity/project spoof, not this wallet's identity" : l.verified ? "Written on-chain by the token creator on ArcToolsPad/ArcPad" : l.conflict ? "Declared in token metadata; this wallet declared more than one X account" : "Declared in token metadata (not verified — anyone can put any link)";
+    return <a href={`/x/${h}`} style={{ textDecoration: "none" }} title={title}><span className="arc-mono" style={{ background: s.bg, border: `1px ${l.verified ? "solid" : "dashed"} ${l.shared ? "var(--arc-muted)" : s.fg}`, borderRadius: 4, color: l.shared ? "var(--arc-muted)" : s.fg, fontSize: 9.5, lineHeight: 1, marginLeft: 5, padding: "2px 5px", whiteSpace: "nowrap" }}>{l.text}</span></a>;
+  }
   return l.kind === "insider" && wallet ? <a href={`/insider/${wallet}`} style={{ textDecoration: "none" }} title="Insider profile">{el}</a> : el;
 }
 
