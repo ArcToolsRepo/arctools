@@ -5,7 +5,7 @@ import { ArcNav } from "@/components/arc-nav";
 import { gasClaim, gasStatus, padList, padMetaSet, type PadListItem } from "@/lib/arcpad";
 import { getPrice1m } from "@/lib/arc-api";
 import {
-  ARCT, FN, FN3, PAD_V3, TOLLY, connectWallet, encodeCreateTokenV3, ethCall, fileToSmallDataUrl, fmt, onWalletChange, p32, sendTx, waitReceipt,
+  ARCT, FN, FN3, PAD_V3, TOLLY, connectWallet, encodeCreateTokenV3, ethCall, simulateCall, fileToSmallDataUrl, fmt, onWalletChange, p32, sendTx, waitReceipt,
 } from "@/lib/arc-wallet";
 import "../arc-site.css";
 
@@ -227,10 +227,32 @@ function CreateForm() {
       });
       const feeWei = isInstant ? BigInt(Math.round((instantFee ?? 30) * 1e6)) * 10n ** 12n : 0n;
       const value = isInstant ? feeWei + (pairMode === "usdc" ? targetQuote : 0n) : undefined;
+      // pre-flight: simulate the exact call so a revert surfaces as a readable reason instead of a failed wallet tx
+      try {
+        const minT = await ethCall(PAD_V3, FN3.minTarget).catch(() => null);
+        if (minT && BigInt(minT) > targetQuote) throw new Error(`Graduation target ${(Number(targetQuote) / 1e18).toFixed(2)} ${quoteSym} is below the contract minimum of ${(Number(BigInt(minT)) / 1e18).toFixed(2)} ${quoteSym}. Pick the $10k target or a cheaper pair token.`);
+        await simulateCall({ data, from, to: PAD_V3, value });
+      } catch (e) {
+        const msg = String((e as Error).message ?? e);
+        const REASONS: Record<string, string> = {
+          target: `graduation target too small for this pair (contract minimum in ${quoteSym} units) — choose the $10k target or a cheaper pair token`,
+          "no usdc pool": `${quoteSym} has no USDC pool on Uniswap V3, so the pad cannot flush fees — it cannot be a pair`,
+          "quote 18 dec": "pair token must have 18 decimals",
+          "reward=quote": "reward token cannot be the pair token itself — pick USDC, ARCT or leave rewards in the pair",
+          "no pool": "reward token has no pool against the pair token — rewards could not be swapped",
+          "no taxes": "instant launches cannot carry taxes",
+          value: "wrong USDC value sent (instant fee + seed)",
+          pull: `could not pull the ${quoteSym} seed — approve the launchpad or check your ${quoteSym} balance`,
+          taxsum: "total taxes exceed the maximum",
+          mktwallet: "marketing tax needs a marketing wallet",
+        };
+        const key = Object.keys(REASONS).find((k) => new RegExp(`(^|[^a-z])${k}([^a-z]|$)`, "i").test(msg));
+        throw new Error(key ? `Launch would revert: ${REASONS[key]}.` : msg.startsWith("Graduation") ? msg : `Launch would revert: ${msg.slice(0, 140)}`);
+      }
       const hash = await sendTx({ data, from, to: PAD_V3, value });
       setBusy("Waiting for confirmation...");
       const rcpt = await waitReceipt(hash);
-      if (Number(rcpt.status) !== 1) throw new Error("Transaction reverted on-chain.");
+      if (Number(rcpt.status) !== 1) throw new Error("Transaction reverted on-chain (state changed between simulation and inclusion) — try again.");
       // the new token is the first log emitter (its mint Transfer) that isn't the launchpad
       const tokenAddr = rcpt.logs.find((l) => l.address.toLowerCase() !== PAD_V3.toLowerCase())?.address;
       if (tokenAddr) {

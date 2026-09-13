@@ -278,6 +278,26 @@ export async function ethCall(to: string, data: string): Promise<string> {
   return (await relay("eth_call", [{ data, to }, "latest"])) as string;
 }
 
+/** Simulate a state-changing call (with from/value) and throw the decoded revert reason ("target", "no usdc pool"…). */
+export async function simulateCall(tx: { data: string; from: string; to: string; value?: bigint }): Promise<string> {
+  try {
+    return (await relay("eth_call", [{ data: tx.data, from: tx.from, to: tx.to, ...(tx.value ? { value: "0x" + tx.value.toString(16) } : {}), gasPrice: "0x0" }, "latest"])) as string;
+  } catch (e) {
+    const raw = String((e as Error).message ?? e);
+    // Error(string) selector 0x08c379a0: decode the ABI string if present anywhere in the message / data
+    const m = raw.match(/0x08c379a0[0-9a-f]+/i);
+    if (m) {
+      try {
+        const hex = m[0].slice(10);
+        const len = Number(BigInt("0x" + hex.slice(64, 128)));
+        const str = hex.slice(128, 128 + len * 2).match(/.{2}/g)!.map((b) => String.fromCharCode(parseInt(b, 16))).join("");
+        throw new Error(str);
+      } catch (inner) { if ((inner as Error).message && !(inner as Error).message.startsWith("Cannot")) throw inner; }
+    }
+    throw new Error(raw.replace(/^execution reverted:?\s*/i, ""));
+  }
+}
+
 export async function nativeBalance(addr: string): Promise<number> {
   const r = (await relay("eth_getBalance", [addr, "latest"])) as string;
   return Number(BigInt(r) / 10n ** 12n) / 1e6;

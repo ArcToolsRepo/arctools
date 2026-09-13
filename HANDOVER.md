@@ -68,3 +68,4 @@ Nie zapisuję ich w tym pliku. Do kontynuacji pracy potrzebne będą:
 - Railway API tokens: projekt **ArcTools** (sniper + rpc) i **ArcBuyBot**,
 - token GitHub (jeśli mirrorujemy kod),
 - (opcjonalnie) dostęp do repo strony na platformie Higgsfield — pobierany komendą `website_repo_access` z website_id z sekcji 2.
+- 2026-09-13: ArcPadV3.setMinTarget(1e18) (was 100e18) — stock-quoted launches (target ~55 CRCL) reverted with 'target'. UI enforces its own minimums ($5k/$10k target, 100 quote seed).
