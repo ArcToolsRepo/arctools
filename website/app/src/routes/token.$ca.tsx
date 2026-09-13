@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
 import { SocialCheck } from "@/components/social-check";
+import { SmartFollowers } from "@/components/smart-followers";
 import { RiskCard, StockCard, Tags, useWalletLabels } from "@/components/risk";
 import { TokenLogo } from "@/components/token-logo";
 import { TvChart, type Candle } from "@/components/tv-chart";
@@ -752,6 +753,7 @@ function TokenPage() {
           </section>
         )}
         <SocialCheck deployer={info.deployer} tg={info.telegram} token={ca} web={info.website} x={info.twitter} />
+        <SmartFollowers x={info.twitter} />
 
         {/* ---------- tabs ---------- */}
         <div style={{ border: "1px solid var(--arc-line)", marginTop: 14 }}>

@@ -411,6 +411,8 @@ async def v4_bootstrap():
     await _ref_init()
     from .risk_score import init as _score_init
     await _score_init()
+    from .kols import init as _kols_init
+    await _kols_init()
     from .watchdog import watchdog_loop
     asyncio.create_task(watchdog_loop(), name="site-watchdog")
     asyncio.create_task(quote_pools_loop(), name="quote-pools")
@@ -1285,6 +1287,8 @@ async def start_api():
     _liq.register_risk(app)
     from . import referrals as _ref
     _ref.register(app)
+    from . import kols as _kols
+    _kols.register(app)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", "8080")))
