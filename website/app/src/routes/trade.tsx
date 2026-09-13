@@ -39,7 +39,8 @@ export const Route = createFileRoute("/trade")({
 
 type Mover = { token: string; n: number; vol: number; p1: number; chg: number; symbol: string | null };
 type Trend = { token: string; symbol: string | null; txs: number; vol: number; buys: number; sells: number; traders: number; p1: number | null; chg: number | null; first_ts: number | null; ath: number | null; txs_all: number; supply: number | null; mcap: number | null; ath_mcap: number | null };
-type Row = { token: string; symbol: string; name: string; logo: string | null; pad: string; og: boolean; stock: boolean; quoteSymbol: string | null; dexes: string[]; age: number | null; ca: string; mcap: number | null; chg: number | null; athMcap: number | null; liq: number | null; vol: number; txs: number; buys: number; sells: number; traders: number; insiders: number; twitter: string | null; telegram: string | null; website: string | null; price: number | null };
+type Smart = { token: string; net: number; bought: number; sold: number; buyers: number; sellers: number; best_rank: number | null; last_ts: number };
+type Row = { token: string; symbol: string; name: string; logo: string | null; pad: string; og: boolean; stock: boolean; smart: Smart | null; quoteSymbol: string | null; dexes: string[]; age: number | null; ca: string; mcap: number | null; chg: number | null; athMcap: number | null; liq: number | null; vol: number; txs: number; buys: number; sells: number; traders: number; insiders: number; twitter: string | null; telegram: string | null; website: string | null; price: number | null };
 const FAV_KEY = "arctools_favs";
 const loadFavs = (): Set<string> => { try { return new Set(JSON.parse(localStorage.getItem(FAV_KEY) ?? "[]")); } catch { return new Set(); } };
 type Cluster = { token: string; symbol: string | null; insiders: number; usd: number; ranks: string; last_ts: number };
@@ -108,7 +109,7 @@ function Trade() {
   const [liq, setLiq] = useState<Map<string, number>>(new Map());
   const [logos, setLogos] = useState<Record<string, string>>({});
   const [risk, setRisk] = useState<Record<string, Risk>>({});
-  const [sortKey, setSortKey] = useState<"age" | "mcap" | "vol" | "txs" | "chg">("vol");
+  const [sortKey, setSortKey] = useState<"age" | "mcap" | "vol" | "txs" | "chg" | "smart">("vol");
   useEffect(() => { setFavs(loadFavs()); }, []);
   const toggleFav = (t: string) => setFavs((f) => { const n = new Set(f); if (n.has(t)) n.delete(t); else n.add(t); try { localStorage.setItem(FAV_KEY, JSON.stringify([...n])); } catch { /* ignore */ } return n; });
   useEffect(() => {
@@ -131,6 +132,8 @@ function Trade() {
   }, []);
   useEffect(() => { const id = setInterval(() => { liqReq.current.clear(); }, 60_000); return () => clearInterval(id); }, []);
   const [clusters, setClusters] = useState<Cluster[]>([]);
+  const [smart, setSmart] = useState<Smart[]>([]);
+  const smartMap = useMemo(() => new Map(smart.map((x) => [x.token.toLowerCase(), x])), [smart]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ ok: boolean; text: string; tx?: string } | null>(null);
@@ -167,6 +170,7 @@ function Trade() {
       } catch { /* ignore */ }
       fetch(`${API}/api/movers?minutes=1440`).then((r) => r.json()).then((j) => alive && setMovers(j.rows ?? [])).catch(() => null);
       fetch(`${API}/api/clusters?minutes=1440&n=2`).then((r) => r.json()).then((j) => alive && setClusters(j.rows ?? [])).catch(() => null);
+      fetch(`${API}/api/smart-flow?minutes=${tf}&limit=300`).then((r) => r.json()).then((j) => alive && Array.isArray(j.rows) && setSmart(j.rows)).catch(() => null);
     };
     void load();
     const id = setInterval(load, 30_000);
@@ -276,7 +280,7 @@ function Trade() {
       token: k, symbol: tr?.symbol ?? t?.symbol ?? short(k), name: t?.name ?? tr?.symbol ?? "", logo: t?.logo ?? logos[k] ?? xAvatar(t?.twitter) ?? null, pad: t?.pad ?? "", og: !!t?.og, stock: !!t?.stock, quoteSymbol: t?.quoteSymbol ?? null, dexes: t?.dexes ?? [],
       age: createdTs, ca: k, mcap: (t?.quoteSymbol ? (t?.mcapUsd ?? tr?.mcap) : (tr?.mcap ?? t?.mcapUsd)) ?? null, chg: tr?.chg ?? null, athMcap: tr?.ath_mcap ?? null,
       liq: liq.get(k) ?? t?.liqUsd ?? null, vol: tr?.vol ?? t?.volUsd ?? 0, txs: tr?.txs ?? 0, buys: tr?.buys ?? 0, sells: tr?.sells ?? 0, traders: tr?.traders ?? 0,
-      insiders: c?.insiders ?? 0, twitter: t?.twitter ?? null, telegram: t?.telegram ?? null, website: t?.website ?? null,
+      insiders: c?.insiders ?? 0, smart: smartMap.get(k) ?? null, twitter: t?.twitter ?? null, telegram: t?.telegram ?? null, website: t?.website ?? null,
       price: tr?.p1 ? tr.p1 / 1e6 : t?.priceUsd ?? null,
     };
   };
@@ -312,7 +316,7 @@ function Trade() {
     if (mv) base = base.filter((r) => r.vol >= mv);
     if ((tab !== "new" && tab !== "new15" && padF === "all") || sortKey !== "vol") {
       const key = ((tab === "new" || tab === "new15") || padF !== "all") && sortKey === "vol" ? "age" : sortKey;
-      base.sort((a, b) => key === "age" ? (b.age ?? 0) - (a.age ?? 0) : key === "mcap" ? (b.mcap ?? 0) - (a.mcap ?? 0) : key === "txs" ? b.txs - a.txs : key === "chg" ? (b.chg ?? -1e9) - (a.chg ?? -1e9) : b.vol - a.vol);
+      base.sort((a, b) => key === "age" ? (b.age ?? 0) - (a.age ?? 0) : key === "mcap" ? (b.mcap ?? 0) - (a.mcap ?? 0) : key === "txs" ? b.txs - a.txs : key === "chg" ? (b.chg ?? -1e9) - (a.chg ?? -1e9) : key === "smart" ? (b.smart?.net ?? -1e9) - (a.smart?.net ?? -1e9) : b.vol - a.vol);
     }
     // pin the official token on top (every tab except Holdings), regardless of sort / filter
     if (tab !== "holdings" && (!q || matches(toRow(OFFICIAL_TOKEN)))) {
@@ -389,7 +393,7 @@ function Trade() {
                 <input className="arc-mono" inputMode="numeric" key={ph as string} onChange={(e) => (set as (x: string) => void)(e.target.value.replace(/[^0-9.]/g, ""))} placeholder={ph as string} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-ink)", fontSize: 11, padding: "4px 8px", width: 84 }} value={v as string} />
               ))}
               <select className="arc-mono" onChange={(e) => setSortKey(e.target.value as typeof sortKey)} style={{ background: "#0e1118", border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-ink)", fontSize: 11, padding: "4px 6px" }} value={sortKey}>
-                <option value="vol">Sort: volume</option><option value="age">Sort: newest</option><option value="mcap">Sort: market cap</option><option value="txs">Sort: trades</option><option value="chg">Sort: % change</option>
+                <option value="vol">Sort: volume</option><option value="age">Sort: newest</option><option value="mcap">Sort: market cap</option><option value="txs">Sort: trades</option><option value="chg">Sort: % change</option><option value="smart">Sort: smart money</option>
               </select>
               {(padF !== "all" || minMc || maxMc || minVol || q) && <button className="arc-mono" onClick={() => { setPadF("all"); setMinMc(""); setMaxMc(""); setMinVol(""); setQ(""); }} style={{ background: "transparent", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, textDecoration: "underline" }} type="button">clear</button>}
             </div>
@@ -431,7 +435,7 @@ function Trade() {
                       <th style={hd}><button className="arc-mono" onClick={() => setSortKey("txs")} style={{ background: "none", border: "none", color: sortKey === "txs" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">{tfLabel(tf)} TXs ⇅</button></th>
                       <th style={hd} title="Token Score 0-100: deployer share, bundle, whale concentration, dev / bundle selling, deployer rug history, holders. Hover a badge for the flags. ☠ = deployer dumped a token before">Score</th>
                       <th style={hd} title="Dev: deployer wallet's share of supply · Bundle: supply held by wallets that bought within 2 s of the first trade">Dev / bundle</th>
-                      <th className="arc-col-ins" style={hd}>Insiders</th>
+                      <th className="arc-col-ins" style={hd} title={`Smart money: net USDC flow of the top-100 insiders (buys − sells) in the ${tfLabel(tf)} window · distinct insiders buying/selling`}><button className="arc-mono" onClick={() => setSortKey("smart")} style={{ background: "none", border: "none", color: sortKey === "smart" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", font: "inherit", padding: 0 }}>Smart $ ⇅</button></th>
                       <th style={hd} />
                     </tr>
                   </thead>
@@ -465,7 +469,7 @@ function Trade() {
                         <td className="arc-mono" style={cell}><div>{r.txs > 0 ? r.txs.toLocaleString() : "—"}</div>{r.txs > 0 && <div style={{ fontSize: 11 }}><span style={{ color: UP }}>{r.buys}</span> / <span style={{ color: DOWN }}>{r.sells}</span></div>}</td>
                         <td className="arc-mono" style={cell}>{(() => { if (r.stock) return <span className="arc-mono" style={{ border: "1px solid #7cc4ff", borderRadius: 5, color: "#7cc4ff", fontSize: 11, padding: "3px 6px" }} title="Custodial IOU — score not applicable; risk = trust in long.supply's vault and Robinhood's token">IOU</span>; const k = risk[r.token]; if (!k) return <span style={{ color: "var(--arc-muted)" }}>…</span>; const t10 = k.top10; return <><ScoreBadge risk={k} /><div style={{ color: "var(--arc-muted)", fontSize: 10.5, marginTop: 3 }}>{k.holders ? `${k.holders} h` : ""}{t10 != null && r.token.toLowerCase() !== OFFICIAL_TOKEN ? ` · top10 ${t10.toFixed(0)}%` : ""}</div></>; })()}</td>
                         <td className="arc-mono" style={cell}>{(() => { if (r.stock) return <span style={{ color: "var(--arc-muted)", fontSize: 11 }} title="Wrapped stock: supply is minted/burned by the long.supply custodian, so deployer and bundle metrics do not apply">custodian-minted</span>; const k = risk[r.token]; if (!k) return <span style={{ color: "var(--arc-muted)" }}>…</span>; const dv = k.dev_pct, bd = k.bundle_pct; const c = (v: number | null | undefined, warn: number, bad: number) => v == null ? "var(--arc-muted)" : v >= bad ? DOWN : v >= warn ? "#f5c542" : UP; const ds = k.dev_sold_usd ?? 0, bs = k.bundle_sold_usd ?? 0; return <><div style={{ color: c(dv, 5, 15), fontWeight: 700 }} title="Deployer wallet's share of supply (top-50 holders)">{dv == null ? "—" : `${dv.toFixed(dv < 1 ? 1 : 0)}%`}{ds > 0 && <span style={{ background: "rgba(240,83,79,0.16)", border: "1px solid #f0534f", borderRadius: 4, color: "#f0534f", display: "inline-block", fontSize: 9, lineHeight: "13px", marginLeft: 5, padding: "0 4px", verticalAlign: "middle" }} title={`Deployer sold ${usd(ds)} in the last 24 h (${k.dev_sells} sell${k.dev_sells === 1 ? "" : "s"}, last ${ago(k.dev_last_sell ?? null)} ago)`}>DEV −{usd(ds)}</span>}</div><div style={{ color: c(bd, 10, 25), fontSize: 11 }} title={`Bundled: supply held by wallets that bought within 2 s of the first trade (${k.bundlers ?? 0} wallets)`}>{bd == null ? "" : `bundle ${bd.toFixed(bd < 1 ? 1 : 0)}%`}{bs > 0 && <span style={{ color: "#f0534f", fontSize: 10, marginLeft: 4 }} title={`${k.bundle_sellers} launch-block wallet${k.bundle_sellers === 1 ? "" : "s"} sold ${usd(bs)} in the last 24 h (last ${ago(k.bundle_last_sell ?? null)} ago)`}>−{usd(bs)}</span>}</div></>; })()}</td>
-                        <td className="arc-mono arc-col-ins" style={{ ...cell, color: r.insiders ? UP : "var(--arc-muted)" }}>{r.insiders || "—"}</td>
+                        <td className="arc-mono arc-col-ins" style={cell}>{r.smart ? <><div style={{ color: r.smart.net >= 0 ? UP : DOWN, fontWeight: 700 }} title={`insiders bought ${usd(r.smart.bought)} · sold ${usd(r.smart.sold)}`}>{r.smart.net >= 0 ? "+" : "−"}{usd(Math.abs(r.smart.net))}</div><div style={{ color: "var(--arc-muted)", fontSize: 10.5 }}>{r.smart.buyers}↑ {r.smart.sellers}↓{r.smart.best_rank ? ` · #${r.smart.best_rank}` : ""}</div></> : <span style={{ color: "var(--arc-muted)" }}>—</span>}</td>
                         <td style={{ ...cell, textAlign: "right" }}><BuyBtn symbol={r.symbol} token={r.token} /></td>
                       </tr>
                     ))}

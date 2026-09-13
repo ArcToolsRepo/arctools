@@ -1273,6 +1273,8 @@ async def start_api():
     app.router.add_get("/api/rule-types", api_rule_types)
     app.router.add_get("/api/fresh", api_fresh)
     app.router.add_get("/api/clusters", api_clusters)
+    from .rules import api_smart_flow
+    app.router.add_get("/api/smart-flow", api_smart_flow)
     from .bridge_watch import api_bridge
     app.router.add_get("/api/bridge", api_bridge)
     app.router.add_get("/health", api_health)

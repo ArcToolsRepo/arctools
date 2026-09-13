@@ -177,12 +177,11 @@ function InsidersPage() {
                 <span className="arc-mono" style={{ fontSize: 14, width: 34 }}>{medal(i)}</span>
                 <a
                   className="arc-mono"
-                  href={`https://arc-scan.org/address/${r.wallet}`}
-                  rel="noreferrer"
+                  href={`/insider/${r.wallet}`}
                   style={{ color: "var(--arc-ink)", fontSize: 13, textDecoration: "none", width: 130 }}
-                  target="_blank"
+                  title="Profile: PnL, open positions, trade history"
                 >
-                  {r.wallet.slice(0, 6)}…{r.wallet.slice(-4)}
+                  {r.wallet.slice(0, 6)}…{r.wallet.slice(-4)} →
                 </a>
                 <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 2, maxWidth: 170 }}><Tags labels={labels} max={2} wallet={r.wallet} /></span>
                 <span style={{ width: 118 }}>

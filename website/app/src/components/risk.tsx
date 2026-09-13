@@ -122,9 +122,10 @@ const TAG_STYLE: Record<Label["kind"], { bg: string; fg: string }> = {
   fresh: { bg: "rgba(255,255,255,0.08)", fg: "var(--arc-muted)" }, whale: { bg: "rgba(34,197,128,0.14)", fg: "var(--arc-up)" }, bundle: { bg: "rgba(240,83,79,0.12)", fg: "#f0534f" }, bot: { bg: "rgba(255,255,255,0.08)", fg: "var(--arc-muted)" },
 };
 
-export function Tag({ l }: { l: Label }) {
+export function Tag({ l, wallet }: { l: Label; wallet?: string }) {
   const s = TAG_STYLE[l.kind] ?? TAG_STYLE.fresh;
-  return <span className="arc-mono" style={{ background: s.bg, border: `1px solid ${s.fg}`, borderRadius: 4, color: s.fg, fontSize: 9.5, lineHeight: 1, marginLeft: 5, padding: "2px 5px", whiteSpace: "nowrap" }}>{l.text}</span>;
+  const el = <span className="arc-mono" style={{ background: s.bg, border: `1px solid ${s.fg}`, borderRadius: 4, color: s.fg, fontSize: 9.5, lineHeight: 1, marginLeft: 5, padding: "2px 5px", whiteSpace: "nowrap" }}>{l.text}</span>;
+  return l.kind === "insider" && wallet ? <a href={`/insider/${wallet}`} style={{ textDecoration: "none" }} title="Insider profile">{el}</a> : el;
 }
 
 /** Batch label loader: pass all wallets visible; render <Tags wallet=…/> per row. */
@@ -143,5 +144,5 @@ export function useWalletLabels(wallets: string[], token?: string): Record<strin
 export function Tags({ labels, wallet, max = 2 }: { labels: Record<string, Label[]>; wallet: string; max?: number }) {
   const ls = labels[wallet.toLowerCase()];
   if (!ls?.length) return null;
-  return <>{ls.slice(0, max).map((l, i) => <Tag key={i} l={l} />)}</>;
+  return <>{ls.slice(0, max).map((l, i) => <Tag key={i} l={l} wallet={wallet} />)}</>;
 }
