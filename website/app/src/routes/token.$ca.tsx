@@ -175,9 +175,11 @@ function TokenPage() {
   const quoteTok = info?.quoteToken ?? null;         // null = native USDC
   const qSym = info?.quoteSymbol ?? "USDC";
   const qUsd = info?.quoteUsd ?? 1;
-  const canTrade = info?.venue === "pad" || (info?.venue === "v3" && info.poolFee !== null) || (info?.venue === "v4" && !!info.v4Key) || (info?.venue === "curve" && !!info.curveAddress);
+  // long.supply launches whose only market is a stock-quoted V3 pool: ArcAggregatorV2 routes USDC -> stock -> token in one tx
+  const viaHop = !!info && info.venue === "external" && !!info.longPool && !info.stock;
+  const canTrade = info?.venue === "pad" || (info?.venue === "v3" && info.poolFee !== null) || (info?.venue === "v4" && !!info.v4Key) || (info?.venue === "curve" && !!info.curveAddress) || viaHop;
   // aggregator handles every USDC-paired venue (V3 tiers, V4 pools, ArcToolsPad USDC curves) with best-price + split routing
-  const useAgg = !!info && ((info.venue === "v3" && !info.quoteToken) || info.venue === "v4" || info.venue === "curve" || (info.venue === "pad" && !info.quoteToken));
+  const useAgg = !!info && ((info.venue === "v3" && !info.quoteToken) || info.venue === "v4" || info.venue === "curve" || (info.venue === "pad" && !info.quoteToken) || viaHop);
   const [route, setRoute] = useState<RouteResult | null>(null);
   const [hot, setHot] = useState(false);          // sign with the in-browser trading wallet instead of the connected wallet
   const [hotOk, setHotOk] = useState(false);
@@ -723,7 +725,7 @@ function TokenPage() {
             <div style={{ fontSize: 13, marginTop: 4 }}>
               Quoted in <b>{info.longPool.pairSymbol}</b> (a wrapped stock, ${info.longPool.pairUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}) on a Uniswap V3 pool
               {info.longPool.liquidityUsd != null ? <> with <b>${Math.round(info.longPool.liquidityUsd).toLocaleString()}</b> liquidity</> : null}. USD price here is derived through the stock price.
-              {info.venue !== "external" ? " Our swap panel routes through the USDC pool, which is thinner — expect worse fills." : " No USDC pool yet — trade on long.supply until the CRCL hop lands in our aggregator."}
+              {info.venue !== "external" ? " Our aggregator quotes both the USDC pool and the two-hop route through the stock and takes the better fill." : ` No USDC pool — our aggregator buys ${info.longPool.pairSymbol} with your USDC and swaps it into the token in one transaction (1.5% fee).`}
               {" "}<a href={`https://long.supply/${ca.toLowerCase()}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)" }} target="_blank">open on long.supply ↗</a>
             </div>
           </section>

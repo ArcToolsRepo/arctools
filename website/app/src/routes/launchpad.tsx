@@ -80,10 +80,14 @@ function CreateForm() {
       const withPool = await Promise.all(raw.map(async (st) => {
         let usdcPool = false;
         for (const fee of [10000, 3000, 500, 100]) {
-          try {
-            const r = await ethCall(FACTORY, "0x1698ee82" + p32(USDC) + p32(st.token) + fee.toString(16).padStart(64, "0"));
-            if (r && !/^0x0*$/.test(r)) { usdcPool = true; break; }
-          } catch { /* try next tier */ }
+          for (let attempt = 0; attempt < 2 && !usdcPool; attempt++) {   // relay hiccup must not hide a real pool
+            try {
+              const r = await ethCall(FACTORY, "0x1698ee82" + p32(USDC) + p32(st.token) + fee.toString(16).padStart(64, "0"));
+              if (r && !/^0x0*$/.test(r)) usdcPool = true;
+              break;
+            } catch { await new Promise((res) => setTimeout(res, 400)); }
+          }
+          if (usdcPool) break;
         }
         return { ...st, usdcPool };
       }));

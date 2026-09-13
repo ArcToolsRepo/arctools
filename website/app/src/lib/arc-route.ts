@@ -6,10 +6,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { rpc } from "./arc-api";
 
-export const ARC_AGGREGATOR = "0xff9A8F35F683C810f6C1507f7409Bf0637093707";
+export const ARC_AGGREGATOR = "0x3c897c6D3c9dCc32E69Dd23be78f099510A65ece";
 /** v2 aggregator with the two-hop V3 leg (VENUE_V3PATH). null until ArcAggregatorV2 is deployed — the hop venue is
  *  then skipped in discovery so nothing routes through a contract that cannot execute it. */
-export const V3PATH_AGGREGATOR: string | null = null;
+export const V3PATH_AGGREGATOR: string | null = "0x3c897c6D3c9dCc32E69Dd23be78f099510A65ece";
 const SITE_API = typeof window !== "undefined" ? "" : "https://arctools.fun";
 const USDC = "0x3600000000000000000000000000000000000000";
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -124,8 +124,16 @@ async function discoverVenues(token: string): Promise<Venue[]> {
 let _long: { ts: number; v: { token: string; pool: string; pairToken: string; pairSymbol: string }[] } | null = null;
 async function longLaunches() {
   if (_long && Date.now() - _long.ts < 60_000) return _long.v;
-  const j = (await fetch(`${SITE_API}/api/stocks?launches=1`).then((r) => r.json())) as { launches?: { token: string; pool: string; pairToken: string; pairSymbol: string }[] };
-  _long = { ts: Date.now(), v: j.launches ?? [] };
+  let v: { token: string; pool: string; pairToken: string; pairSymbol: string }[] = [];
+  if (typeof window === "undefined") {
+    // server (routeSwap): a Worker cannot fetch its own hostname → read the memoized list directly
+    const LS = await import("@/lib/longsupply");
+    v = await LS.longLaunches().catch(() => []);
+  } else {
+    const j = (await fetch(`${SITE_API}/api/stocks?launches=1`).then((r) => r.json())) as { launches?: typeof v };
+    v = j.launches ?? [];
+  }
+  _long = { ts: Date.now(), v };
   return _long.v;
 }
 

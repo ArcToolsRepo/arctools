@@ -122,7 +122,7 @@ SKIP_HOLDERS = {"0x000000000000000000000000000000000000dead", "0x000000000000000
                 "0x1eaad48260eecc7624666f1dfec202b2d75257fe", "0x2726aec64d8a9bc41b9940dda5d21c889458b348",   # ArcPad v2/v3
                 "0x8366a39cc670b4001a1121b8f6a443a643e40951",                                                   # V4 PoolManager
                 "0x7d49f880c7bdae4fd44d52c3dbfb43534e83dabd", "0x48ada931c2c220b074c39449b7e70860a3b4c277",   # ARCT vaults v2/v3
-                "0xa4e79c06eec23c4caaa63aa37acc6fb7f0370a12", "0xff9a8f35f683c810f6c1507f7409bf0637093707",   # fee router, aggregator
+                "0xa4e79c06eec23c4caaa63aa37acc6fb7f0370a12", "0xff9a8f35f683c810f6c1507f7409bf0637093707", "0x3c897c6d3c9dcc32e69dd23be78f099510a65ece",   # fee router, aggregator
                 "0x05a0158ef87e8e7bfe4e0242e11dda75f83954e1", "0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77",   # V4 router, SwapRouter02
                 "0x39654a85a4c05127f5fd6ed22caec077a0fb1377", "0x0dcad158e98bc24455f9e94f46709d8a5f6d1255"}   # NPM, Warp factory
 _pools_cache: tuple[float, set[str]] = (0.0, set())

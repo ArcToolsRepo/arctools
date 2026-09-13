@@ -328,7 +328,7 @@ export async function fileToSmallDataUrl(file: File, maxPx = 256): Promise<strin
 }
 
 // ---------------- ArcAggregator (one swap for V3 / V4 / ArcToolsPad curves, split routing) ----------------
-export const ARC_AGGREGATOR = "0xff9A8F35F683C810f6C1507f7409Bf0637093707";
+export const ARC_AGGREGATOR = "0x3c897c6D3c9dCc32E69Dd23be78f099510A65ece"; // v2: + VENUE_V3PATH (two-hop V3 via wrapped stocks); v1 0xff9A8F35… stays live for old txs
 const AGG_SEL = { buy: "0x9125f3db", sell: "0xe95e170b" };
 export type AggLeg = { venue: number; target: string; fee: number; key: { currency0: string; currency1: string; fee: number; tick_spacing: number; hooks: string } | null; amount: string };
 

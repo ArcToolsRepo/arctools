@@ -31,6 +31,7 @@ import { Route as PadCaRouteImport } from './routes/pad.$ca'
 import { Route as ApiWarmRouteImport } from './routes/api/warm'
 import { Route as ApiTokensRouteImport } from './routes/api/tokens'
 import { Route as ApiTokenpageRouteImport } from './routes/api/tokenpage'
+import { Route as ApiSwaprouteRouteImport } from './routes/api/swaproute'
 import { Route as ApiStocksRouteImport } from './routes/api/stocks'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
 import { Route as ApiRpcRouteImport } from './routes/api/rpc'
@@ -148,6 +149,11 @@ const ApiTokenpageRoute = ApiTokenpageRouteImport.update({
   path: '/api/tokenpage',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSwaprouteRoute = ApiSwaprouteRouteImport.update({
+  id: '/api/swaproute',
+  path: '/api/swaproute',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiStocksRoute = ApiStocksRouteImport.update({
   id: '/api/stocks',
   path: '/api/stocks',
@@ -201,6 +207,7 @@ export interface FileRoutesByFullPath {
   '/api/rpc': typeof ApiRpcRoute
   '/api/search': typeof ApiSearchRoute
   '/api/stocks': typeof ApiStocksRoute
+  '/api/swaproute': typeof ApiSwaprouteRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
   '/api/warm': typeof ApiWarmRoute
@@ -231,6 +238,7 @@ export interface FileRoutesByTo {
   '/api/rpc': typeof ApiRpcRoute
   '/api/search': typeof ApiSearchRoute
   '/api/stocks': typeof ApiStocksRoute
+  '/api/swaproute': typeof ApiSwaprouteRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
   '/api/warm': typeof ApiWarmRoute
@@ -262,6 +270,7 @@ export interface FileRoutesById {
   '/api/rpc': typeof ApiRpcRoute
   '/api/search': typeof ApiSearchRoute
   '/api/stocks': typeof ApiStocksRoute
+  '/api/swaproute': typeof ApiSwaprouteRoute
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
   '/api/warm': typeof ApiWarmRoute
@@ -294,6 +303,7 @@ export interface FileRouteTypes {
     | '/api/rpc'
     | '/api/search'
     | '/api/stocks'
+    | '/api/swaproute'
     | '/api/tokenpage'
     | '/api/tokens'
     | '/api/warm'
@@ -324,6 +334,7 @@ export interface FileRouteTypes {
     | '/api/rpc'
     | '/api/search'
     | '/api/stocks'
+    | '/api/swaproute'
     | '/api/tokenpage'
     | '/api/tokens'
     | '/api/warm'
@@ -354,6 +365,7 @@ export interface FileRouteTypes {
     | '/api/rpc'
     | '/api/search'
     | '/api/stocks'
+    | '/api/swaproute'
     | '/api/tokenpage'
     | '/api/tokens'
     | '/api/warm'
@@ -385,6 +397,7 @@ export interface RootRouteChildren {
   ApiRpcRoute: typeof ApiRpcRoute
   ApiSearchRoute: typeof ApiSearchRoute
   ApiStocksRoute: typeof ApiStocksRoute
+  ApiSwaprouteRoute: typeof ApiSwaprouteRoute
   ApiTokenpageRoute: typeof ApiTokenpageRoute
   ApiTokensRoute: typeof ApiTokensRoute
   ApiWarmRoute: typeof ApiWarmRoute
@@ -550,6 +563,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTokenpageRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/swaproute': {
+      id: '/api/swaproute'
+      path: '/api/swaproute'
+      fullPath: '/api/swaproute'
+      preLoaderRoute: typeof ApiSwaprouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/stocks': {
       id: '/api/stocks'
       path: '/api/stocks'
@@ -617,6 +637,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiRpcRoute: ApiRpcRoute,
   ApiSearchRoute: ApiSearchRoute,
   ApiStocksRoute: ApiStocksRoute,
+  ApiSwaprouteRoute: ApiSwaprouteRoute,
   ApiTokenpageRoute: ApiTokenpageRoute,
   ApiTokensRoute: ApiTokensRoute,
   ApiWarmRoute: ApiWarmRoute,
