@@ -41,12 +41,14 @@ SEED_KOLS: dict[str, str] = {
     "arctoolsfun": "ecosystem",
 }
 ARC_QUERIES = [
-    '"Arc mainnet" (circle OR usdc OR launchpad OR memecoin) min_faves:10',
-    '"on Arc" (usdc OR circle OR memecoin OR launchpad OR "arc-scan") min_faves:10',
-    '(arcpad OR radardex OR "tolly.fun" OR "warp.fun") arc min_faves:5',
-    '"Circle\'s Arc" OR "Arc L1" OR "Arc blockchain" min_faves:10',
-    '"arc-scan.org" OR "arctools.fun" OR "$ARC" circle',
+    '"Arc mainnet" circle',
+    '"on Arc" (usdc OR circle OR memecoin OR launchpad)',
+    'arcpad OR radardex OR arcscan OR "tolly.fun" OR "warp.fun" OR arctools',
+    '"Circle\'s Arc" OR "Arc L1" OR "Arc blockchain" OR "Arc network" circle',
+    '"arc-scan.org" OR "arctools.fun" OR "arc.network"',
+    '(memecoin OR meme OR launchpad OR degen) "arc" (circle OR usdc)',
 ]
+QPS_SLEEP = float(os.getenv("TWITTERAPI_QPS_SLEEP", "5.2"))  # free tier: 1 request / 5 s
 
 
 def enabled() -> bool:
@@ -71,7 +73,7 @@ async def init():
 
 
 # ---------------- twitterapi.io client ----------------
-_sem = asyncio.Semaphore(2)
+_sem = asyncio.Semaphore(1)
 _spent = {"calls": 0}
 
 
@@ -85,13 +87,13 @@ async def _get(path: str, **params) -> dict | None:
                     async with s.get(f"{API}{path}", params={k: v for k, v in params.items() if v is not None}) as r:
                         _spent["calls"] += 1
                         if r.status == 429:
-                            await asyncio.sleep(3 * (attempt + 1))
+                            await asyncio.sleep(QPS_SLEEP * 2 * (attempt + 1))
                             continue
                         j = await r.json(content_type=None)
                         if r.status >= 400 or j.get("status") == "error":
                             log.debug("twitterapi %s %s: %s", path, r.status, str(j)[:160])
                             return None
-                        await asyncio.sleep(0.6)
+                        await asyncio.sleep(QPS_SLEEP)
                         return j
             except Exception as e:  # noqa
                 log.debug("twitterapi %s: %s", path, e)
@@ -118,7 +120,7 @@ async def kol_discover():
     found: dict[str, dict] = {}
     for q in ARC_QUERIES:
         cursor = ""
-        for _ in range(4):
+        for _ in range(8):
             j = await _get("/twitter/tweet/advanced_search", query=q, queryType="Latest", cursor=cursor or None)
             if not j:
                 break

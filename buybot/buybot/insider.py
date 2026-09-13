@@ -1289,6 +1289,8 @@ async def start_api():
     _ref.register(app)
     from . import kols as _kols
     _kols.register(app)
+    from . import token_intel as _ti
+    _ti.register(app)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", "8080")))

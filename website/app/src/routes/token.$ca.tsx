@@ -7,6 +7,7 @@ import { SmartFollowers } from "@/components/smart-followers";
 import { RiskCard, StockCard, Tags, useWalletLabels } from "@/components/risk";
 import { TokenLogo } from "@/components/token-logo";
 import { TvChart, type Candle } from "@/components/tv-chart";
+import { DevTokens, MarkerLegend, MyPosition, TopTraders, useTokenEvents } from "@/components/token-intel";
 import { ARC_V4_ROUTER, SWAP_FEE_ROUTER, tokenPage, venueData, type PadToken, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
 import { creditRef } from "@/lib/arc-ref";
 import { routeSwap, type RouteResult } from "@/lib/arc-route";
@@ -171,7 +172,7 @@ function TokenPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [holders, setHolders] = useState<{ count: number; top: { address: string; pct: number }[] } | null>(null);
   const [venue, setVenue] = useState<VenueData | null>(null);
-  const [tab, setTab] = useState<"trades" | "holders" | "info">("trades");
+  const [tab, setTab] = useState<"trades" | "positions" | "holders" | "traders" | "dev" | "info">("trades");
   const [copied, setCopied] = useState(false);
 
   // ---- swap state
@@ -187,6 +188,8 @@ function TokenPage() {
   const [balTok, setBalTok] = useState<number | null>(null);
 
   const ca = info?.token ?? "";
+  const { markers: chartMarkers, data: eventsData } = useTokenEvents(ca || null, 14, candles[0]?.t ?? 0);
+  const [markersVisible, setMarkersVisible] = useState<number | null>(null);
   const dec = info?.decimals ?? 18;
   const padAddr = info?.padAddress ?? PAD;
   const quoteTok = info?.quoteToken ?? null;         // null = native USDC
@@ -605,7 +608,8 @@ function TokenPage() {
               {info.symbol}/USDC · {mode === "mcap" ? "Market Cap" : "Price"} · {tf} · {info.venue === "pad" ? `ArcToolsPad curve (${qSym} pair)` : info.venue === "v3" ? `Uniswap V3 ${((info.poolFee ?? 0) / 10000).toFixed(2)}%${info.graduated ? " · graduated from ArcToolsPad" : ""}` : info.venue === "v4" ? `Uniswap V4${info.launchpad && info.launchpad !== "Uniswap V4" ? ` · ${info.launchpad}` : " · hookless pool"}` : info.venue === "curve" ? "Warp bonding curve" : (info.launchpad ?? "external pool")}
               {candles.length < 5 && effCandles.length > 0 && <span style={{ marginLeft: 10, opacity: 0.7 }}>· venue data (own index syncing)</span>}
             </div>
-            <TvChart candles={effCandles} mode={mode} scale={scale} />
+            <TvChart candles={effCandles} markers={chartMarkers} mode={mode} onVisible={setMarkersVisible} scale={scale} />
+            <MarkerLegend data={eventsData} visible={markersVisible} />
           </div>
 
           {/* ---------- swap panel ---------- */}
@@ -758,8 +762,8 @@ function TokenPage() {
         {/* ---------- tabs ---------- */}
         <div style={{ border: "1px solid var(--arc-line)", marginTop: 14 }}>
           <div style={{ borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 2, padding: "0 8px" }}>
-            {(["trades", "holders", "info"] as const).map((t) => (
-              <button className="arc-mono" key={t} onClick={() => setTab(t)} style={{ background: "transparent", border: "none", borderBottom: tab === t ? "2px solid var(--arc-cobalt)" : "2px solid transparent", color: tab === t ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "10px 12px", textTransform: "uppercase" }} type="button">{t}</button>
+            {(["trades", "positions", "holders", "traders", "dev", "info"] as const).map((t) => (
+              <button className="arc-mono" key={t} onClick={() => setTab(t)} style={{ background: "transparent", border: "none", borderBottom: tab === t ? "2px solid var(--arc-cobalt)" : "2px solid transparent", color: tab === t ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "10px 12px", textTransform: "uppercase" }} type="button">{({ trades: "Trades", positions: "My position", holders: `Holders${holderCount ? ` ${holderCount}` : ""}`, traders: "Top traders", dev: "Dev tokens", info: "Info" } as const)[t]}</button>
             ))}
           </div>
           {tab === "trades" && (
@@ -789,6 +793,11 @@ function TokenPage() {
               </table>
             </div>
           )}
+          {tab === "positions" && (
+            <MyPosition onSell={(pct) => { setSide("sell"); if (balTok != null) setAmount(String(Math.floor((balTok * pct) / 100 * 1e6) / 1e6)); window.scrollTo({ behavior: "smooth", top: 0 }); }} onchainBalance={balTok} symbol={info.symbol} token={ca} wallet={hot && isUnlocked() ? hotAddress() : wallet} />
+          )}
+          {tab === "traders" && <TopTraders symbol={info.symbol} token={ca} />}
+          {tab === "dev" && <DevTokens current={ca} dev={info.deployer} />}
           {tab === "holders" && (
             <div style={{ padding: 12 }}>
               {holders && holders.top.length > 0 ? holders.top.map((h, i) => (

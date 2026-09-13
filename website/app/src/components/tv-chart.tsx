@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from "react";
  * touches `window`), so SSR renders an empty box of the right height.
  */
 export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number; vb: number; n: number };
+/** Badge drawn on a bar: DB/DS = dev buy/sell, IB/IS = insider, PB/PS = pro wallet (75%+ win rate). */
+export type ChartMarker = { t: number; side: "buy" | "sell"; kind: "dev" | "insider" | "pro"; text: string; title?: string };
 
 type Props = {
   candles: Candle[];
@@ -13,6 +15,9 @@ type Props = {
   scale: number;
   mode: "price" | "mcap";
   height?: number;
+  markers?: ChartMarker[];
+  /** how many markers fall inside the loaded candle range (the rest are older than the chart) */
+  onVisible?: (n: number) => void;
 };
 
 const fmtAxis = (v: number, mode: "price" | "mcap") => {
@@ -28,11 +33,19 @@ const fmtAxis = (v: number, mode: "price" | "mcap") => {
   return `$${v.toFixed(digits)}`;
 };
 
-export function TvChart({ candles, scale, mode, height = 440 }: Props) {
+const MARKER_COLOR: Record<ChartMarker["kind"], { buy: string; sell: string }> = {
+  dev: { buy: "#22c580", sell: "#f0534f" },
+  insider: { buy: "#2e7cff", sell: "#ff8a3d" },
+  pro: { buy: "#9b7bff", sell: "#f5c542" },
+};
+
+export function TvChart({ candles, scale, mode, height = 440, markers, onVisible }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const chartRef = useRef<import("lightweight-charts").IChartApi | null>(null);
   const candleRef = useRef<import("lightweight-charts").ISeriesApi<"Candlestick"> | null>(null);
   const volRef = useRef<import("lightweight-charts").ISeriesApi<"Histogram"> | null>(null);
+  const markRef = useRef<import("lightweight-charts").ISeriesMarkersPluginApi<import("lightweight-charts").Time> | null>(null);
+  const lwRef = useRef<typeof import("lightweight-charts") | null>(null);
   const [hover, setHover] = useState<Candle | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -82,6 +95,7 @@ export function TvChart({ candles, scale, mode, height = 440 }: Props) {
         if (d) setHover({ c: d.close, h: d.high, l: d.low, n: 0, o: d.open, t: Number(p.time), v: v?.value ?? 0, vb: 0 });
       });
       chartRef.current = chart;
+      lwRef.current = lw;
       candleRef.current = cs;
       volRef.current = vs;
       ro = new ResizeObserver(() => chart.timeScale().fitContent());
@@ -118,6 +132,29 @@ export function TvChart({ candles, scale, mode, height = 440 }: Props) {
     );
     chartRef.current?.timeScale().fitContent();
   }, [candles, scale, mode, ready]);
+
+  // badges: snap each event to the bar that contains it (markers must sit on an existing bar time)
+  useEffect(() => {
+    const cs = candleRef.current; const lw = lwRef.current;
+    if (!cs || !lw || candles.length === 0) return;
+    const times = candles.map((k) => k.t);
+    const snap = (t: number) => { let lo = 0, hi = times.length - 1; if (t <= times[0]) return times[0]; if (t >= times[hi]) return times[hi]; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (times[mid] <= t) lo = mid; else hi = mid - 1; } return times[lo]; };
+    const step = times.length > 1 ? times[1] - times[0] : 60;
+    const first = times[0]; const lastT = times[times.length - 1] + step;
+    // only events inside the loaded candle range — older ones would all pile up on the first bar
+    const list = (markers ?? []).filter((m) => m.t >= first && m.t < lastT).map((m) => ({
+      color: MARKER_COLOR[m.kind][m.side],
+      position: (m.side === "buy" ? "belowBar" : "aboveBar") as "belowBar" | "aboveBar",
+      shape: (m.side === "buy" ? "arrowUp" : "arrowDown") as "arrowUp" | "arrowDown",
+      size: m.kind === "dev" ? 1.6 : 1.1,
+      text: m.text,
+      time: snap(m.t) as import("lightweight-charts").UTCTimestamp,
+    })).sort((a, b) => (a.time as number) - (b.time as number));
+    onVisible?.(list.length);
+    if (!markRef.current) markRef.current = lw.createSeriesMarkers(cs, list);
+    else markRef.current.setMarkers(list);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markers, candles, ready]);
 
   const last = hover ?? (candles.length ? { ...candles[candles.length - 1] } : null);
   const sc = hover ? 1 : scale; // hover values are already scaled by the chart
