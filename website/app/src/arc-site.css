@@ -739,3 +739,41 @@ select { color-scheme: dark; }
 select option, select optgroup { background: #0e1118; color: #e6e9f2; }
 select option:checked, select option:hover { background: #1d3a6e; color: #fff; }
 select option:disabled { color: #6b7385; }
+
+/* ---- phones: Terminal table must be tappable — fewer columns, 44px targets, sticky Buy, no whole-row navigation ---- */
+@media (max-width: 760px) {
+  .arc-tablewrap { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+  .arc-tablewrap .arc-col-ath, .arc-tablewrap .arc-col-liq, .arc-tablewrap .arc-col-dev, .arc-tablewrap .arc-col-ins, .arc-tablewrap .arc-col-vol, .arc-tablewrap .arc-col-txs, .arc-tablewrap .arc-name { display: none !important; }
+  .arc-tablewrap .arc-tokcell { min-width: 138px !important; max-width: 150px; overflow: hidden; }
+  .arc-tablewrap td:last-child button { min-width: 84px; }
+  .arc-tablewrap table td, .arc-tablewrap table th { font-size: 13px !important; padding-top: 10px !important; padding-bottom: 10px !important; }
+  .arc-tablewrap td:last-child, .arc-tablewrap th:last-child { position: sticky; right: 0; background: var(--arc-bg, #0b0d13); box-shadow: -10px 0 12px -6px rgba(0,0,0,0.85); padding-left: 6px !important; }
+  .arc-tablewrap td:last-child button { min-height: 44px !important; min-width: 92px; font-size: 13px !important; padding: 8px 10px !important; }
+  .arc-tablewrap td:first-child button { min-height: 44px; min-width: 40px; font-size: 18px !important; }
+  .arc-tablewrap tr.arc-row-link { cursor: default; }
+  .arc-tokcell a, .arc-tokcell button { padding: 4px 2px; }
+  .arc-controls > button, .arc-controls > input, .arc-chips > button, .arc-tabs > button, .arc-filters > input, .arc-filters > select { min-height: 42px !important; }
+  .arc-chips > button { padding: 8px 14px !important; font-size: 13px !important; }
+  .arc-pager button { min-height: 40px; min-width: 40px; }
+}
+
+/* phones: settings and filters collapse behind one-line bars so the token list is one swipe away */
+.arc-mobile-bar { display: none; }
+@media (max-width: 760px) {
+  .arc-mobile-bar { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 44px; margin: 0 0 8px; padding: 8px 12px; background: var(--arc-paper); border: 1px solid var(--arc-line); border-radius: 6px; color: var(--arc-ink); font-size: 13px; cursor: pointer; }
+  .arc-controls:not(.arc-mobile-open), .arc-filters:not(.arc-mobile-open) { display: none !important; }
+}
+@media (max-width: 760px) {
+  /* the grid column must not grow with the table's intrinsic width — otherwise the page scrolls sideways and the sticky Buy column can't stick */
+  .arc-2col { grid-template-columns: minmax(0, 1fr) !important; }
+  .arc-2col > * { min-width: 0; max-width: 100%; }
+  .arc-tablewrap { max-width: 100%; }
+  .arc-tablewrap table { min-width: 100%; }
+  .arc-section { overflow-x: hidden; }
+}
+
+@media (max-width: 760px) {
+  .arc-tokcell .arc-tokmeta { display: none !important; }
+  .arc-tokcell > div > div { min-width: 0; }
+  .arc-tokcell > div > div > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100px; }
+}
