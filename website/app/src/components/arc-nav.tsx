@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 
 import { connectWallet, disconnectWallet, getStoredWallet, onWalletChange, setStoredWallet, setWalletPicker } from "@/lib/arc-wallet";
 import { bindRef, captureRef } from "@/lib/arc-ref";
+import { hotAddress, onHotChange } from "@/lib/arc-hotwallet";
 import { PadTicker } from "./pad-ticker";
 
 /** Shared site nav: tool links, launchpad, rewards, wallet connect. */
@@ -25,7 +26,13 @@ export function ArcNav({ active }: { active?: string }) {
   // picker for the case of several installed wallet extensions (MetaMask + Rabby + …)
   const [picker, setPicker] = useState<{ opts: { rdns: string; name: string; icon: string }[]; resolve: (r: string | null) => void } | null>(null);
   useEffect(() => { setWalletPicker((opts) => new Promise((resolve) => setPicker({ opts, resolve }))); return () => setWalletPicker(null); }, []);
-  useEffect(() => { captureRef(); void bindRef(getStoredWallet()); return onWalletChange((a) => void bindRef(a)); }, []);
+  // referral binding covers both signers: the connected browser wallet AND the in-browser trading wallet (most quick-buy users never connect MetaMask)
+  useEffect(() => {
+    captureRef(); void bindRef(getStoredWallet()); void bindRef(hotAddress());
+    const offW = onWalletChange((a) => void bindRef(a));
+    const offH = onHotChange(() => void bindRef(hotAddress()));
+    return () => { offW(); offH(); };
+  }, []);
   const disconnect = async () => {
     // full disconnect (permission revoked in the extension), then straight back into the connect flow so the
     // user picks the wallet / account they actually want

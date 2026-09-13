@@ -6,6 +6,7 @@ import { WalletPanel } from "@/components/wallet-panel";
 import { hotAddress, hotBalance, hotCall, hotSend, hotWait, isUnlocked, onHotChange } from "@/lib/arc-hotwallet";
 import { getPortfolio } from "@/lib/arc-api";
 import { routeSwap } from "@/lib/arc-route";
+import { creditRef } from "@/lib/arc-ref";
 import { ARC_AGGREGATOR, encodeAggregatorSwap, p32, pnum } from "@/lib/arc-wallet";
 import "../arc-site.css";
 
@@ -112,6 +113,7 @@ function Profile() {
       setToast({ ok: true, text: `Selling ${pct}% of ${p.symbol ?? short(p.token)}…`, tx: h });
       const rc = await hotWait(h);
       setToast({ ok: rc.status === 1, text: rc.status === 1 ? `Sold ${pct}% of ${p.symbol ?? short(p.token)} → USDC in the wallet.` : "Sell reverted.", tx: h });
+      if (rc.status === 1) creditRef(addr, h, (Number(r.out) / 1e18) * 0.015);
       void load();
     } catch (e) { setToast({ ok: false, text: (e as Error).message }); }
     setBusy(null);
