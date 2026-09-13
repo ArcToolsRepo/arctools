@@ -19,8 +19,19 @@ export type Stock = { token: string; symbol: string; name: string; usd: number; 
 export type Launch = {
   token: string; deployer: string; pool: string; pairToken: string; pairSymbol: string; pairUsd: number; name: string; symbol: string;
   image: string | null; description: string | null; website: string | null; twitter: string | null; telegram: string | null;
-  priceInPair: number; priceUsd: number; supply: number; mcapUsd: number; block: number; updatedAt: number;
+  priceInPair: number; priceUsd: number; supply: number; mcapUsd: number; block: number; updatedAt: number; liqUsd: number | null; createdAt: string | null;
 };
+
+/** block → unix ts, linear from two reference blocks (Arc block time is steady); cached 10 min */
+const blockClock = (): Promise<{ head: number; ts: number; slope: number }> => memo("long:blockclock", 600_000, async () => {
+  const { rpc } = await import("@/lib/arc-api");
+  const h = await rpc("eth_getBlockByNumber", ["latest", false]) as { number: string; timestamp: string };
+  const head = Number(BigInt(h.number)); const ts = Number(BigInt(h.timestamp));
+  const back = 200_000;
+  const o = await rpc("eth_getBlockByNumber", ["0x" + (head - back).toString(16), false]) as { timestamp: string };
+  const slope = (ts - Number(BigInt(o.timestamp))) / back;
+  return { head, ts, slope: slope > 0 ? slope : 1 };
+}, (v) => v.head > 0);
 
 const decStr = (hex: string | null): string => {
   if (!hex || hex === "0x" || hex.length < 66) return "";
@@ -90,7 +101,33 @@ export const longLaunches = (): Promise<Launch[]> => memo<Launch[]>("long:launch
   const symOf = new Map(stocks.map((s) => [s.token, s.symbol]));
   const rows = pages.flatMap((p) => p.launches ?? []);
   const toks = rows.map((r) => String(r.token).toLowerCase());
-  const meta = await memo<Record<string, { supply: number; name: string }>>("long:launchmeta:" + toks.length + ":" + toks.slice(-3).join(","), 3_600_000, () => chainMeta(toks), (v) => Object.keys(v).length > 0);
+  const meta = await memo<Record<string, { supply: number; name: string }>>("long:launchmeta:" + toks.length + ":" + toks.slice(-3).join(","), 3_600_000, async () => {
+    let m = await chainMeta(toks);
+    // a dropped multicall chunk leaves supply 0 → retry once before caching (mcap would show as "—")
+    const missing = toks.filter((t) => !(m[t]?.supply > 0));
+    if (missing.length && missing.length < toks.length) { const again = await chainMeta(missing); m = { ...m, ...again }; }
+    return m;
+  }, (v) => Object.values(v).filter((x) => x.supply > 0).length >= Object.keys(v).length * 0.9);
+  // liquidity = pair-token balance sitting in the pool × stock USD × 2 (both sides), one multicall, cached 2 min
+  const liq = await memo<Record<string, number>>("long:launchliq:" + toks.length, 120_000, async () => {
+    const ok = rows.filter((r) => /^0x[0-9a-f]{40}$/i.test(String(r.pool ?? "")) && /^0x[0-9a-f]{40}$/i.test(String(r.pairToken ?? "")));
+    const calls = ok.map((r) => ({ target: String(r.pairToken).toLowerCase(), data: "0x70a08231" + String(r.pool).replace(/^0x/, "").toLowerCase().padStart(64, "0") }));
+    const out: Record<string, number> = {};
+    let pending = ok.map((r, i) => i);
+    for (let pass = 0; pass < 3 && pending.length; pass++) {   // relay drops whole chunks at times: re-run only what is missing
+      const res = await multicall(pending.map((i) => calls[i]), 40).catch(() => pending.map(() => null));
+      const next: number[] = [];
+      pending.forEach((i, j) => {
+        const b = res[j];
+        if (b && b !== "0x") out[String(ok[i].token).toLowerCase()] = (Number(BigInt(b)) / 1e18) * (usdBy[String(ok[i].pairToken).toLowerCase()] ?? 0) * 2;
+        else next.push(i);
+      });
+      pending = next;
+      if (pending.length) await new Promise((r) => setTimeout(r, 300));
+    }
+    return out;
+  }, (v) => Object.keys(v).length >= rows.length * 0.8);
+  const clock = await blockClock().catch(() => null);
   return rows.map((r) => {
     const token = String(r.token).toLowerCase(); const pair = String(r.pairToken).toLowerCase();
     const pairUsd = usdBy[pair] ?? 0; const priceInPair = Number(r.priceX18 ?? 0) / 1e18; const supply = meta[token]?.supply ?? 0;
@@ -100,6 +137,8 @@ export const longLaunches = (): Promise<Launch[]> => memo<Launch[]>("long:launch
       name: String(r.name ?? ""), symbol: String(r.symbol ?? ""), image: (r.image as string) ?? null, description: (r.description as string) ?? null,
       website: (r.website as string) ?? null, twitter: (r.twitter as string) ?? null, telegram: (r.telegram as string) ?? null,
       priceInPair, priceUsd, supply, mcapUsd: priceUsd * supply, block: Number(r.block ?? 0), updatedAt: Number(r.updatedAt ?? 0),
+      liqUsd: liq[token] ?? null,
+      createdAt: clock && Number(r.block) > 0 ? new Date((clock.ts - (clock.head - Number(r.block)) * clock.slope) * 1000).toISOString() : null,
     };
   });
 }, (v) => v.length > 0);
@@ -108,9 +147,9 @@ export const longLaunches = (): Promise<Launch[]> => memo<Launch[]>("long:launch
 export async function longSupplyTokens(): Promise<PadToken[]> {
   const [launches, stocks] = await Promise.all([longLaunches().catch(() => [] as Launch[]), longStocks().catch(() => [] as Stock[])]);
   const a: PadToken[] = launches.map((l) => ({
-    createdAt: null, logo: l.image, mcapUsd: l.mcapUsd || null, name: l.name, pad: "long.supply", pool: l.pool, priceUsd: l.priceUsd || null,
+    createdAt: l.createdAt, logo: l.image, mcapUsd: l.mcapUsd || null, name: l.name, pad: "long.supply", pool: l.pool, priceUsd: l.priceUsd || null,
     stage: `V3 · ${l.pairSymbol} pair`, symbol: l.symbol, telegram: l.telegram, token: l.token, twitter: l.twitter, venueUrl: `https://long.supply/${l.token}`,
-    volUsd: null, website: l.website, og: false, dexes: [], quote: l.pairToken, quoteSymbol: l.pairSymbol,
+    volUsd: null, website: l.website, og: false, dexes: [], quote: l.pairToken, quoteSymbol: l.pairSymbol, liqUsd: l.liqUsd,
   }));
   const b: PadToken[] = stocks.map((s) => ({
     createdAt: null, logo: null, mcapUsd: s.mcapUsd || null, name: s.name, pad: "long.supply", pool: null, priceUsd: s.usd, stage: "wrapped stock · custodial IOU",

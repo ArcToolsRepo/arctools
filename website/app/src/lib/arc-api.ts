@@ -1144,6 +1144,8 @@ export type PadToken = {
   /** non-USDC quote token of the token's main pool (e.g. a wrapped stock on long.supply) */
   quote?: string;
   quoteSymbol?: string;
+  /** pool liquidity in USD when the source knows it (stock-quoted pools) — the Terminal uses the index value first */
+  liqUsd?: number | null;
   createdAt: string | null;
   logo: string | null;
   mcapUsd: number | null;
@@ -1917,7 +1919,7 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
       createdAt: t.createdAt, logo: t.logo, mcapUsd: t.mcapUsd, name: (t.name ?? "").slice(0, 40), pad: t.pad, pool: t.pool, priceUsd: t.priceUsd, stage: t.stage ?? null,
       symbol: (t.symbol ?? "").slice(0, 16), telegram: t.telegram, token: t.token, twitter: t.twitter, venueUrl: t.venueUrl, volUsd: t.volUsd, website: t.website,
       og: t.og || scrMeta.get(t.token.toLowerCase())?.og || false, dexes: t.dexes?.length ? t.dexes : (scrMeta.get(t.token.toLowerCase())?.dexes ?? []),
-      ...(t.stock ? { stock: true } : {}), ...(t.quote ? { quote: t.quote, quoteSymbol: t.quoteSymbol } : {}),
+      ...(t.stock ? { stock: true } : {}), ...(t.quote ? { quote: t.quote, quoteSymbol: t.quoteSymbol } : {}), ...(t.liqUsd != null ? { liqUsd: t.liqUsd } : {}),
     } as PadToken;
   }
   return [...keep.values()].sort((a, b) => ts(b) - ts(a)).map(compactToken);

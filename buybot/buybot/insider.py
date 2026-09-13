@@ -170,6 +170,10 @@ async def _resolve_pool(pool: str) -> dict | None:
     row = await db.fetchone(text("SELECT token, is0 FROM insider_pools WHERE pool = :p").bindparams(p=key))
     if row:
         info = {"is0": bool(row["is0"]), "token": row["token"]} if row["token"] else None
+        if info is None:
+            q = await db.fetchone(text("SELECT token, quote, is0 FROM quote_pools WHERE pool = :p").bindparams(p=key))
+            if q:
+                info = {"is0": bool(q["is0"]), "token": q["token"], "quote": q["quote"]}
         _pool_cache[key] = info
         return info
     token, is0 = None, False
@@ -184,12 +188,71 @@ async def _resolve_pool(pool: str) -> dict | None:
         token, is0 = t1.lower(), False
     elif t1.lower() == USDC:
         token, is0 = t0.lower(), True
+    else:
+        # not a USDC pool: maybe a stock-quoted pool we know from long.supply (amounts priced through the stock's USD)
+        q = await db.fetchone(text("SELECT token, quote, is0 FROM quote_pools WHERE pool = :p").bindparams(p=key))
+        if q:
+            info = {"is0": bool(q["is0"]), "token": q["token"], "quote": q["quote"]}
+            _pool_cache[key] = info
+            return info
     await db.execute(text(
         "INSERT INTO insider_pools (pool, token, is0) VALUES (:p, :t, :i) ON CONFLICT (pool) DO NOTHING"
     ).bindparams(p=key, t=token, i=1 if is0 else 0))
     info = {"is0": is0, "token": token} if token else None
     _pool_cache[key] = info
     return info
+
+
+# ---- stock-quoted pools (long.supply): quote token -> USD, refreshed by quote_pools_loop
+_quote_usd: dict[str, float] = {}
+
+
+async def quote_pools_loop():
+    """Every 5 min: long.supply launches (pool, token, pairToken) + stock USD prices → quote_pools, so their V3 pools are
+    indexed like USDC pools (amounts converted through the stock price). New pools are queued for backfill."""
+    import aiohttp
+    await db.execute(text("CREATE TABLE IF NOT EXISTS quote_pools (pool VARCHAR(64) PRIMARY KEY, token VARCHAR(64), quote VARCHAR(64), is0 INTEGER, ts BIGINT)"))
+    await db.execute(text("ALTER TABLE quote_pools ADD COLUMN IF NOT EXISTS from_block BIGINT"))
+    await db.execute(text("CREATE TABLE IF NOT EXISTS pool_backfill (pool VARCHAR(64) PRIMARY KEY, done INTEGER DEFAULT 0, swaps INTEGER DEFAULT 0)"))
+    await asyncio.sleep(20)
+    while True:
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get("https://long.supply/api/pairs", headers={"User-Agent": "ArcTools/1.0"}, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                    pairs = (await r.json()).get("pairs") or []
+                for p in pairs:
+                    _quote_usd[p["arcStock"].lower()] = int(p["usdX18"]) / 1e18
+                launches = []
+                for off in range(0, 2000, 100):
+                    async with s.get(f"https://long.supply/api/launches?limit=100&offset={off}", headers={"User-Agent": "ArcTools/1.0"}, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                        j = await r.json()
+                    launches += j.get("launches") or []
+                    for k, v in (j.get("usdByPairToken") or {}).items():
+                        _quote_usd[k.lower()] = int(v) / 1e18
+                    if off + 100 >= int(j.get("total") or 0):
+                        break
+            new = 0
+            for l in launches:
+                pool, tok, q = (l.get("pool") or "").lower(), (l.get("token") or "").lower(), (l.get("pairToken") or "").lower()
+                if not (pool.startswith("0x") and tok.startswith("0x") and q.startswith("0x")):
+                    continue
+                fb = int(l.get("block") or 0)
+                if await db.fetchone(text("SELECT 1 FROM quote_pools WHERE pool = :p").bindparams(p=pool)):
+                    if fb:
+                        await db.execute(text("UPDATE quote_pools SET from_block = :b WHERE pool = :p AND from_block IS NULL").bindparams(b=fb, p=pool))
+                    continue
+                is0 = 1 if int(tok, 16) < int(q, 16) else 0
+                await db.execute(text("INSERT INTO quote_pools (pool, token, quote, is0, ts, from_block) VALUES (:p, :t, :q, :i, :ts, :b) ON CONFLICT (pool) DO NOTHING")
+                                 .bindparams(p=pool, t=tok, q=q, i=is0, ts=int(time.time()), b=fb or None))
+                new += 1
+                _pool_cache.pop(pool, None)
+                await db.execute(text("DELETE FROM insider_pools WHERE pool = :p AND token IS NULL").bindparams(p=pool))
+                await db.execute(text("INSERT INTO pool_backfill (pool, done) VALUES (:p, 0) ON CONFLICT (pool) DO NOTHING").bindparams(p=pool))
+                await db.execute(text("INSERT INTO token_symbols (token, symbol) VALUES (:t, :s) ON CONFLICT (token) DO NOTHING").bindparams(t=tok, s=str(l.get("symbol") or "")[:32]))
+            log.info("quote pools: %d launches, %d new, %d quotes priced", len(launches), new, len(_quote_usd))
+        except Exception as e:  # noqa
+            log.warning("quote pools loop: %s", e)
+        await asyncio.sleep(300)
 
 
 PRIORITY_POOLS = ["0xf89005ccf237a59eeee1521e74b15c7d8d022ab7"]   # ARCT/USDC — zawsze pierwszy
@@ -330,6 +393,7 @@ async def v4_bootstrap():
     await _score_init()
     from .watchdog import watchdog_loop
     asyncio.create_task(watchdog_loop(), name="site-watchdog")
+    asyncio.create_task(quote_pools_loop(), name="quote-pools")
     if await db.kv_get("v4_bootstrapped"):
         return
     head = await CHAIN._bn()
@@ -649,8 +713,9 @@ async def repair_loop():
                   AND NOT EXISTS (SELECT 1 FROM swaps s WHERE s.token = p.token LIMIT 1)
                 ON CONFLICT (pool) DO NOTHING"""))
             rows = await db.fetchall(text("""
-                SELECT b.pool, p.token FROM pool_backfill b JOIN insider_pools p ON p.pool = b.pool
-                WHERE b.done = 0
+                SELECT b.pool, COALESCE(p.token, q.token) AS token FROM pool_backfill b
+                LEFT JOIN insider_pools p ON p.pool = b.pool LEFT JOIN quote_pools q ON q.pool = b.pool
+                WHERE b.done = 0 AND COALESCE(p.token, q.token) IS NOT NULL
                 ORDER BY CASE WHEN p.token = :arct THEN 0 ELSE 1 END, b.pool""").bindparams(
                 arct="0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52"))
             if rows:
@@ -661,7 +726,13 @@ async def repair_loop():
                 async with sem:
                     if pool not in _pool_cache:
                         await _resolve_pool(pool)
-                    n = await backfill_pool(pool)
+                    # stock-quoted pools: history starts at the launch block — never scan 30 days for a 2-day-old pool
+                    qb = await db.fetchone(text("SELECT from_block FROM quote_pools WHERE pool = :p").bindparams(p=pool))
+                    blocks = BACKFILL_BLOCKS
+                    if qb and qb["from_block"]:
+                        head_now = await CHAIN._bn()
+                        blocks = max(1000, head_now - int(qb["from_block"]) + 200)
+                    n = await backfill_pool(pool, blocks)
                     await db.execute(text("UPDATE pool_backfill SET done = 1, swaps = :n WHERE pool = :p")
                                      .bindparams(n=n, p=pool))
 
@@ -697,6 +768,17 @@ def _decode(topic: str, lg, pool_info: dict | None) -> dict | None:
             a0 = int.from_bytes(bytes.fromhex(body[0:64]), "big", signed=True)
             a1 = int.from_bytes(bytes.fromhex(body[64:128]), "big", signed=True)
             tok_amt, usdc_amt = (a0, a1) if tok_is0 else (a1, a0)
+            q = pool_info.get("quote")
+            if q:   # stock-quoted pool: 18-dec stock amounts → USD through the reference price
+                px = _quote_usd.get(q)
+                if not px:
+                    return None
+                usd = abs(usdc_amt) / 1e18 * px
+                if usdc_amt > 0 and tok_amt < 0:
+                    return {"side": "buy", "token": token, "tokens": -tok_amt / 1e18, "usdc": usd}
+                if usdc_amt < 0 and tok_amt > 0:
+                    return {"side": "sell", "token": token, "tokens": tok_amt / 1e18, "usdc": usd}
+                return None
             if usdc_amt > 0 and tok_amt < 0:
                 return {"side": "buy", "token": token, "tokens": -tok_amt / 1e18, "usdc": usdc_amt / 1e6}
             if usdc_amt < 0 and tok_amt > 0:
