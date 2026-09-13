@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { type ChartMarker } from "@/components/tv-chart";
+import { type ChartAvatar, type ChartMarker } from "@/components/tv-chart";
 import { Tags, useWalletLabels } from "@/components/risk";
 
 const API = "https://bot-production-4200.up.railway.app";
@@ -11,11 +11,11 @@ const ago = (ts: number) => { const s = Math.max(0, Date.now() / 1000 - ts); ret
 const UP = "#22c580", DOWN = "#f0534f";
 const fmtK = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e5 ? 0 : 1)}K` : String(n));
 
-export type TokenEvent = { ts: number; side: "buy" | "sell"; usdc: number; wallet: string; kind: "dev" | "insider" | "pro" | "kol"; meta: number | null; tx: string; n: number; text?: string };
+export type TokenEvent = { ts: number; side: "buy" | "sell"; usdc: number; wallet: string; kind: "dev" | "insider" | "pro" | "kol"; meta: number | null; tx: string; n: number; text?: string; avatar?: string; name?: string };
 export type EventsResp = { events: TokenEvent[]; total: number; devs: string[]; insiders_seen: number; pros_seen: number };
 
 /** Poll notable trades for the chart; returns markers + the raw feed. */
-export function useTokenEvents(token: string | null | undefined, limit = 14, since = 0): { markers: ChartMarker[]; data: EventsResp | null } {
+export function useTokenEvents(token: string | null | undefined, limit = 14, since = 0): { markers: ChartMarker[]; avatars: ChartAvatar[]; data: EventsResp | null } {
   const [data, setData] = useState<EventsResp | null>(null);
   useEffect(() => {
     if (!token) return;
@@ -25,12 +25,16 @@ export function useTokenEvents(token: string | null | undefined, limit = 14, sin
     const id = setInterval(load, 30_000);
     return () => { alive = false; clearInterval(id); };
   }, [token, limit, since - (since % 900)]);
-  const markers: ChartMarker[] = (data?.events ?? []).map((e) => ({
+  const avatars: ChartAvatar[] = (data?.events ?? []).filter((e) => e.kind === "kol" && e.avatar).map((e) => ({
+    t: e.ts, url: e.avatar!, href: e.tx, label: `@${e.wallet}`,
+    title: `${e.name || "@" + e.wallet} · @${e.wallet} · ${fmtK(e.meta ?? 0)} followers\n${e.text ?? ""}`,
+  }));
+  const markers: ChartMarker[] = (data?.events ?? []).filter((e) => !(e.kind === "kol" && e.avatar)).map((e) => ({
     kind: e.kind, side: e.side, t: e.ts,
     text: e.kind === "kol" ? "K" : `${e.kind === "dev" ? "D" : e.kind === "insider" ? "I" : "P"}${e.side === "buy" ? "B" : "S"}`,
     title: e.kind === "kol" ? `@${e.wallet} (${fmtK(e.meta ?? 0)} followers) mentioned this token: ${e.text ?? ""}` : `${e.kind === "dev" ? "deployer" : e.kind === "insider" ? `insider #${e.meta}` : `${e.meta}% win-rate wallet`} ${e.side} ${usd(e.usdc)}${e.n > 1 ? ` (${e.n} fills)` : ""}`,
   }));
-  return { markers, data };
+  return { markers, avatars, data };
 }
 
 export function MarkerLegend({ data, visible }: { data: EventsResp | null; visible?: number | null }) {
@@ -38,7 +42,7 @@ export function MarkerLegend({ data, visible }: { data: EventsResp | null; visib
   const Dot = ({ c, t }: { c: string; t: string }) => <span style={{ alignItems: "center", display: "inline-flex", gap: 4 }}><span style={{ background: c, borderRadius: "50%", display: "inline-block", height: 8, width: 8 }} />{t}</span>;
   return (
     <div className="arc-mono" style={{ color: "var(--arc-muted)", display: "flex", flexWrap: "wrap", fontSize: 10.5, gap: 12, padding: "4px 10px 6px" }}>
-      <Dot c="#22c580" t="DB dev buy" /><Dot c="#f0534f" t="DS dev sell" /><Dot c="#2e7cff" t="IB/IS insider (top-100)" /><Dot c="#9b7bff" t="PB/PS pro wallet (75%+ win)" /><Dot c="#ff5fd2" t="K  KOL tweet" />
+      <Dot c="#22c580" t="DB dev buy" /><Dot c="#f0534f" t="DS dev sell" /><Dot c="#2e7cff" t="IB/IS insider (top-100)" /><Dot c="#9b7bff" t="PB/PS pro wallet (75%+ win)" /><Dot c="#ff5fd2" t="KOL avatar = KOL tweeted about this token" />
       <span style={{ marginLeft: "auto" }}>{visible != null ? `${visible} on chart · ` : ""}{data.events.length} of {data.total} notable trades{visible != null && visible < data.events.length ? ` (${data.events.length - visible} older than this timeframe — zoom out)` : ""}{data.devs.length ? ` · deployer ${data.devs.map(short).join(", ")}` : " · deployer unknown"}</span>
     </div>
   );

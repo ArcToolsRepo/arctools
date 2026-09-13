@@ -196,7 +196,7 @@ function TokenPage() {
   const [balTok, setBalTok] = useState<number | null>(null);
 
   const ca = info?.token ?? "";
-  const { markers: chartMarkers, data: eventsData } = useTokenEvents(ca || null, 14, candles[0]?.t ?? 0);
+  const { markers: chartMarkers, avatars: chartAvatars, data: eventsData } = useTokenEvents(ca || null, 14, candles[0]?.t ?? 0);
   const [markersVisible, setMarkersVisible] = useState<number | null>(null);
   const dec = info?.decimals ?? 18;
   const padAddr = info?.padAddress ?? PAD;
@@ -616,7 +616,7 @@ function TokenPage() {
               {info.symbol}/USDC · {mode === "mcap" ? "Market Cap" : "Price"} · {tf} · {info.venue === "pad" ? `ArcToolsPad curve (${qSym} pair)` : info.venue === "v3" ? `Uniswap V3 ${((info.poolFee ?? 0) / 10000).toFixed(2)}%${info.graduated ? " · graduated from ArcToolsPad" : ""}` : info.venue === "v4" ? `Uniswap V4${info.launchpad && info.launchpad !== "Uniswap V4" ? ` · ${info.launchpad}` : " · hookless pool"}` : info.venue === "curve" ? "Warp bonding curve" : (info.launchpad ?? "external pool")}
               {candles.length < 5 && effCandles.length > 0 && <span style={{ marginLeft: 10, opacity: 0.7 }}>· venue data (own index syncing)</span>}
             </div>
-            <TvChart candles={effCandles} markers={chartMarkers} mode={mode} onVisible={setMarkersVisible} scale={scale} />
+            <TvChart avatars={chartAvatars} candles={effCandles} markers={chartMarkers} mode={mode} onVisible={setMarkersVisible} scale={scale} />
             <MarkerLegend data={eventsData} visible={markersVisible} />
           </div>
 

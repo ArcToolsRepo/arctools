@@ -8,6 +8,8 @@ import { useEffect, useRef, useState } from "react";
 export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number; vb: number; n: number };
 /** Badge drawn on a bar: DB/DS = dev buy/sell, IB/IS = insider, PB/PS = pro wallet (75%+ win rate). */
 export type ChartMarker = { t: number; side: "buy" | "sell"; kind: "dev" | "insider" | "pro" | "kol"; text: string; title?: string };
+/** KOL avatar pinned above the bar where the tweet happened (HTML overlay — the chart lib cannot draw images). */
+export type ChartAvatar = { t: number; url: string; title: string; href: string; label: string };
 
 type Props = {
   candles: Candle[];
@@ -16,6 +18,7 @@ type Props = {
   mode: "price" | "mcap";
   height?: number;
   markers?: ChartMarker[];
+  avatars?: ChartAvatar[];
   /** how many markers fall inside the loaded candle range (the rest are older than the chart) */
   onVisible?: (n: number) => void;
 };
@@ -40,7 +43,7 @@ const MARKER_COLOR: Record<ChartMarker["kind"], { buy: string; sell: string }> =
   kol: { buy: "#ff5fd2", sell: "#ff5fd2" },
 };
 
-export function TvChart({ candles, scale, mode, height = 440, markers, onVisible }: Props) {
+export function TvChart({ candles, scale, mode, height = 440, markers, avatars, onVisible }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const chartRef = useRef<import("lightweight-charts").IChartApi | null>(null);
   const candleRef = useRef<import("lightweight-charts").ISeriesApi<"Candlestick"> | null>(null);
@@ -48,6 +51,8 @@ export function TvChart({ candles, scale, mode, height = 440, markers, onVisible
   const markRef = useRef<import("lightweight-charts").ISeriesMarkersPluginApi<import("lightweight-charts").Time> | null>(null);
   const lwRef = useRef<typeof import("lightweight-charts") | null>(null);
   const [hover, setHover] = useState<Candle | null>(null);
+  const [pins, setPins] = useState<{ x: number; y: number; a: ChartAvatar }[]>([]);
+  const [rangeTick, setRangeTick] = useState(0);
   const [ready, setReady] = useState(false);
 
   // create once
@@ -95,6 +100,7 @@ export function TvChart({ candles, scale, mode, height = 440, markers, onVisible
         const v = p.seriesData.get(vs) as { value: number } | undefined;
         if (d) setHover({ c: d.close, h: d.high, l: d.low, n: 0, o: d.open, t: Number(p.time), v: v?.value ?? 0, vb: 0 });
       });
+      chart.timeScale().subscribeVisibleLogicalRangeChange(() => setRangeTick((n) => n + 1));
       chartRef.current = chart;
       lwRef.current = lw;
       candleRef.current = cs;
@@ -133,6 +139,28 @@ export function TvChart({ candles, scale, mode, height = 440, markers, onVisible
     );
     chartRef.current?.timeScale().fitContent();
   }, [candles, scale, mode, ready]);
+
+  // avatar pins: (time → x) via the time scale, (bar high → y) via the price scale; recomputed on every pan/zoom/resize
+  useEffect(() => {
+    const chart = chartRef.current; const cs = candleRef.current;
+    if (!chart || !cs || !avatars?.length || candles.length === 0) { setPins([]); return; }
+    const times = candles.map((k) => k.t);
+    const step = times.length > 1 ? times[1] - times[0] : 60;
+    const out: { x: number; y: number; a: ChartAvatar }[] = [];
+    for (const a of avatars) {
+      if (a.t < times[0] || a.t >= times[times.length - 1] + step) continue;
+      let lo = 0, hi = times.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (times[mid] <= a.t) lo = mid; else hi = mid - 1; }
+      const k = candles[lo];
+      const x = chart.timeScale().timeToCoordinate(k.t as import("lightweight-charts").UTCTimestamp);
+      const y = cs.priceToCoordinate(k.h * scale);
+      if (x == null || y == null) continue;
+      out.push({ x, y, a });
+    }
+    // stack pins that land on the same bar
+    const seen = new Map<number, number>();
+    for (const p of out) { const n = seen.get(Math.round(p.x)) ?? 0; p.y -= n * 30; seen.set(Math.round(p.x), n + 1); }
+    setPins(out);
+  }, [avatars, candles, scale, ready, rangeTick]);
 
   // badges: snap each event to the bar that contains it (markers must sit on an existing bar time)
   useEffect(() => {
@@ -180,6 +208,13 @@ export function TvChart({ candles, scale, mode, height = 440, markers, onVisible
         </div>
       )}
       <div ref={box} style={{ height, width: "100%" }} />
+      {pins.map((p, i) => (
+        <a key={i} href={p.a.href} rel="noreferrer" target="_blank" title={p.a.title}
+          style={{ left: p.x - 14, position: "absolute", top: p.y - 46 + (candles.length ? 0 : 0), zIndex: 3, display: "block", width: 28, height: 28, pointerEvents: "auto" }}>
+          <img alt="" src={p.a.url} width={28} height={28} style={{ borderRadius: "50%", border: "2px solid #ff5fd2", boxShadow: "0 0 0 2px #0b0d13, 0 0 12px rgba(255,95,210,0.6)", display: "block", background: "#0b0d13" }} />
+          <span style={{ position: "absolute", left: "50%", top: 27, width: 2, height: 12, background: "#ff5fd2", transform: "translateX(-50%)" }} />
+        </a>
+      ))}
       {candles.length === 0 && (
         <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, left: 0, position: "absolute", right: 0, textAlign: "center", top: "45%" }}>
           No trades indexed yet for this timeframe.

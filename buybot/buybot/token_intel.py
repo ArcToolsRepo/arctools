@@ -83,7 +83,7 @@ async def token_events(token: str, limit: int, since: int = 0) -> dict:
     try:
         from .kols import token_mentions
         for m in await token_mentions(token, since, 40):
-            keep.append({"ts": int(m["ts"]), "side": "buy", "usdc": float(m.get("likes") or 0), "wallet": m["kol"], "kind": "kol", "meta": int(m.get("followers") or 0), "tx": m["url"], "n": 1, "text": (m.get("text") or "")[:140]})
+            keep.append({"ts": int(m["ts"]), "side": "buy", "usdc": float(m.get("likes") or 0), "wallet": m["kol"], "kind": "kol", "meta": int(m.get("followers") or 0), "tx": m["url"], "n": 1, "text": (m.get("text") or "")[:140], "avatar": m.get("avatar") or "", "name": m.get("name") or ""})
     except Exception as e:  # noqa
         log.debug("kol mentions for chart: %s", e)
     keep.sort(key=lambda e: e["ts"])
