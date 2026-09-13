@@ -23,7 +23,7 @@ export const Route = createFileRoute("/trade")({
   loader: async () => {
     const [rows, trend] = await Promise.all([
       listAllTokens().catch(() => [] as PadToken[]),
-      fetch(`${API}/api/trending?minutes=60&limit=120`).then((r) => r.json()).then((j) => (j.rows ?? []) as Trend[]).catch(() => [] as Trend[]),
+      fetch(`${API}/api/trending?minutes=0&limit=120`).then((r) => r.json()).then((j) => (j.rows ?? []) as Trend[]).catch(() => [] as Trend[]),
     ]);
     return { rows, trend };
   },
@@ -57,7 +57,7 @@ const ago = (iso: string | null | number) => {
 const priceStr = (p: number | null) => (p == null ? "—" : p >= 1 ? `$${p.toFixed(4)}` : `$${p.toFixed(Math.max(2, -Math.floor(Math.log10(p)) + 3))}`);
 
 const SEL = { balanceOf: "0x70a08231", allowance: "0xdd62ed3e", approve: "0x095ea7b3" };
-const tfLabel = (m: number) => (m < 60 ? `${m}m` : `${m / 60}h`);
+const tfLabel = (m: number) => (m === 0 ? "All" : m < 60 ? `${m}m` : `${m / 60}h`);
 const UP = "var(--arc-up)", DOWN = "var(--arc-down, #f0534f)";
 const cell: React.CSSProperties = { borderTop: "1px solid var(--arc-line)", fontSize: 12.5, padding: "8px 6px 8px 0", verticalAlign: "middle", whiteSpace: "nowrap" };
 const hd: React.CSSProperties = { color: "var(--arc-muted)", fontSize: 10, fontWeight: 400, padding: "0 8px 8px 0", textAlign: "left", textTransform: "uppercase", whiteSpace: "nowrap" };
@@ -103,7 +103,7 @@ function Trade() {
   const [rows, setRows] = useState<PadToken[]>(initial?.rows ?? []);
   const [movers, setMovers] = useState<Mover[]>([]);
   const [trend, setTrend] = useState<Trend[]>(initial?.trend ?? []);
-  const [tf, setTf] = useState(60);
+  const [tf, setTf] = useState(0);   // 0 = all-time (default): every token shows its full volume / txs / change
   const [favs, setFavs] = useState<Set<string>>(new Set());
   const [liq, setLiq] = useState<Map<string, number>>(new Map());
   const [logos, setLogos] = useState<Record<string, string>>({});
@@ -398,7 +398,7 @@ function Trade() {
                 <button key={k} onClick={() => setTab(k)} style={{ background: "transparent", border: "none", borderBottom: "2px solid " + (tab === k ? "var(--arc-up)" : "transparent"), color: tab === k ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, fontWeight: tab === k ? 700 : 400, padding: "8px 14px" }} type="button">{l}</button>
               ))}
               <span style={{ marginLeft: "auto" }}>
-                {[1, 5, 60, 360, 1440].map((m) => <button key={m} className="arc-mono" onClick={() => setTf(m)} style={{ background: tf === m ? "rgba(255,255,255,0.08)" : "transparent", border: "1px solid " + (tf === m ? "var(--arc-line)" : "transparent"), borderRadius: 4, color: tf === m ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, marginLeft: 2, padding: "4px 9px" }} type="button">{tfLabel(m)}</button>)}
+                {[1, 5, 60, 360, 1440, 0].map((m) => <button key={m} className="arc-mono" onClick={() => setTf(m)} style={{ background: tf === m ? "rgba(255,255,255,0.08)" : "transparent", border: "1px solid " + (tf === m ? "var(--arc-line)" : "transparent"), borderRadius: 4, color: tf === m ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, marginLeft: 2, padding: "4px 9px" }} type="button">{tfLabel(m)}</button>)}
                 <button className="arc-mono" onClick={toggleToasts} style={{ background: toastsOn ? "rgba(34,197,128,0.12)" : "transparent", border: "1px solid " + (toastsOn ? "var(--arc-up)" : "var(--arc-line)"), borderRadius: 4, color: toastsOn ? "var(--arc-up)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, marginLeft: 8, padding: "3px 8px" }} title="Live buy/sell pop-ups for the tokens on screen" type="button">{toastsOn ? "🔔 live" : "🔕 live"}</button>
               </span>
             </div>

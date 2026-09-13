@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
 import { QuickBuy } from "@/components/quick-buy";
+import { Tags, useWalletLabels } from "@/components/risk";
 import "../arc-site.css";
 
 const API = "https://bot-production-4200.up.railway.app";
@@ -95,6 +96,8 @@ function Intel() {
   const [freshMin, setFreshMin] = useState(100);
   const [clusterWin, setClusterWin] = useState(120);
   const whales = useApi<{ rows: Whale[] }>(`/api/whales?minutes=${whaleWin}&min_usd=${whaleMin}&limit=60`, 10_000, [whaleWin, whaleMin]);
+  const whaleLabels = useWalletLabels((whales?.rows ?? []).slice(0, 60).map((r) => r.wallet));
+  const devSells = useApi<{ rows: { tx: string; ts: number; wallet: string; token: string; usdc: number; symbol: string | null }[] }>("/api/dev-sells-feed?hours=24&limit=30", 20_000, []);
   const movers = useApi<{ rows: Mover[] }>(`/api/movers?minutes=${moverWin}`, 30_000, [moverWin]);
   const bridge = useApi<Bridge>("/api/bridge", 30_000);
   const insiders = useApi<{ rows: Insider[] }>("/api/insider-activity?limit=40", 15_000);
@@ -259,7 +262,8 @@ function Intel() {
                       <td style={td}><a href={`/token/${r.token}`} style={{ color: "var(--arc-ink)" }}>${r.symbol ?? short(r.token)}</a> <QuickBuy compact symbol={r.symbol ?? short(r.token)} token={r.token} /></td>
                       <td className="arc-mono" style={td}>
                         <a className="arc-mono" href={`https://arc-scan.org/address/${r.wallet}`} rel="noreferrer" style={{ color: "var(--arc-ink)", textDecoration: "none", fontSize: 12, padding: 0 }} target="_blank" title="Open in Arc Scan">{short(r.wallet)}</a> <button className="arc-mono" onClick={() => setQ(r.wallet)} style={{ background: "none", border: "none", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 11, padding: 0 }} title="Inspect in Intel" type="button">🔍</button>
-                        {r.rank && <span style={{ background: "rgba(46,124,255,0.15)", border: "1px solid var(--arc-cobalt)", borderRadius: 3, color: "var(--arc-cobalt)", fontSize: 9, marginLeft: 6, padding: "0 4px" }}>#{r.rank}</span>}
+                        <Tags labels={whaleLabels} max={2} wallet={r.wallet} />
+                        {r.rank && !whaleLabels[r.wallet.toLowerCase()]?.some((l) => l.kind === "insider") && <span style={{ background: "rgba(46,124,255,0.15)", border: "1px solid var(--arc-cobalt)", borderRadius: 3, color: "var(--arc-cobalt)", fontSize: 9, marginLeft: 6, padding: "0 4px" }}>#{r.rank}</span>}
                       </td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.venue}</td>
                       <td style={td}><a className="arc-mono" href={`/wallets?add=${r.wallet}`} style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} >watch</a></td>
@@ -271,6 +275,28 @@ function Intel() {
             </div>
           </div>}
 
+          {/* DEV SELLS — deployers selling their own token (last 24h, chain-wide) */}
+          <div style={{ border: "1px solid #f0534f", marginTop: 18, padding: 14 }}>
+            <Title caption="Deployers selling the tokens they launched, chain-wide, last 24 h. The same signal the sniper's dump guard fires on.">🚨 DEV SELLS</Title>
+            <div style={{ maxHeight: 320, overflow: "auto" }}>
+              <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                <thead><tr><th style={th}>age</th><th style={th}>token</th><th style={th}>sold</th><th style={th}>deployer</th><th style={th} /></tr></thead>
+                <tbody>
+                  {(devSells?.rows ?? []).map((r) => (
+                    <tr key={r.tx + r.ts}>
+                      <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{ago(r.ts)}</td>
+                      <td style={td}><a href={`/token/${r.token}`} style={{ color: "var(--arc-ink)" }}>${r.symbol ?? short(r.token)}</a></td>
+                      <td className="arc-mono" style={{ ...td, color: DOWN, fontWeight: 700 }}>{usd(r.usdc)}</td>
+                      <td className="arc-mono" style={td}><a className="arc-mono" href={`https://arc-scan.org/address/${r.wallet}`} rel="noreferrer" style={{ color: "var(--arc-ink)", fontSize: 12, textDecoration: "none" }} target="_blank">{short(r.wallet)}</a></td>
+                      <td style={td}><a className="arc-mono" href={`/wallets?add=${r.wallet}`} style={{ border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-muted)", fontSize: 11, padding: "2px 7px", textDecoration: "none" }}>watch</a></td>
+                    </tr>
+                  ))}
+                  {devSells && devSells.rows.length === 0 && <tr><td colSpan={5} className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>No deployer sold their own token in the last 24 h.</td></tr>}
+                  {!devSells && <tr><td colSpan={5} className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>…</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
           {/* WHALES BY BALANCE */}
           {show("rich") && <div style={card}>
             <Title right={rich?.snapshot_ts ? <span style={{ color: "var(--arc-muted)" }}>snapshot {ago(rich.snapshot_ts)} ago</span> : null} caption="Who holds the most USDC among wallets that ever traded on Arc. Δ snap = change since the last 10-minute snapshot.">WHALES BY BALANCE · native USDC held by wallets the index knows</Title>

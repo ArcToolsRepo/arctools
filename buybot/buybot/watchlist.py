@@ -325,7 +325,8 @@ async def api_stats(request: web.Request) -> web.Response:
     from sqlalchemy import bindparam
     from .insider import total_supply_nowait
     toks = [t.strip().lower() for t in (request.query.get("tokens") or "").split(",") if t.strip().startswith("0x") and len(t.strip()) == 42][:100]
-    mins = min(1440, max(1, int(request.query.get("minutes", "60"))))
+    mins = int(request.query.get("minutes", "60"))
+    mins = 0 if mins <= 0 else min(1440, max(1, mins))
     if not toks:
         return web.json_response({"rows": []}, headers=API_CORS)
     now = int(time.time())
@@ -351,7 +352,7 @@ async def api_stats(request: web.Request) -> web.Response:
                CASE WHEN a.p0 > 0 THEN (a.p1 - a.p0) / a.p0 * 100 ELSE NULL END AS chg,
                l.first_ts, l.ath, l.txs_all
         FROM life l LEFT JOIN agg a ON a.token = l.token LEFT JOIN token_symbols sym ON sym.token = l.token""")
-        .bindparams(bindparam("toks", value=toks, expanding=True)).bindparams(since=now - mins * 60))
+        .bindparams(bindparam("toks", value=toks, expanding=True)).bindparams(since=(now - mins * 60) if mins else 0))
     out = [dict(r) for r in rows]
     for d in out:
         d["supply"] = total_supply_nowait(d["token"])
@@ -366,7 +367,8 @@ async def api_trending(request: web.Request) -> web.Response:
     """GMGN-style trending: per token in the window — volume, buys/sells, traders, price change, last price, ATH price,
     first trade time, supply (for MC). Sorted by window volume."""
     from .insider import total_supply_nowait
-    mins = min(1440, max(1, int(request.query.get("minutes", "60"))))
+    mins = int(request.query.get("minutes", "60"))
+    mins = 0 if mins <= 0 else min(1440, max(1, mins))     # 0 = all-time window
     limit = min(150, int(request.query.get("limit", "80")))
     sort = request.query.get("sort", "vol")
     now = int(time.time())
@@ -389,7 +391,7 @@ async def api_trending(request: web.Request) -> web.Response:
                CASE WHEN a.p0 > 0 THEN (a.p1 - a.p0) / a.p0 * 100 ELSE NULL END AS chg,
                l.first_ts, l.ath, l.txs_all
         FROM agg a LEFT JOIN token_symbols sym ON sym.token = a.token LEFT JOIN life l ON l.token = a.token
-        ORDER BY a.vol DESC LIMIT :l""").bindparams(since=now - mins * 60, l=limit))
+        ORDER BY a.vol DESC LIMIT :l""").bindparams(since=(now - mins * 60) if mins else 0, l=limit))
     out = [dict(r) for r in rows]
     for d in out:
         d["supply"] = total_supply_nowait(d["token"])

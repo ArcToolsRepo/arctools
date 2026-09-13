@@ -34,6 +34,9 @@ function PortfolioPage() {
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [step, setStep] = useState(0);
+  const STEPS = ["reading USDC balance", "scanning launchpad curves", "scanning Uniswap V3 / V4 pools", "reading token balances", "pricing everything in USDC"];
 
   // autofill from the connected wallet (Connect wallet in the nav)
   useEffect(() => {
@@ -50,10 +53,18 @@ function PortfolioPage() {
     setBusy(true);
     setError(null);
     setHoldings(null);
+    // progress feedback: the read walks every pool + balance on-chain (10-40 s when the relay is slow)
+    setProgress(2);
+    const t0 = Date.now();
+    const tick = setInterval(() => setProgress((p) => Math.min(92, p + Math.max(0.4, (92 - p) * 0.06))), 400);
+    const stepTimer = setInterval(() => setStep((i) => Math.min(STEPS.length - 1, i + 1)), 3500);
     let res: Awaited<ReturnType<typeof getPortfolio>>;
     try {
       res = await getPortfolio({ data: { wallet } });
+      clearInterval(tick); clearInterval(stepTimer); setProgress(100); setTimeout(() => setProgress(0), 600);
+      void t0;
     } catch {
+      clearInterval(tick); clearInterval(stepTimer); setProgress(0);
       setBusy(false);
       setError("The read timed out (RPC congestion). Try again in a few seconds.");
       return;
@@ -99,6 +110,16 @@ function PortfolioPage() {
           </button>
         </div>
 
+        {busy && (
+          <div style={{ margin: "14px 0 4px" }}>
+            <div style={{ background: "var(--arc-line)", borderRadius: 3, height: 4, overflow: "hidden" }}>
+              <div style={{ background: "linear-gradient(90deg, var(--arc-cobalt), #7cc4ff)", height: "100%", transition: "width 0.4s ease", width: `${progress}%` }} />
+            </div>
+            <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: "6px 0 0" }}>
+              {STEPS[step]}… this walks every pool and balance on-chain, usually 10–30 s. Results are cached for a minute afterwards.
+            </p>
+          </div>
+        )}
         {error && (
           <p className="arc-mono" style={{ color: "var(--arc-error)", fontSize: 13 }}>
             {error}

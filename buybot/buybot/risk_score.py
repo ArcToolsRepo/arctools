@@ -308,7 +308,20 @@ async def api_dev_sells(req: web.Request):
     return web.json_response({"rows": out, "now": int(time.time())}, headers={**CORS, "Cache-Control": "no-store"})
 
 
+async def api_dev_sells_feed(req: web.Request):
+    """GET /api/dev-sells-feed?hours=24&limit=40 — chain-wide: recent sells by deployers of their own tokens (token_dev join)."""
+    hours = min(168, max(1, int(req.query.get("hours") or 24)))
+    limit = min(100, int(req.query.get("limit") or 40))
+    since = int(time.time()) - hours * 3600
+    rows = await db.fetchall(text(
+        "SELECT s.tx, s.ts, s.wallet, s.token, s.usdc, s.tokens, s.price1m, sym.symbol, d.source "
+        "FROM swaps s JOIN token_dev d ON d.token = s.token AND d.dev = s.wallet LEFT JOIN token_symbols sym ON sym.token = s.token "
+        "WHERE s.side = 'sell' AND s.ts > :s AND s.usdc >= 5 ORDER BY s.ts DESC LIMIT :l").bindparams(s=since, l=limit))
+    return web.json_response({"rows": [dict(r) for r in rows], "now": int(time.time())}, headers={**CORS, "Cache-Control": "public, max-age=15"})
+
+
 def register(app: web.Application):
+    app.router.add_get("/api/dev-sells-feed", api_dev_sells_feed)
     app.router.add_get("/api/dev-sells", api_dev_sells)
     app.router.add_get("/api/dev-history", api_dev_history)
     app.router.add_get("/api/wallet-labels", api_wallet_labels)

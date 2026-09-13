@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
+import { Tags, useWalletLabels } from "@/components/risk";
 import { insiderBoard, type InsiderRow } from "@/lib/arcpad";
 import { ARCT, VAULT, connectWallet, ethCall, fmt, onWalletChange, p32 } from "@/lib/arc-wallet";
 import "../arc-site.css";
@@ -45,6 +46,7 @@ function InsidersPage() {
   const initial = Route.useLoaderData();
   const [range, setRange] = useState<Range>("30d");
   const [rows, setRows] = useState<InsiderRow[]>(initial?.rows ?? []);
+  const labels = useWalletLabels(rows.slice(0, 60).map((r) => r.wallet));
   const [loaded, setLoaded] = useState((initial?.rows?.length ?? 0) > 0);
   const [wallet, setWallet] = useState<string | null>(null);
   const [unlocked, setUnlocked] = useState(false);
@@ -182,6 +184,7 @@ function InsidersPage() {
                 >
                   {r.wallet.slice(0, 6)}…{r.wallet.slice(-4)}
                 </a>
+                <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 2, maxWidth: 170 }}><Tags labels={labels} max={2} wallet={r.wallet} /></span>
                 <span style={{ width: 118 }}>
                   <span className="arc-mono" style={{ color: r.pnl_total >= 0 ? "var(--arc-up)" : "var(--arc-error)", display: "block", fontSize: 14 }}>
                     {r.pnl_total >= 0 ? "+" : "−"}${fmt(Math.abs(r.pnl_total))}
@@ -209,6 +212,7 @@ function InsidersPage() {
                   {r.best_symbol && r.best_symbol !== "?" ? ` · ${r.best_symbol}` : ""}
                 </span>
                 <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, width: 36 }}>{ago(r.last_trade)}</span>
+                <a className="arc-mono" href={`/wallets?add=${r.wallet}`} style={{ border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-muted)", fontSize: 11, padding: "6px 9px", textDecoration: "none" }} title="Open positions, last trades, live feed, Telegram alerts">watch</a>
                 <a
                   className="arc-cta"
                   href={`https://t.me/ArcSniper_bot?start=copy_${r.wallet.slice(2)}`}
