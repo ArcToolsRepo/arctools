@@ -241,7 +241,10 @@ export const routeSwap = createServerFn({ method: "POST" })
     const token = data.token.toLowerCase();
     const amount = BigInt(data.amount);
     if (!/^0x[0-9a-f]{40}$/.test(token) || amount <= 0n) return { legs: [], out: "0", single: [], split: false, error: "bad input" };
-    const venues = await discoverVenues(token);
+    // venue discovery is ~8 RPC round-trips (0.3–1 s each through the relay) → remember it for a minute per token,
+    // shared across isolates via KV; quotes themselves are always live
+    const { memo } = await import("./arc-api");
+    const venues = await memo<Venue[]>(`venues:${token.toLowerCase()}`, 60_000, () => discoverVenues(token), (v) => v.length > 0);
     if (venues.length === 0) return { legs: [], out: "0", single: [], split: false, error: "no venue" };
     const quotes = await Promise.all(venues.map((v) => quoteVenue(v, token, data.side, amount)));
     const ranked = venues

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { listAllTokensImpl, memo, screenerIcons, tokenPage } from "@/lib/arc-api";
+import { routeSwap } from "@/lib/arc-route";
 import { bindings } from "@/lib/bindings.server";
 
 /**
@@ -39,6 +40,8 @@ export const Route = createFileRoute("/api/warm")({
         let warmed = 0;
         for (let i = 0; i < hot.length; i += 6) {
           await Promise.all(hot.slice(i, i + 6).map((t) => tokenPage({ data: { token: t } }).then(() => { warmed++; }).catch(() => null)));
+          // venue discovery for the swap panel / quick-buy (memoized 60 s in KV) — a cold discovery is ~10 s of relay round-trips
+          await Promise.all(hot.slice(i, i + 6).map((t) => routeSwap({ data: { token: t, side: "buy", amount: "1000000000000000000" } }).catch(() => null)));
         }
         return Response.json({ ok: true, tokens: all.length, pages: warmed, ms: Date.now() - t0 }, { headers: { "Cache-Control": "no-store" } });
       },

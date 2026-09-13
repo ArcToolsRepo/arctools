@@ -15,7 +15,7 @@ const API = "https://long.supply/api";
 const SEL_SUPPLY = "0x18160ddd";
 const SEL_NAME = "0x06fdde03";
 
-export type Stock = { token: string; symbol: string; name: string; usd: number; vault: string; underlying: string; supply: number; mcapUsd: number; launches: number };
+export type Stock = { token: string; symbol: string; name: string; usd: number; vault: string; underlying: string; supply: number; mcapUsd: number; launches: number; usdcPool: string | null; poolFee: number | null; usdcLiq: number | null };
 export type Launch = {
   token: string; deployer: string; pool: string; pairToken: string; pairSymbol: string; pairUsd: number; name: string; symbol: string;
   image: string | null; description: string | null; website: string | null; twitter: string | null; telegram: string | null;
@@ -49,9 +49,30 @@ export const longStocks = (): Promise<Stock[]> => memo<Stock[]>("long:stocks", 3
   ]);
   const toks = (pairs.pairs ?? []).map((p) => p.arcStock.toLowerCase());
   const meta = await memo<Record<string, { supply: number; name: string }>>("long:stockmeta:" + toks.join(","), 86_400_000, () => chainMeta(toks), (v) => Object.values(v).some((m) => m.supply > 0));
+  // USDC pool per stock (factory.getPool on 4 tiers) + how much USDC sits in it — this is what decides whether the
+  // stock is a usable pair on ArcToolsPad and how badly USDC buyers get slipped
+  const pools = await memo<Record<string, { pool: string | null; fee: number | null; liq: number | null }>>("long:stockpools:" + toks.join(","), 120_000, async () => {
+    const FACTORY = "0xf0db7b58379503491d857db50ac9ece64c653918"; const USDC = "0x3600000000000000000000000000000000000000";
+    const p32 = (h: string) => h.replace(/^0x/, "").toLowerCase().padStart(64, "0");
+    const tiers = [10000, 3000, 500, 100];
+    const calls = toks.flatMap((t) => tiers.map((f) => ({ target: FACTORY, data: "0x1698ee82" + p32(USDC) + p32(t) + f.toString(16).padStart(64, "0") })));
+    const res = await multicall(calls).catch(() => calls.map(() => null));
+    const out: Record<string, { pool: string | null; fee: number | null; liq: number | null }> = {};
+    const poolCalls: { target: string; data: string }[] = []; const poolIdx: string[] = [];
+    toks.forEach((t, i) => {
+      let pool: string | null = null, fee: number | null = null;
+      tiers.forEach((f, j) => { const r = res[i * tiers.length + j]; if (!pool && r && !/^0x0+$/.test(r)) { pool = "0x" + r.slice(-40); fee = f; } });
+      out[t] = { pool, fee, liq: null };
+      if (pool) { poolCalls.push({ target: USDC, data: "0x70a08231" + p32(pool) }); poolIdx.push(t); }
+    });
+    const bal = await multicall(poolCalls).catch(() => poolCalls.map(() => null));
+    poolIdx.forEach((t, i) => { const b = bal[i]; out[t].liq = b && b !== "0x" ? Number(BigInt(b)) / 1e6 : null; });
+    return out;
+  }, (v) => Object.values(v).some((x) => x.pool));
   return (pairs.pairs ?? []).map((p) => {
-    const t = p.arcStock.toLowerCase(); const usd = Number(p.usdX18) / 1e18; const m = meta[t] ?? { supply: 0, name: "" };
-    return { token: t, symbol: p.symbol, name: m.name || `${p.symbol} • Arc Token`, usd, vault: p.vault, underlying: p.underlying, supply: m.supply, mcapUsd: usd * m.supply, launches: launches.countByPair?.[t] ?? 0 };
+    const t = p.arcStock.toLowerCase(); const usd = Number(p.usdX18) / 1e18; const m = meta[t] ?? { supply: 0, name: "" }; const pl = pools[t] ?? { pool: null, fee: null, liq: null };
+    return { token: t, symbol: p.symbol, name: m.name || `${p.symbol} • Arc Token`, usd, vault: p.vault, underlying: p.underlying, supply: m.supply, mcapUsd: usd * m.supply, launches: launches.countByPair?.[t] ?? 0,
+      usdcPool: pl.pool, poolFee: pl.fee, usdcLiq: pl.liq };
   });
 }, (v) => v.length > 0);
 

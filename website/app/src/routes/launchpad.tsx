@@ -73,31 +73,10 @@ function CreateForm() {
   const [stocks, setStocks] = useState<{ token: string; symbol: string; name: string; usd: number; usdcPool: boolean; usdcLiq: number | null }[]>([]);
   const [stockAddr, setStockAddr] = useState("");
   useEffect(() => {
-    // ArcPadV3 requires the quote token to have a Uniswap V3 pool against USDC (fee flush + pricing) → check every tier via the factory
-    const FACTORY = "0xf0db7b58379503491d857dB50AC9ece64c653918"; const USDC = "0x3600000000000000000000000000000000000000";
-    fetch("/api/stocks").then((r) => r.json()).then(async (j) => {
-      const raw = (j.stocks ?? []) as { token: string; symbol: string; name: string; usd: number }[];
-      const withPool = await Promise.all(raw.map(async (st) => {
-        let usdcPool = false; let pool = "";
-        for (const fee of [10000, 3000, 500, 100]) {
-          for (let attempt = 0; attempt < 2 && !usdcPool; attempt++) {   // relay hiccup must not hide a real pool
-            try {
-              const r = await ethCall(FACTORY, "0x1698ee82" + p32(USDC) + p32(st.token) + fee.toString(16).padStart(64, "0"));
-              if (r && !/^0x0*$/.test(r)) { usdcPool = true; pool = "0x" + r.slice(-40); }
-              break;
-            } catch { await new Promise((res) => setTimeout(res, 400)); }
-          }
-          if (usdcPool) break;
-        }
-        // how much USDC actually sits in that pool: that is what buyers entering from USDC can use before the price runs away
-        let usdcLiq: number | null = null;
-        if (pool) {
-          try { const b = await ethCall(USDC, "0x70a08231" + p32(pool)); usdcLiq = b && b !== "0x" ? Number(BigInt(b)) / 1e6 : 0; } catch { /* unknown */ }
-        }
-        return { ...st, usdcPool, usdcLiq };
-      }));
-      // only stocks that can actually be a pair today (ArcPadV3 needs a USDC pool for the quote token)
-      const usable = withPool.filter((x) => x.usdcPool);
+    // pool + liquidity per stock are computed server-side (/api/stocks, cached) → the option list is instant
+    fetch("/api/stocks").then((r) => r.json()).then((j) => {
+      const raw = (j.stocks ?? []) as { token: string; symbol: string; name: string; usd: number; usdcPool: string | null; usdcLiq: number | null }[];
+      const usable = raw.filter((x) => x.usdcPool).map((x) => ({ ...x, usdcPool: true }));
       setStocks(usable);
       if (usable.length && !stockAddr) setStockAddr((usable.find((x) => x.symbol === "CRCL") ?? usable[0]).token);
     }).catch(() => null);
@@ -344,7 +323,7 @@ function CreateForm() {
           <select onChange={(e) => setPairMode(e.target.value as "usdc" | "tolly" | "stock" | "custom")} style={{ ...inp, marginTop: 6 }} value={pairMode}>
             <option value="usdc">USDC (native)</option>
             <option value="tolly">TOLLY</option>
-            {stocks.length > 0 && <option value="stock">📈 Wrapped stock (long.supply)…</option>}
+            <option value="stock">📈 Wrapped stock (long.supply)…</option>
             <option value="custom">Custom token…</option>
           </select>
         </label>
@@ -361,6 +340,7 @@ function CreateForm() {
       {pairMode === "stock" && (
         <div style={{ display: "grid", gap: 6 }}>
           <select onChange={(e) => setStockAddr(e.target.value)} style={inp} value={stockAddr}>
+            {stocks.length === 0 && <option value="">loading wrapped stocks…</option>}
             {stocks.map((st) => <option key={st.token} value={st.token}>{st.usdcLiq !== null && st.usdcLiq < 500 ? "⚠ " : st.usdcLiq !== null && st.usdcLiq < 2000 ? "△ " : ""}{st.symbol} — {st.name} (${st.usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}){st.usdcLiq !== null ? ` · USDC pool $${Math.round(st.usdcLiq).toLocaleString()}` : ""}</option>)}
           </select>
           {(() => {
