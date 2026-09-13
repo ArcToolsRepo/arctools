@@ -87,8 +87,10 @@ function CreateForm() {
         }
         return { ...st, usdcPool };
       }));
-      setStocks(withPool);
-      if (withPool.length && !stockAddr) setStockAddr((withPool.find((x) => x.symbol === "CRCL" && x.usdcPool) ?? withPool.find((x) => x.usdcPool) ?? withPool[0]).token);
+      // only stocks that can actually be a pair today (ArcPadV3 needs a USDC pool for the quote token)
+      const usable = withPool.filter((x) => x.usdcPool);
+      setStocks(usable);
+      if (usable.length && !stockAddr) setStockAddr((usable.find((x) => x.symbol === "CRCL") ?? usable[0]).token);
     }).catch(() => null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -322,10 +324,10 @@ function CreateForm() {
       {pairMode === "stock" && (
         <div style={{ display: "grid", gap: 6 }}>
           <select onChange={(e) => setStockAddr(e.target.value)} style={inp} value={stockAddr}>
-            {stocks.map((st) => <option disabled={!st.usdcPool} key={st.token} value={st.token}>{st.symbol} — {st.name} (${st.usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}){st.usdcPool ? "" : " — no USDC pool on Arc yet"}</option>)}
+            {stocks.map((st) => <option key={st.token} value={st.token}>{st.symbol} — {st.name} (${st.usd.toLocaleString(undefined, { maximumFractionDigits: 2 })})</option>)}
           </select>
           <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>
-            ArcToolsPad needs a USDC pool for the pair token (platform fees in {quoteSym} are flushed to USDC on-chain). Stocks without one are greyed out until someone seeds a USDC/stock pool on Uniswap V3.
+            Only wrapped stocks with a USDC pool on Arc are listed (ArcToolsPad flushes platform fees in {quoteSym} to USDC on-chain). More appear automatically once a USDC/stock pool exists on Uniswap V3.
           </p>
           <p className="arc-mono" style={{ color: "#f5c542", fontSize: 11, margin: 0 }}>
             ⚠ Wrapped stocks are custodial IOUs minted by long.supply (a team-run bridge from Robinhood Chain), not shares. If their vault or the underlying Robinhood token stops, the quote side of your pool is worth nothing. Buyers must hold the stock token first (bridge on long.supply).
