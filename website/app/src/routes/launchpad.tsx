@@ -70,7 +70,7 @@ function CreateForm() {
   const [pairMode, setPairMode] = useState<"usdc" | "tolly" | "stock" | "custom">("usdc");
   const [customQuote, setCustomQuote] = useState("");
   // long.supply wrapped stocks (custodial IOUs on Robinhood-Chain tokens) as quote tokens — reference USD price from their API
-  const [stocks, setStocks] = useState<{ token: string; symbol: string; name: string; usd: number; usdcPool: boolean }[]>([]);
+  const [stocks, setStocks] = useState<{ token: string; symbol: string; name: string; usd: number; usdcPool: boolean; usdcLiq: number | null }[]>([]);
   const [stockAddr, setStockAddr] = useState("");
   useEffect(() => {
     // ArcPadV3 requires the quote token to have a Uniswap V3 pool against USDC (fee flush + pricing) → check every tier via the factory
@@ -78,18 +78,23 @@ function CreateForm() {
     fetch("/api/stocks").then((r) => r.json()).then(async (j) => {
       const raw = (j.stocks ?? []) as { token: string; symbol: string; name: string; usd: number }[];
       const withPool = await Promise.all(raw.map(async (st) => {
-        let usdcPool = false;
+        let usdcPool = false; let pool = "";
         for (const fee of [10000, 3000, 500, 100]) {
           for (let attempt = 0; attempt < 2 && !usdcPool; attempt++) {   // relay hiccup must not hide a real pool
             try {
               const r = await ethCall(FACTORY, "0x1698ee82" + p32(USDC) + p32(st.token) + fee.toString(16).padStart(64, "0"));
-              if (r && !/^0x0*$/.test(r)) usdcPool = true;
+              if (r && !/^0x0*$/.test(r)) { usdcPool = true; pool = "0x" + r.slice(-40); }
               break;
             } catch { await new Promise((res) => setTimeout(res, 400)); }
           }
           if (usdcPool) break;
         }
-        return { ...st, usdcPool };
+        // how much USDC actually sits in that pool: that is what buyers entering from USDC can use before the price runs away
+        let usdcLiq: number | null = null;
+        if (pool) {
+          try { const b = await ethCall(USDC, "0x70a08231" + p32(pool)); usdcLiq = b && b !== "0x" ? Number(BigInt(b)) / 1e6 : 0; } catch { /* unknown */ }
+        }
+        return { ...st, usdcPool, usdcLiq };
       }));
       // only stocks that can actually be a pair today (ArcPadV3 needs a USDC pool for the quote token)
       const usable = withPool.filter((x) => x.usdcPool);
@@ -328,8 +333,23 @@ function CreateForm() {
       {pairMode === "stock" && (
         <div style={{ display: "grid", gap: 6 }}>
           <select onChange={(e) => setStockAddr(e.target.value)} style={inp} value={stockAddr}>
-            {stocks.map((st) => <option key={st.token} value={st.token}>{st.symbol} — {st.name} (${st.usd.toLocaleString(undefined, { maximumFractionDigits: 2 })})</option>)}
+            {stocks.map((st) => <option key={st.token} value={st.token}>{st.usdcLiq !== null && st.usdcLiq < 500 ? "⚠ " : st.usdcLiq !== null && st.usdcLiq < 2000 ? "△ " : ""}{st.symbol} — {st.name} (${st.usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}){st.usdcLiq !== null ? ` · USDC pool $${Math.round(st.usdcLiq).toLocaleString()}` : ""}</option>)}
           </select>
+          {(() => {
+            const st = stocks.find((x) => x.token === stockAddr);
+            if (!st || st.usdcLiq === null) return null;
+            const danger = st.usdcLiq < 500, thin = st.usdcLiq < 2000;
+            if (!thin) return <p className="arc-mono" style={{ color: "var(--arc-up)", fontSize: 11, margin: 0 }}>✓ {st.symbol}/USDC pool holds ${Math.round(st.usdcLiq).toLocaleString()} USDC — buyers can enter from USDC through the ArcTools hop with acceptable slippage.</p>;
+            return (
+              <div style={{ background: danger ? "rgba(240,83,79,0.10)" : "rgba(245,197,66,0.10)", border: `1px solid ${danger ? "#f0534f" : "#f5c542"}`, borderRadius: 6, padding: "8px 10px" }}>
+                <div className="arc-mono" style={{ color: danger ? "#f0534f" : "#f5c542", fontSize: 12, fontWeight: 700 }}>{danger ? "🚫 DANGEROUS PAIR — do not launch with " : "⚠ THIN PAIR — risky to launch with "}{st.symbol}</div>
+                <div style={{ fontSize: 12, marginTop: 4 }}>
+                  The {st.symbol}/USDC pool holds only <b>${Math.round(st.usdcLiq).toLocaleString()}</b> USDC. Anyone buying your token from USDC has to go through it first: a {danger ? "$50" : "$200"} buy already moves the stock price by several percent, larger buys fail or fill terribly, and sellers may not get out at all.
+                  {danger ? " Your token would have practically no buyers outside long.supply bridge users. Pick CRCL or USDC instead." : " Expect small trades only until someone deepens that pool."}
+                </div>
+              </div>
+            );
+          })()}
           <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>
             Only wrapped stocks with a USDC pool on Arc are listed (ArcToolsPad flushes platform fees in {quoteSym} to USDC on-chain). More appear automatically once a USDC/stock pool exists on Uniswap V3.
           </p>

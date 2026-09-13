@@ -84,7 +84,7 @@ function Trade() {
   const PAGE = 50;
   const [page, setPage] = useState(1);
   const [minMc, setMinMc] = useState(""); const [maxMc, setMaxMc] = useState(""); const [minVol, setMinVol] = useState("");
-  const PADS: [string, string][] = [["all", "All sources"], ["ArcToolsPad", "ArcToolsPad"], ["ArcPad", "ArcPad"], ["RadarDex", "RadarDex"], ["Warp", "Warp"], ["Tolly", "Tolly"], ["Archemist", "Archemist"], ["Arguspad", "Arguspad"], ["UniswapV4", "Uniswap V4"], ["UniswapV3", "Uniswap V3 pools"], ["long.supply", "long.supply"], ["Stocks", "📈 Stocks"], ["DYORSwap", "DYORSwap · V2"], ["UBI.fun", "UBI.fun"]];
+  const PADS: [string, string][] = [["all", "All sources"], ["ArcToolsPad", "ArcToolsPad"], ["ArcPad", "ArcPad"], ["RadarDex", "RadarDex"], ["Warp", "Warp"], ["Tolly", "Tolly"], ["Archemist", "Archemist"], ["Arguspad", "Arguspad"], ["UniswapV4", "Uniswap V4"], ["UniswapV3", "Uniswap V3 pools"], ["long.supply", "📈 Stock pairs"], ["Stocks", "📈 Stocks"], ["DYORSwap", "DYORSwap · V2"], ["UBI.fun", "UBI.fun"]];
   useEffect(() => { try { setToastsOn(localStorage.getItem("arctools_toasts") !== "0"); } catch { /* ignore */ } }, []);
   const toggleToasts = () => setToastsOn((v) => { try { localStorage.setItem("arctools_toasts", v ? "0" : "1"); } catch { /* ignore */ } return !v; });
   const [browserAddr, setBrowserAddr] = useState<string | null>(null);
@@ -281,7 +281,7 @@ function Trade() {
     // a source chip turns the table into that launchpad's explorer: every token we know from that source,
     // with the tab acting only as an extra filter (fresh / watchlist / insiders)
     if (padF !== "all" && tab !== "holdings") {
-      const src = rows.filter((t) => padF === "Stocks" ? !!t.stock : padF === "DYORSwap" ? (t.pad === "DYORSwap" || (t.dexes ?? []).some((d) => d.includes("dyor"))) : (t.pad || "").toLowerCase() === padF.toLowerCase()).map((t) => toRow(t.token));
+      const src = rows.filter((t) => padF === "Stocks" ? !!t.stock : padF === "long.supply" ? (t.pad === "long.supply" && !t.stock) : padF === "DYORSwap" ? (t.pad === "DYORSwap" || (t.dexes ?? []).some((d) => d.includes("dyor"))) : (t.pad || "").toLowerCase() === padF.toLowerCase()).map((t) => toRow(t.token));
       const now = Date.now() / 1000;
       if (tab === "new15") base = src.filter((r) => r.age && now - r.age < 900);
       else if (tab === "favs") base = src.filter((r) => favs.has(r.token));
