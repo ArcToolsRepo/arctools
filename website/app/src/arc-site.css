@@ -777,3 +777,5 @@ select option:disabled { color: #6b7385; }
   .arc-tokcell > div > div { min-width: 0; }
   .arc-tokcell > div > div > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100px; }
 }
+/* desktop below 1750px: the Buy label drops " USDC" so the table fits without the sticky column covering Smart */
+@media (min-width: 1024px) and (max-width: 1750px) { .arc-buyunit { display: none; } .arc-tablewrap td:last-child button { padding-left: 10px !important; padding-right: 10px !important; } }
