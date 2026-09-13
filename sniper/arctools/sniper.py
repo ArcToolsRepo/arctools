@@ -163,6 +163,12 @@ async def execute_sell(tg_id: int, pos: dict, pct: int, gas_mode: str = "turbo")
         if amount <= 0:
             return {"ok": False, "err": "balans 0"}
         curve = pos.get("curve") or None
+        if pad.router_kind == "v3path":
+            import json as _json
+            from .pads import resolve_stock_hop
+            curve = _json.loads(curve) if (isinstance(curve, str) and curve.startswith("{")) else await resolve_stock_hop(token)
+            if not curve:
+                return {"ok": False, "err": "stock hop unresolved (long.supply pool)"}
         if pad.router_kind == "univ4":
             import json as _json
             from .pads import resolve_v4_key

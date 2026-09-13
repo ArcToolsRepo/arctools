@@ -212,6 +212,18 @@ class Pad:
                   to_checksum_address(recipient), amount_in, min_out, 0)])
             data = _sel("exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))") + params
             return router, data, 0, router  # approve facade -> router
+        if self.router_kind == "v3path":
+            # curve = {"mid": stock, "fee1": USDC/stock tier, "fee2": stock/token tier}
+            hop = curve if isinstance(curve, dict) and curve.get("mid") else None
+            if not hop:
+                raise RuntimeError("stock hop unresolved for " + token)
+            router = to_checksum_address(CFG.univ3_router)
+            path = (bytes.fromhex(CFG.wrapped_usdc[2:]) + int(hop["fee1"]).to_bytes(3, "big")
+                    + bytes.fromhex(hop["mid"][2:]) + int(hop["fee2"]).to_bytes(3, "big") + bytes.fromhex(token[2:]))
+            params = abi_encode(["(bytes,address,uint256,uint256)"],
+                                [(path, to_checksum_address(recipient), usdc_units(amount_usdc), min_out)])
+            data = _sel("exactInput((bytes,address,uint256,uint256))") + params
+            return router, data, 0, router  # approve facade -> router
         if self.router_kind == "univ4":
             key = curve if isinstance(curve, dict) else None
             if not key:
@@ -253,6 +265,17 @@ class Pad:
                 [(token, to_checksum_address(CFG.wrapped_usdc), fee,
                   to_checksum_address(recipient), amount_tokens, min_out, 0)])
             data = _sel("exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))") + params
+            return router, data, router
+        if self.router_kind == "v3path":
+            hop = curve if isinstance(curve, dict) and curve.get("mid") else None
+            if not hop:
+                raise RuntimeError("stock hop unresolved for " + token)
+            router = to_checksum_address(CFG.univ3_router)
+            path = (bytes.fromhex(token[2:]) + int(hop["fee2"]).to_bytes(3, "big")
+                    + bytes.fromhex(hop["mid"][2:]) + int(hop["fee1"]).to_bytes(3, "big") + bytes.fromhex(CFG.wrapped_usdc[2:]))
+            params = abi_encode(["(bytes,address,uint256,uint256)"],
+                                [(path, to_checksum_address(recipient), amount_tokens, min_out)])
+            data = _sel("exactInput((bytes,address,uint256,uint256))") + params
             return router, data, router
         if self.router_kind == "univ4":
             key = curve if isinstance(curve, dict) else None
@@ -315,7 +338,31 @@ async def auto_pad(token: str) -> tuple[Pad | None, dict | None]:
     key = await resolve_v4_key(token)
     if key and v4_pad():
         return v4_pad(), key
+    # long.supply launches: only market is a V3 pool quoted in a wrapped stock → hop USDC -> stock -> token
+    hop = await resolve_stock_hop(token)
+    if hop:
+        pad = pad_by_name("long.supply") or next((p for p in PADS if p.router_kind == "v3path"), None)
+        if pad:
+            return pad, hop
     return default_pad(), None
+
+
+async def resolve_stock_hop(token: str) -> dict | None:
+    """Ask the ArcTools route API whether the best route is a two-hop through a wrapped stock (venue 5)."""
+    import aiohttp
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get("https://arctools.fun/api/swaproute", params={"token": token.lower(), "side": "buy", "amount": str(10**18)},
+                             headers={"User-Agent": "ArcSniper/1.0"}, timeout=aiohttp.ClientTimeout(total=20)) as r:
+                if r.status != 200:
+                    return None
+                j = await r.json()
+        for leg in j.get("legs") or []:
+            if int(leg.get("venue", 0)) == 5:
+                return {"mid": leg["target"], "fee1": int(leg["fee"]), "fee2": int((leg.get("key") or {}).get("fee", 10000))}
+    except Exception as e:  # noqa
+        log.debug("stock hop %s: %s", token, e)
+    return None
 
 
 ARCPAD_LAUNCHPAD = "0x1EaAD48260eECC7624666F1dFec202b2D75257fE"

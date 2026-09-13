@@ -150,6 +150,15 @@
    "event_topic": "",
    "router_kind": "univ4",
    "_comment": "generic Uniswap V4 venue for manual buys (auto_pad) \u2014 no launch watching (PoolManager Initialize is chain-wide; the Insider index covers it)."
+  },
+  {
+   "name": "long.supply",
+   "enabled": true,
+   "type": "instant_pool",
+   "factory": "",
+   "event_topic": "",
+   "router_kind": "v3path",
+   "_comment": "long.supply launches: Uniswap V3 pools quoted in a wrapped stock (CRCL/NVDA/...). Buys/sells go USDC -> stock -> token via SwapRouter02.exactInput; the hop (mid token + tiers) comes from the ArcTools route API (auto_pad)."
   }
  ]
 }

@@ -54,12 +54,19 @@ export type RouteResult = {
 type Venue = { kind: "v3"; fee: number; label: string } | { kind: "v3path"; mid: string; midSymbol: string; fee1: number; fee2: number; label: string } | { kind: "v4"; key: V4Key; label: string } | { kind: "pad"; target: string; label: string } | { kind: "curve"; target: string; label: string };
 
 async function call(to: string, data: string): Promise<string | null> {
-  try {
-    const r = (await rpc("eth_call", [{ data, to }, "latest"])) as string;
-    return r && r !== "0x" ? r : null;
-  } catch {
-    return null;
+  // a relay hiccup (502 / timeout) must not make a venue vanish from the route → one quick retry on transport errors
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = (await rpc("eth_call", [{ data, to }, "latest"])) as string;
+      return r && r !== "0x" ? r : null;
+    } catch (e) {
+      const msg = String((e as Error)?.message ?? e);
+      if (/revert|execution|invalid opcode/i.test(msg)) return null;   // genuine on-chain revert (e.g. quoter: no liquidity)
+      if (attempt === 1) return null;
+      await new Promise((res) => setTimeout(res, 250));
+    }
   }
+  return null;
 }
 
 const V4_NAMES: Record<string, string> = {
@@ -108,17 +115,28 @@ async function discoverVenues(token: string): Promise<Venue[]> {
     try {
       const ln = (await longLaunches()).find((l) => l.token === t);
       if (ln && ln.pool) {
-        const [feeHex, ...tiers] = await Promise.all([
-          call(ln.pool, SEL.poolFee),
-          ...[10000, 3000, 500, 100].map((f) => call(V3_FACTORY, SEL.getPool + p32(USDC) + p32(ln.pairToken) + pnum(BigInt(f)))),
-        ]);
-        const fee2 = feeHex ? Number(BigInt(feeHex)) : 10000;
-        const idx = tiers.findIndex((r) => r && !/^0x0+$/.test(r));
-        if (idx >= 0) out.push({ kind: "v3path", mid: ln.pairToken, midSymbol: ln.pairSymbol, fee1: [10000, 3000, 500, 100][idx], fee2, label: `Uniswap V3 via ${ln.pairSymbol}` });
+        // USDC/stock tier: cached per stock (long.supply seeded every stock on the 1% tier; WETH also 0.3%)
+        const fee1 = await stockTier(ln.pairToken);
+        const feeHex = await call(ln.pool, SEL.poolFee);
+        const fee2 = feeHex ? Number(BigInt(feeHex)) : 10000;   // their launch pools are all 1%
+        if (fee1) out.push({ kind: "v3path", mid: ln.pairToken, midSymbol: ln.pairSymbol, fee1, fee2, label: `Uniswap V3 via ${ln.pairSymbol}` });
       }
     } catch { /* long.supply API down: no hop venue */ }
   }
   return out;
+}
+
+const _tier = new Map<string, number>();
+async function stockTier(stock: string): Promise<number | null> {
+  const k = stock.toLowerCase();
+  if (_tier.has(k)) return _tier.get(k)!;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const tiers = await Promise.all([10000, 3000, 500, 100].map((f) => call(V3_FACTORY, SEL.getPool + p32(USDC) + p32(k) + pnum(BigInt(f)))));
+    const idx = tiers.findIndex((r) => r && !/^0x0+$/.test(r));
+    if (idx >= 0) { _tier.set(k, [10000, 3000, 500, 100][idx]); return _tier.get(k)!; }
+    if (tiers.every((r) => r !== null)) break;   // all answered "no pool": genuine
+  }
+  return null;
 }
 
 let _long: { ts: number; v: { token: string; pool: string; pairToken: string; pairSymbol: string }[] } | null = null;
@@ -133,8 +151,8 @@ async function longLaunches() {
     const j = (await fetch(`${SITE_API}/api/stocks?launches=1`).then((r) => r.json())) as { launches?: typeof v };
     v = j.launches ?? [];
   }
-  _long = { ts: Date.now(), v };
-  return _long.v;
+  if (v.length) _long = { ts: Date.now(), v };   // never cache an empty list (API hiccup) — retry next call
+  return v;
 }
 
 /** abi.encodePacked(tokenA, fee, tokenB, fee, tokenC) for QuoterV2.quoteExactInput / SwapRouter02.exactInput */
