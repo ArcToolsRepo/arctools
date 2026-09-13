@@ -1158,6 +1158,8 @@ async def start_api():
     app.router.add_get("/api/wallet-trades", api_wallet_trades)
     from .watchlist import api_trending
     app.router.add_get("/api/trending", api_trending)
+    from .watchlist import api_stats
+    app.router.add_get("/api/stats", api_stats)
     app.router.add_get("/api/whales", api_whales)
     app.router.add_get("/api/movers", api_movers)
     app.router.add_get("/api/insider-activity", api_insider_activity)

@@ -6,10 +6,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { rpc } from "./arc-api";
 
-export const ARC_AGGREGATOR = "0x3c897c6D3c9dCc32E69Dd23be78f099510A65ece";
+export const ARC_AGGREGATOR = "0x43CdbF8edb8fE41ddE4ba519F49499D1ED78E74A"; // v3: + VENUE_PADQUOTE (ArcToolsPad curves quoted in a wrapped stock)
 /** v2 aggregator with the two-hop V3 leg (VENUE_V3PATH). null until ArcAggregatorV2 is deployed — the hop venue is
  *  then skipped in discovery so nothing routes through a contract that cannot execute it. */
-export const V3PATH_AGGREGATOR: string | null = "0x3c897c6D3c9dCc32E69Dd23be78f099510A65ece";
+export const V3PATH_AGGREGATOR: string | null = "0x43CdbF8edb8fE41ddE4ba519F49499D1ED78E74A";
 const SITE_API = typeof window !== "undefined" ? "" : "https://arctools.fun";
 const USDC = "0x3600000000000000000000000000000000000000";
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -42,7 +42,7 @@ const p32 = (h: string) => h.replace(/^0x/, "").toLowerCase().padStart(64, "0");
 const pnum = (n: bigint) => BigInt.asUintN(256, n).toString(16).padStart(64, "0");
 
 export type V4Key = { id: string; currency0: string; currency1: string; fee: number; tick_spacing: number; hooks: string; usdc_dec: number };
-export type Leg = { venue: 1 | 2 | 3 | 4 | 5; target: string; fee: number; key: V4Key | null; amount: string; label: string; out: string };
+export type Leg = { venue: 1 | 2 | 3 | 4 | 5 | 6; target: string; fee: number; key: V4Key | null; amount: string; label: string; out: string };
 export type RouteResult = {
   legs: Leg[];
   out: string;              // total expected output (wei-ish string)
@@ -51,7 +51,7 @@ export type RouteResult = {
   error?: string;
 };
 
-type Venue = { kind: "v3"; fee: number; label: string } | { kind: "v3path"; mid: string; midSymbol: string; fee1: number; fee2: number; label: string } | { kind: "v4"; key: V4Key; label: string } | { kind: "pad"; target: string; label: string } | { kind: "curve"; target: string; label: string };
+type Venue = { kind: "v3"; fee: number; label: string } | { kind: "v3path"; mid: string; midSymbol: string; fee1: number; fee2: number; label: string } | { kind: "padquote"; target: string; quote: string; fee1: number; label: string } | { kind: "v4"; key: V4Key; label: string } | { kind: "pad"; target: string; label: string } | { kind: "curve"; target: string; label: string };
 
 async function call(to: string, data: string): Promise<string | null> {
   // a relay hiccup (502 / timeout) must not make a venue vanish from the route → one quick retry on transport errors
@@ -109,6 +109,11 @@ async function discoverVenues(token: string): Promise<Venue[]> {
     const q = l3 && l3.length >= 66 ? "0x" + l3.slice(26, 66) : ZERO;
     const graduated = !!l3 && l3.length >= 2 + 64 * 6 && BigInt("0x" + l3.slice(2 + 64 * 5, 2 + 64 * 6)) !== 0n;
     if (!graduated && (q.toLowerCase() === ZERO || q.toLowerCase() === USDC)) out.push({ kind: "pad", target: PAD_V3, label: "ArcToolsPad v3 curve" });
+    else if (!graduated && V3PATH_AGGREGATOR) {
+      // ERC-20 quote (wrapped stock): USDC -> quote on V3, then the curve — one tx through ArcAggregator v3
+      const fee1 = await stockTier(q);
+      if (fee1) out.push({ kind: "padquote", target: PAD_V3, quote: q.toLowerCase(), fee1, label: `ArcToolsPad curve via ${await symbolOf(q)}` });
+    }
   }
   // long.supply launches: main market is a V3 pool quoted in a wrapped stock → two-hop USDC -> stock -> token (needs the v2 aggregator)
   if (V3PATH_AGGREGATOR) {
@@ -124,6 +129,16 @@ async function discoverVenues(token: string): Promise<Venue[]> {
     } catch { /* long.supply API down: no hop venue */ }
   }
   return out;
+}
+
+const _sym = new Map<string, string>();
+async function symbolOf(token: string): Promise<string> {
+  const k = token.toLowerCase();
+  if (_sym.has(k)) return _sym.get(k)!;
+  const r = await call(k, "0x95d89b41");
+  let sym = "quote";
+  try { if (r && r.length >= 130) { const ln = parseInt(r.slice(66, 130), 16); sym = Buffer.from(r.slice(130, 130 + ln * 2), "hex").toString("utf8") || sym; } } catch { /* keep */ }
+  _sym.set(k, sym); return sym;
 }
 
 const _tier = new Map<string, number>();
@@ -180,6 +195,22 @@ async function quoteVenue(v: Venue, token: string, side: "buy" | "sell", amount:
     const out = BigInt("0x" + r.slice(2, 66));
     return side === "buy" ? out : out * 10n ** 12n;
   }
+  if (v.kind === "padquote") {
+    if (side === "buy") {
+      // USDC -> quote (QuoterV2 single) -> curve quoteBuy(token, quoteIn)
+      const r1 = await call(QUOTER_V2, SEL.quoteExactInputSingle + p32(USDC) + p32(v.quote) + pnum(amount / 10n ** 12n) + pnum(BigInt(v.fee1)) + pnum(0n));
+      if (!r1) return null;
+      const qIn = BigInt("0x" + r1.slice(2, 66));
+      const r2 = await call(v.target, SEL.quoteBuy + p32(token) + pnum(qIn));
+      return r2 ? BigInt("0x" + r2.slice(2, 66)) : null;
+    }
+    const r1 = await call(v.target, SEL.quoteSell + p32(token) + pnum(amount));
+    if (!r1) return null;
+    const qOut = BigInt("0x" + r1.slice(2, 66));
+    if (qOut <= 0n) return null;
+    const r2 = await call(QUOTER_V2, SEL.quoteExactInputSingle + p32(v.quote) + p32(USDC) + pnum(qOut) + pnum(BigInt(v.fee1)) + pnum(0n));
+    return r2 ? BigInt("0x" + r2.slice(2, 66)) * 10n ** 12n : null;
+  }
   if (v.kind === "v4") {
     const k = v.key;
     const key = p32(k.currency0) + p32(k.currency1) + pnum(BigInt(k.fee)) + pnum(BigInt(k.tick_spacing)) + p32(k.hooks);
@@ -197,6 +228,7 @@ async function quoteVenue(v: Venue, token: string, side: "buy" | "sell", amount:
 
 function toLeg(v: Venue, amount: bigint, out: bigint): Leg {
   if (v.kind === "v3") return { venue: 1, target: ZERO, fee: v.fee, key: null, amount: amount.toString(), label: v.label, out: out.toString() };
+  if (v.kind === "padquote") return { venue: 6, target: v.target, fee: v.fee1, key: { id: "", currency0: v.quote, currency1: ZERO, fee: 0, tick_spacing: 0, hooks: ZERO, usdc_dec: 18 }, amount: amount.toString(), label: v.label, out: out.toString() };
   if (v.kind === "v3path") return { venue: 5, target: v.mid, fee: v.fee1, key: { id: "", currency0: ZERO, currency1: ZERO, fee: v.fee2, tick_spacing: 0, hooks: ZERO, usdc_dec: 18 }, amount: amount.toString(), label: v.label, out: out.toString() };
   if (v.kind === "v4") return { venue: 2, target: ZERO, fee: 0, key: v.key, amount: amount.toString(), label: v.label, out: out.toString() };
   if (v.kind === "curve") return { venue: 4, target: v.target, fee: 0, key: null, amount: amount.toString(), label: v.label, out: out.toString() };

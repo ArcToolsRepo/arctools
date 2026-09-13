@@ -319,6 +319,49 @@ async def api_wallet_trades(request: web.Request) -> web.Response:
     return web.json_response({"wallet": w, "trades": out, "summary": dict(agg) if agg else {}, "stats": [dict(x) for x in st]}, headers=API_CORS)
 
 
+async def api_stats(request: web.Request) -> web.Response:
+    """GET /api/stats?tokens=a,b,…&minutes=60 — trending-shaped stats for the GIVEN tokens (≤100), so every Terminal row
+    gets vol / txs / chg / ATH regardless of whether it made the top-N by volume. Lifetime ATH + first trade always filled."""
+    from sqlalchemy import bindparam
+    from .insider import total_supply_nowait
+    toks = [t.strip().lower() for t in (request.query.get("tokens") or "").split(",") if t.strip().startswith("0x") and len(t.strip()) == 42][:100]
+    mins = min(1440, max(1, int(request.query.get("minutes", "60"))))
+    if not toks:
+        return web.json_response({"rows": []}, headers=API_CORS)
+    now = int(time.time())
+    rows = await db.fetchall(text("""
+        WITH w AS (
+          SELECT token, ts, log_index, side, usdc, wallet, price1m,
+                 ROW_NUMBER() OVER (PARTITION BY token ORDER BY ts ASC, log_index ASC) AS rn_first,
+                 ROW_NUMBER() OVER (PARTITION BY token ORDER BY ts DESC, log_index DESC) AS rn_last
+          FROM swaps WHERE ts > :since AND usdc >= 0.2 AND token IN :toks
+        ), agg AS (
+          SELECT token, COUNT(*) AS txs, SUM(usdc) AS vol,
+                 SUM(CASE WHEN side='buy' THEN 1 ELSE 0 END) AS buys, SUM(CASE WHEN side='sell' THEN 1 ELSE 0 END) AS sells,
+                 COUNT(DISTINCT wallet) AS traders,
+                 MAX(CASE WHEN rn_first = 1 THEN price1m END) AS p0, MAX(CASE WHEN rn_last = 1 THEN price1m END) AS p1
+          FROM w GROUP BY token
+        ), life AS (
+          SELECT token, MIN(ts) AS first_ts, MAX(price1m) AS ath, COUNT(*) AS txs_all,
+                 (ARRAY_AGG(price1m ORDER BY ts DESC, log_index DESC))[1] AS last_px
+          FROM swaps WHERE price1m > 0 AND usdc >= 0.5 AND token IN :toks GROUP BY token
+        )
+        SELECT l.token, sym.symbol, COALESCE(a.txs,0) AS txs, COALESCE(a.vol,0) AS vol, COALESCE(a.buys,0) AS buys, COALESCE(a.sells,0) AS sells,
+               COALESCE(a.traders,0) AS traders, a.p0, COALESCE(a.p1, l.last_px) AS p1,
+               CASE WHEN a.p0 > 0 THEN (a.p1 - a.p0) / a.p0 * 100 ELSE NULL END AS chg,
+               l.first_ts, l.ath, l.txs_all
+        FROM life l LEFT JOIN agg a ON a.token = l.token LEFT JOIN token_symbols sym ON sym.token = l.token""")
+        .bindparams(bindparam("toks", value=toks, expanding=True)).bindparams(since=now - mins * 60))
+    out = [dict(r) for r in rows]
+    for d in out:
+        d["supply"] = total_supply_nowait(d["token"])
+        px = float(d["p1"] or 0) / 1e6
+        d["mcap"] = (px * d["supply"]) if (d["supply"] and px > 0) else None
+        d["ath_mcap"] = (float(d["ath"]) / 1e6 * d["supply"]) if (d["supply"] and d.get("ath")) else None
+    await _fill_symbols(out)
+    return web.json_response({"minutes": mins, "rows": out}, headers={**API_CORS, "Cache-Control": "public, max-age=15"})
+
+
 async def api_trending(request: web.Request) -> web.Response:
     """GMGN-style trending: per token in the window — volume, buys/sells, traders, price change, last price, ATH price,
     first trade time, supply (for MC). Sorted by window volume."""

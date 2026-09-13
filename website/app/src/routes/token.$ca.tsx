@@ -176,10 +176,10 @@ function TokenPage() {
   const qSym = info?.quoteSymbol ?? "USDC";
   const qUsd = info?.quoteUsd ?? 1;
   // long.supply launches whose only market is a stock-quoted V3 pool: ArcAggregatorV2 routes USDC -> stock -> token in one tx
-  const viaHop = !!info && info.venue === "external" && !!info.longPool && !info.stock;
+  const viaHop = !!info && ((info.venue === "external" && !!info.longPool && !info.stock) || (info.venue === "pad" && !!info.quoteToken && !info.graduated));
   const canTrade = info?.venue === "pad" || (info?.venue === "v3" && info.poolFee !== null) || (info?.venue === "v4" && !!info.v4Key) || (info?.venue === "curve" && !!info.curveAddress) || viaHop;
   // aggregator handles every USDC-paired venue (V3 tiers, V4 pools, ArcToolsPad USDC curves) with best-price + split routing
-  const useAgg = !!info && ((info.venue === "v3" && !info.quoteToken) || info.venue === "v4" || info.venue === "curve" || (info.venue === "pad" && !info.quoteToken) || viaHop);
+  const useAgg = !!info && ((info.venue === "v3" && !info.quoteToken) || info.venue === "v4" || info.venue === "curve" || info.venue === "pad" || viaHop);
   const [route, setRoute] = useState<RouteResult | null>(null);
   const [hot, setHot] = useState(false);          // sign with the in-browser trading wallet instead of the connected wallet
   const [hotOk, setHotOk] = useState(false);

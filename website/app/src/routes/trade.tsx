@@ -243,21 +243,24 @@ function Trade() {
     const load = () => fetch(`${API}/api/token-stats?token=${OFFICIAL_TOKEN}`).then((r) => r.json()).then((j) => setOffStats(j?.token ? j : null)).catch(() => null);
     void load(); const id = setInterval(load, 30_000); return () => clearInterval(id);
   }, []);
+  // per-row stats for tokens outside the trending top-N (so vol / txs / chg / ATH never show as "—" just because a token is quiet)
+  const [extraStats, setExtraStats] = useState<Record<string, Trend>>({});
   const trendMap = useMemo(() => {
-    const m = new Map(trend.map((t) => [t.token.toLowerCase(), t]));
+    const m = new Map<string, Trend>(Object.entries(extraStats));
+    for (const t of trend) m.set(t.token.toLowerCase(), t);
     if (!m.has(OFFICIAL_TOKEN) && offStats) {
       const supply = 1e9; const px = offStats.price1m ? offStats.price1m / 1e6 : null;
       m.set(OFFICIAL_TOKEN, { token: OFFICIAL_TOKEN, symbol: "ARCT", txs: offStats.buys24 + offStats.sells24, vol: offStats.vol24, buys: offStats.buys24, sells: offStats.sells24, traders: offStats.traders24, p1: offStats.price1m, chg: null, first_ts: null, ath: null, txs_all: 0, supply, mcap: px ? px * supply : null, ath_mcap: null });
     }
     return m;
-  }, [trend, offStats]);
+  }, [trend, offStats, extraStats]);
   const toRow = (token: string): Row => {
     const k = token.toLowerCase();
     const t = byToken.get(k); const tr = trendMap.get(k); const c = clusterMap.get(k);
     const createdTs = t?.createdAt ? new Date(t.createdAt).getTime() / 1000 : tr?.first_ts ?? null;
     return {
       token: k, symbol: tr?.symbol ?? t?.symbol ?? short(k), name: t?.name ?? tr?.symbol ?? "", logo: t?.logo ?? logos[k] ?? xAvatar(t?.twitter) ?? null, pad: t?.pad ?? "", og: !!t?.og, stock: !!t?.stock, quoteSymbol: t?.quoteSymbol ?? null, dexes: t?.dexes ?? [],
-      age: createdTs, ca: k, mcap: tr?.mcap ?? t?.mcapUsd ?? null, chg: tr?.chg ?? null, athMcap: tr?.ath_mcap ?? null,
+      age: createdTs, ca: k, mcap: (t?.quoteSymbol ? (t?.mcapUsd ?? tr?.mcap) : (tr?.mcap ?? t?.mcapUsd)) ?? null, chg: tr?.chg ?? null, athMcap: tr?.ath_mcap ?? null,
       liq: liq.get(k) ?? null, vol: tr?.vol ?? t?.volUsd ?? 0, txs: tr?.txs ?? 0, buys: tr?.buys ?? 0, sells: tr?.sells ?? 0, traders: tr?.traders ?? 0,
       insiders: c?.insiders ?? 0, twitter: t?.twitter ?? null, telegram: t?.telegram ?? null, website: t?.website ?? null,
       price: tr?.p1 ? tr.p1 / 1e6 : t?.priceUsd ?? null,
@@ -306,6 +309,24 @@ function Trade() {
   const pages = Math.max(1, Math.ceil(tableRows.length / PAGE));
   const pageRows = useMemo(() => tableRows.slice((Math.min(page, pages) - 1) * PAGE, Math.min(page, pages) * PAGE), [tableRows, page, pages]);
   // lazy enrich visible rows: logos (screener index) + holder concentration (arc-scan), cached server-side
+  // stats for every visible row (batch, 30 s) — the trending feed only covers the busiest tokens of the timeframe
+  useEffect(() => {
+    const vis = pageRows.map((r) => r.token.toLowerCase());
+    if (!vis.length) return;
+    let alive = true;
+    const load = () => {
+      const want = vis.filter((t) => !trend.some((x) => x.token.toLowerCase() === t));
+      if (!want.length) return;
+      fetch(`${API}/api/stats?tokens=${want.join(",")}&minutes=${tf}`).then((r) => r.json()).then((j: { rows?: Trend[] }) => {
+        if (!alive || !j.rows) return;
+        setExtraStats((o) => { const n = { ...o }; for (const r of j.rows!) n[r.token.toLowerCase()] = r; return n; });
+      }).catch(() => null);
+    };
+    load();
+    const id = setInterval(() => { if (!document.hidden) load(); }, 30_000);
+    return () => { alive = false; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageRows.map((r) => r.token).join(","), tf, trend.length]);
   useEffect(() => {
     const vis = pageRows.map((r) => r.token);
     const needLogo = vis.filter((t) => !logos[t] && !byToken.get(t)?.logo);
@@ -407,7 +428,7 @@ function Trade() {
                         <td style={{ ...cell, paddingRight: 4 }}><button onClick={() => toggleFav(r.token)} style={{ background: "none", border: "none", color: favs.has(r.token) ? "#f5c542" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, padding: 0 }} title="favourite" type="button">{favs.has(r.token) ? "★" : "☆"}</button></td>
                         <td className="arc-tokcell" style={{ ...cell, minWidth: 230 }}>
                           <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
-                            <Link params={{ ca: r.token }} preload="intent" style={{ textDecoration: "none" }} to="/token/$ca"><TokenLogo src={r.logo} symbol={r.symbol} /></Link>
+                            <Link params={{ ca: r.token }} preload="intent" style={{ textDecoration: "none" }} to="/token/$ca"><TokenLogo fallback={xAvatar(r.twitter)} src={r.logo} symbol={r.symbol} /></Link>
                             <div style={{ lineHeight: 1.25 }}>
                               <div><Link params={{ ca: r.token }} preload="intent" style={{ color: "var(--arc-ink)", fontWeight: 700, textDecoration: "none" }} to="/token/$ca">{r.symbol}</Link>{r.token.toLowerCase() === OFFICIAL_TOKEN && <span className="arc-mono" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "#fff", fontSize: 10, marginLeft: 6, padding: "1px 6px", verticalAlign: "middle" }}>⭐ OFFICIAL</span>}{r.og && <span className="arc-mono" style={{ background: "rgba(245,197,66,0.15)", border: "1px solid #f5c542", borderRadius: 4, color: "#f5c542", fontSize: 10, marginLeft: 6, padding: "1px 5px", verticalAlign: "middle" }} title="OG ticker: registered on RadarDex before Arc mainnet launch">OG</span>}{r.stock && <span className="arc-mono" style={{ background: "rgba(124,196,255,0.14)", border: "1px solid #7cc4ff", borderRadius: 4, color: "#7cc4ff", fontSize: 10, marginLeft: 6, padding: "1px 5px", verticalAlign: "middle" }} title="Wrapped stock minted by long.supply: a custodial IOU on a Robinhood-Chain token held in their vault. Not a share, no shareholder rights, redemptions depend on the team.">📈 STOCK · IOU</span>}{!r.stock && r.quoteSymbol && <span className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-muted)", fontSize: 10, marginLeft: 6, padding: "1px 5px", verticalAlign: "middle" }} title={`Quoted in ${r.quoteSymbol} (long.supply wrapped stock), USD price derived through the stock price`}>/{r.quoteSymbol}</span>} <span className="arc-name" style={{ color: "var(--arc-muted)", fontSize: 12 }}>{r.name.slice(0, 12)}</span>
                                 {r.twitter && <a href={r.twitter} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 6 }} target="_blank">𝕏</a>}

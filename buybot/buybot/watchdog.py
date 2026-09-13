@@ -102,12 +102,25 @@ async def chk_tokens_api(s):
         await _warm(s, purge="lists"); await _warm(s)
         _healed["tokens"] = _healed.get("tokens", 0) + 1
         return False, f"/api/tokens count={n}"
+    # data quality: garbled rows ("?" symbols, empty names) or a logo-coverage drop mean an upstream chunk was lost
+    # and got cached → purge the lists so the next compute (with the metadata memory) heals it
+    toks = (j or {}).get("tokens") or []
+    if toks:
+        garbled = sum(1 for t in toks if not t.get("name") or t.get("symbol") in ("?", ""))
+        logos = sum(1 for t in toks if t.get("logo"))
+        cov = logos / len(toks)
+        prev = _healed.get("_logo_cov", cov)
+        _healed["_logo_cov"] = max(prev, cov) if garbled == 0 else prev
+        if garbled > 0 or cov < prev - 0.15:
+            await _warm(s, purge="lists"); await _warm(s)
+            _healed["quality"] = _healed.get("quality", 0) + 1
+            return False, f"list quality: {garbled} garbled rows, logo coverage {cov:.0%} (was {prev:.0%})"
     j2 = await _json(s, f"{SITE}/api/tokenpage?ca={ARCT}", timeout=60)
     if not j2 or j2.get("error") or j2.get("mcapUsd") is None:
         await _warm(s, purge=f"token:{ARCT}")
         _healed["tokenpage"] = _healed.get("tokenpage", 0) + 1
         return False, f"tokenpage ARCT: {str(j2)[:120]}"
-    return True, f"tokens={n}"
+    return True, f"tokens={n} · logos {(_healed.get('_logo_cov', 0)):.0%}"
 
 
 async def chk_relay(s):

@@ -1739,7 +1739,10 @@ export const tokenLogos = createServerFn({ method: "POST" })
     const want = data.tokens.slice(0, 200).map((t) => t.toLowerCase());
     const icons = await screenerIcons().catch(() => new Map<string, string>());
     const out: Record<string, string> = {};
+    // remembered logos first (survive upstream outages)
+    try { await healFromMemory([]); for (const t of want) { const l = _metaMem?.m[t]?.l; if (l) out[t] = l; } } catch { /* memory unavailable */ }
     for (const t of want) {
+      if (out[t]) continue;
       const u = ipfsToHttp(icons.get(t) ?? "");
       if (u) out[t] = u;
     }
@@ -1788,6 +1791,54 @@ export const holderRisk = createServerFn({ method: "POST" })
       return r as Record<string, { holders: number; top10: number | null; top1: number | null }>;
     } catch { return {}; }
   });
+
+type MetaMem = { l?: string | null; n?: string; s?: string; x?: string | null; t?: string | null; w?: string | null; p?: string; ts: number };
+let _metaMem: { ts: number; m: Record<string, MetaMem> } | null = null;
+const META_KEY = "tokmeta:v1";
+const bad = (v: string | null | undefined) => !v || v === "?" || v === "NO LOGO";
+/** Merge the remembered good metadata into `rows` (mutates) and persist anything new/better. One KV read + at most one write per compute. */
+async function healFromMemory(rows: PadToken[]): Promise<void> {
+  const store = kv();
+  try {
+    if (!_metaMem || Date.now() - _metaMem.ts > 60_000) {
+      const raw = store ? await store.get(META_KEY, "text") : null;
+      _metaMem = { ts: Date.now(), m: raw ? (JSON.parse(raw) as Record<string, MetaMem>) : {} };
+    }
+  } catch { _metaMem = _metaMem ?? { ts: Date.now(), m: {} }; }
+  const m = _metaMem.m;
+  let dirty = 0;
+  const now = Date.now();
+  for (const r of rows) {
+    const k = r.token.toLowerCase();
+    const cur = m[k];
+    // heal
+    if (cur) {
+      if (bad(r.logo) && cur.l) { r.logo = cur.l; }
+      if (bad(r.symbol) && cur.s) r.symbol = cur.s;
+      if ((!r.name || r.name === "?") && cur.n) r.name = cur.n;
+      if (!r.twitter && cur.x) r.twitter = cur.x;
+      if (!r.telegram && cur.t) r.telegram = cur.t;
+      if (!r.website && cur.w) r.website = cur.w;
+    }
+    // remember (only good values; never overwrite a logo with null)
+    const next: MetaMem = { ...(cur ?? { ts: now }) };
+    let ch = false;
+    if (!bad(r.logo) && r.logo !== cur?.l) { next.l = r.logo; ch = true; }
+    if (!bad(r.symbol) && r.symbol !== cur?.s) { next.s = r.symbol; ch = true; }
+    if (r.name && r.name !== "?" && r.name !== cur?.n) { next.n = r.name; ch = true; }
+    if (r.twitter && r.twitter !== cur?.x) { next.x = r.twitter; ch = true; }
+    if (r.telegram && r.telegram !== cur?.t) { next.t = r.telegram; ch = true; }
+    if (r.website && r.website !== cur?.w) { next.w = r.website; ch = true; }
+    if (r.pad && r.pad !== cur?.p) { next.p = r.pad; ch = true; }
+    if (ch) { next.ts = now; m[k] = next; dirty++; }
+  }
+  if (dirty && store) {
+    // cap the blob: keep the 6 000 most recently touched entries
+    const keys = Object.keys(m);
+    if (keys.length > 6000) for (const k of keys.sort((a, b) => (m[a].ts ?? 0) - (m[b].ts ?? 0)).slice(0, keys.length - 6000)) delete m[k];
+    try { await store.put(META_KEY, JSON.stringify(m)); } catch { /* KV write budget: try next compute */ }
+  }
+}
 
 /** Every source in ONE round-trip for the Terminal: merged + de-duplicated, memoized (memory + KV).
  *  Each source is itself memoized, so a refresh only recomputes what actually expired. */
@@ -1845,6 +1896,9 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   // the screener set (chain-wide most active) is always carried whole
   const scr = new Set(screener.map((t) => t.token.toLowerCase()));
   const scrMeta = new Map(screener.map((t) => [t.token.toLowerCase(), t]));
+  // ---- metadata memory: a token's logo / name / symbol / socials once seen are remembered in KV and used to heal
+  //      any later compute where an upstream (RadarDex, IPFS, a pad API, the relay) dropped them. Self-healing, no re-fetch.
+  await healFromMemory(all);
   // full (uncompacted) list for the client-side explorer / pagination — same compact field shape
   fullListCache = { ts: Date.now(), v: all.map(compactToken) };
   for (const t of all) if (scr.has(t.token.toLowerCase())) keep.set(t.token.toLowerCase(), t);

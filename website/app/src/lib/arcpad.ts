@@ -106,12 +106,21 @@ async function metaRows(tokens: string[], lightImage = false): Promise<Map<strin
 }
 
 /** All launched tokens with stats + metadata (30s cache). */
+let _lastListLen = 0;
+const _lastCount = new Map<string, number>();
 async function padAddrs(pad: string): Promise<string[]> {
-  const countHex = await rpc("eth_call", [{ data: SEL.tokenCount, to: pad }, "latest"]).catch(() => null);
-  const n = Number(toNum(countHex as string | null));
-  if (!n) return [];
-  const res = await multicall(Array.from({ length: n }, (_, i) => ({ data: SEL.tokens + padNum(BigInt(i)), target: pad })), 200);
-  return res.map((r) => (r ? topicAddr(r) : null)).filter(Boolean) as string[];
+  // a relay hiccup here silently shrinks the launchpad → retry, and never accept fewer tokens than last time (count only grows)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const countHex = await rpc("eth_call", [{ data: SEL.tokenCount, to: pad }, "latest"]).catch(() => null);
+    const n = Number(toNum(countHex as string | null));
+    if (n >= (_lastCount.get(pad) ?? 0) && n > 0) {
+      const res = await multicall(Array.from({ length: n }, (_, i) => ({ data: SEL.tokens + padNum(BigInt(i)), target: pad })), 200);
+      const addrs = res.map((r) => (r ? topicAddr(r) : null)).filter(Boolean) as string[];
+      if (addrs.length === n) { _lastCount.set(pad, n); return addrs; }
+    } else if (n === 0 && (_lastCount.get(pad) ?? 0) === 0 && attempt === 2) return [];
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  throw new Error("padAddrs: relay unstable");
 }
 
 export const padList = createServerFn({ method: "POST" }).handler(() =>
@@ -128,14 +137,23 @@ export const padList = createServerFn({ method: "POST" }).handler(() =>
       if (calls.length && r.every((x) => x === null)) { await new Promise((res) => setTimeout(res, 300)); r = await multicall(calls, chunk); }
       return r;
     };
-    const [curveRes, nameRes, symRes, launchRes, metas, icons] = await Promise.all([
+    const [curveRes, nameRes, symRes, launchRes, metas, icons, chainMeta] = await Promise.all([
       mc(owners.map(([a, pad]) => ({ data: SEL.curve + pad32(a), target: pad })), 150),
       mc(addrs.map((a) => ({ data: SEL.name, target: a })), 200),
       mc(addrs.map((a) => ({ data: SEL.symbol, target: a })), 200),
       mc(a3.map((a) => ({ data: SEL_LAUNCH + pad32(a), target: PAD_V3 })), 150),
       metaRows(addrs, true),
       screenerIcons().catch(() => new Map<string, string>()),
+      mc(owners.map(([a, pad]) => ({ data: SEL.meta + pad32(a), target: pad })), 100),
     ]);
+    // on-chain Meta(token, creator, mktWallet, 3×bps, website, twitter, telegram, createdAt, rewardToken) — fallback when D1 has nothing
+    const onchain = (i: number) => {
+      const h = chainMeta[i];
+      if (!h || h.length < 2 + 64 * 11) return null;
+      const w = (j: number) => h.slice(2 + j * 64, 2 + (j + 1) * 64);
+      const str = (j: number) => { try { const off = parseInt(w(j), 16) * 2; const len = parseInt(h.slice(2 + off, 2 + off + 64), 16); return Buffer.from(h.slice(2 + off + 64, 2 + off + 64 + len * 2), "hex").toString("utf8"); } catch { return ""; } };
+      return { website: str(6), twitter: str(7), telegram: str(8), createdAt: parseInt(w(9), 16) || null, creator: topicAddr(w(1)) };
+    };
     // quote tokens (v3): symbol + USD price, once per distinct token
     const launchByAddr = new Map<string, string | null>();
     a3.forEach((a, i) => launchByAddr.set(a.toLowerCase(), launchRes[i] ?? null));
@@ -169,10 +187,11 @@ export const padList = createServerFn({ method: "POST" }).handler(() =>
       const pool = isV3 && lw(6) !== 0n ? topicAddr("0x" + l!.slice(2 + 6 * 64, 2 + 7 * 64)) : null;
       const virtualQ = isV3 ? Number(lw(4) / 10n ** 12n) / 1e6 : VIRTUAL;
       const m = metas.get(a.toLowerCase());
+      const oc = onchain(i);
       // price in quote units per 1M tokens -> USD
       const price1mQuote = tokenReserve > 0n ? Number((quoteReserve * 1_000_000_000_000n) / tokenReserve) / 1e6 : 0;
       return {
-        createdAt: m ? Number(m.created_at ?? 0) || null : null,
+        createdAt: (m ? Number(m.created_at ?? 0) || null : null) ?? oc?.createdAt ?? null,
         graduated,
         image: m?.has_image ? `/api/pad-logo/${a.toLowerCase()}` : ipfsToHttp(icons.get(a.toLowerCase()) ?? ""),
         mode: !isV3 ? "v2" : lw(2) === 1n ? "instant" : "curve",
@@ -185,17 +204,17 @@ export const padList = createServerFn({ method: "POST" }).handler(() =>
         quoteUsd: qusd,
         symbol: decodeString(symRes[i]),
         targetQuote: isV3 ? Number(lw(3) / 10n ** 12n) / 1e6 : 0,
-        telegram: normSocial("tg", (m?.telegram as string) || null),
+        telegram: normSocial("tg", (m?.telegram as string) || oc?.telegram || null),
         token: a,
-        twitter: normSocial("x", (m?.twitter as string) || null),
+        twitter: normSocial("x", (m?.twitter as string) || oc?.twitter || null),
         txCount: Number(txc),
         usdcReal: Math.max(0, (Number(quoteReserve / 10n ** 12n) / 1e6 - virtualQ) * qusd),
         volumeUsdc: (Number(vol / 10n ** 12n) / 1e6) * qusd,
-        website: normSocial("web", (m?.website as string) || null),
+        website: normSocial("web", (m?.website as string) || oc?.website || null),
       };
     });
   // never cache a list where the relay dropped names/symbols ("?") — recompute on the next call instead
-  }, (v) => v.length > 0 && v.every((x) => x.symbol !== "?" && x.name !== "?")),
+  }, (v) => v.length > 0 && v.length >= _lastListLen && v.every((x) => x.symbol !== "?" && x.name !== "?") && !!(_lastListLen = v.length)),
 );
 
 export type PadTokenPage = PadListItem & {
@@ -290,8 +309,13 @@ export const padMetaSet = createServerFn({ method: "POST" })
     // verify on-chain: the token must exist on the pad and the submitted
     // creator must match the on-chain creator (metadata is creator-owned)
     try {
-      const metaHex = (await rpc("eth_call", [{ data: SEL.meta + pad32(token), to: PAD }, "latest"])) as string;
-      if (!metaHex || metaHex.length < 2 + 64 * 2) return { ok: false, reason: "unknown token" };
+      // v3.1 first (current launches), then the legacy v2 pad
+      let metaHex = "";
+      for (const padAddr of [PAD_V3, PAD]) {
+        const h = (await rpc("eth_call", [{ data: SEL.meta + pad32(token), to: padAddr }, "latest"]).catch(() => null)) as string | null;
+        if (h && h.length >= 2 + 64 * 2 && topicAddr(h.slice(2, 66)).toLowerCase() === token) { metaHex = h; break; }
+      }
+      if (!metaHex) return { ok: false, reason: "unknown token" };
       const onchainToken = topicAddr(metaHex.slice(2, 66)).toLowerCase();
       const onchainCreator = topicAddr(metaHex.slice(2 + 64, 2 + 128)).toLowerCase();
       if (onchainToken !== token) return { ok: false, reason: "unknown token" };

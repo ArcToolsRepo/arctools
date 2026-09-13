@@ -69,3 +69,4 @@ Nie zapisuję ich w tym pliku. Do kontynuacji pracy potrzebne będą:
 - token GitHub (jeśli mirrorujemy kod),
 - (opcjonalnie) dostęp do repo strony na platformie Higgsfield — pobierany komendą `website_repo_access` z website_id z sekcji 2.
 - 2026-09-13: ArcPadV3.setMinTarget(1e18) (was 100e18) — stock-quoted launches (target ~55 CRCL) reverted with 'target'. UI enforces its own minimums ($5k/$10k target, 100 quote seed).
+- 2026-09-13: ArcAggregatorV3 0x43CdbF8edb8fE41ddE4ba519F49499D1ED78E74A (venues: v3, v4, pad, curve, v3path=5, padquote=6). V2 0x3c897c6D…, V1 0xff9A8F35… still live.
