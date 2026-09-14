@@ -57,16 +57,17 @@ function useApi<T>(path: string, every: number, deps: unknown[] = []) {
 const card: React.CSSProperties = { background: "var(--arc-paper)", border: "1px solid var(--arc-line)", padding: 16 };
 const th: React.CSSProperties = { color: "var(--arc-muted)", fontSize: 11, fontWeight: 400, padding: "0 10px 8px 0", textAlign: "left", textTransform: "uppercase" };
 const td: React.CSSProperties = { borderTop: "1px solid var(--arc-line)", fontSize: 13, padding: "11px 12px 11px 0", whiteSpace: "nowrap" };
-type Section = "money" | "smart" | "new" | "market" | "alerts";
+type Section = "money" | "smart" | "kol" | "new" | "market" | "alerts";
 const SECTIONS: { id: Section; label: string; blurb: string }[] = [
   { id: "money", label: "Money", blurb: "Where the big USDC is and where it moves: largest swaps, richest wallets, deposits and withdrawals." },
   { id: "smart", label: "Smart money", blurb: "What the 100 most profitable wallets on Arc are doing right now, and where several of them agree." },
+  { id: "kol", label: "KOL feed", blurb: "What Arc KOLs (10k+ followers) are tweeting about right now: every tweet that names an Arc token, chain-wide." },
   { id: "new", label: "New arrivals", blurb: "Capital entering Arc: wallets making their first trade and USDC crossing the bridge." },
   { id: "market", label: "Market", blurb: "Tokens moving hardest in the window you pick." },
   { id: "alerts", label: "Alerts", blurb: "Turn any of the above into a Telegram alert with your own thresholds." },
 ];
 const PANELS: Record<Section, string[]> = {
-  money: ["whales", "rich", "moves"], smart: ["insiders", "clusters"], new: ["fresh", "bridge"], market: ["movers"], alerts: [],
+  money: ["whales", "rich", "moves"], smart: ["insiders", "clusters"], kol: ["kolfeed"], new: ["fresh", "bridge"], market: ["movers"], alerts: [],
 };
 const UP = "var(--arc-up)";
 const DOWN = "var(--arc-down, #f0534f)";
@@ -97,6 +98,9 @@ function Intel() {
   const [clusterWin, setClusterWin] = useState(120);
   const whales = useApi<{ rows: Whale[] }>(`/api/whales?minutes=${whaleWin}&min_usd=${whaleMin}&limit=60`, 10_000, [whaleWin, whaleMin]);
   const whaleLabels = useWalletLabels((whales?.rows ?? []).slice(0, 60).map((r) => r.wallet));
+  type KolMention = { tweet_id: string; kol: string; token: string; ts: number; text: string; url: string; likes: number; views: number; followers: number | null; symbol: string | null };
+  const kolFeed = useApi<{ rows: KolMention[] }>("/api/kol-mentions-feed?hours=168", 60_000, []);
+  const kolList = useApi<{ kols: { handle: string; name: string; followers: number; avatar: string; category: string }[] }>("/api/kols", 300_000, []);
   const devSells = useApi<{ rows: { tx: string; ts: number; wallet: string; token: string; usdc: number; symbol: string | null }[] }>("/api/dev-sells-feed?hours=24&limit=30", 20_000, []);
   const movers = useApi<{ rows: Mover[] }>(`/api/movers?minutes=${moverWin}`, 30_000, [moverWin]);
   const bridge = useApi<Bridge>("/api/bridge", 30_000);
@@ -272,6 +276,37 @@ function Intel() {
                   {whales && whales.rows.length === 0 && <tr><td colSpan={7} className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>Quiet: no swaps ≥ ${whaleMin} in this window.</td></tr>}
                 </tbody>
               </table>
+            </div>
+          </div>}
+
+          {show("kolfeed") && <div style={{ ...card, border: "1px solid #ff5fd2" }}>
+            <Title caption="Tweets by tracked Arc KOLs that name a token by contract, unique $cashtag (with Arc context) or the project's X handle. Last 7 days. Also pinned as avatars on each token's chart.">📣 KOL MENTIONS</Title>
+            <div style={{ display: "grid", gap: 8 }}>
+              {(kolFeed?.rows ?? []).slice(0, 40).map((m) => (
+                <div key={m.tweet_id} style={{ border: "1px solid var(--arc-line)", borderRadius: 6, padding: "8px 10px" }}>
+                  <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 8, fontSize: 12.5 }}>
+                    <a href={`/token/${m.token}`} style={{ color: "var(--arc-ink)", fontWeight: 700, textDecoration: "none" }}>${m.symbol ?? short(m.token)}</a>
+                    <a className="arc-mono" href={`https://x.com/${m.kol}`} rel="noreferrer" style={{ color: "#ff5fd2", textDecoration: "none" }} target="_blank">@{m.kol}</a>
+                    <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{m.followers ? `${(m.followers / 1000).toFixed(m.followers >= 100000 ? 0 : 1)}K followers` : ""} · {ago(m.ts)} ago · ♥ {m.likes} · {m.views >= 1000 ? `${(m.views / 1000).toFixed(1)}K` : m.views} views</span>
+                    <span style={{ flex: 1 }} />
+                    <a className="arc-mono" href={m.url} rel="noreferrer" style={{ color: "var(--arc-muted)", fontSize: 11 }} target="_blank">tweet ↗</a>
+                    <QuickBuy compact symbol={m.symbol ?? short(m.token)} token={m.token} />
+                  </div>
+                  <div style={{ color: "var(--arc-ink)", fontSize: 12.5, lineHeight: 1.45, marginTop: 5, opacity: 0.9 }}>{m.text.length > 240 ? m.text.slice(0, 240) + "…" : m.text}</div>
+                </div>
+              ))}
+              {kolFeed && kolFeed.rows.length === 0 && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12 }}>No KOL tweets about Arc tokens in the last 7 days.</p>}
+              {!kolFeed && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12 }}>…</p>}
+            </div>
+            <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, letterSpacing: "0.08em", margin: "18px 0 8px" }}>TRACKED KOLS · {kolList?.kols.length ?? "…"} accounts · database grows daily</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {(kolList?.kols ?? []).slice(0, 60).map((k) => (
+                <a key={k.handle} href={`https://x.com/${k.handle}`} rel="noreferrer" style={{ alignItems: "center", border: "1px solid var(--arc-line)", borderRadius: 999, color: "var(--arc-ink)", display: "inline-flex", fontSize: 11.5, gap: 6, padding: "3px 9px 3px 4px", textDecoration: "none" }} target="_blank" title={`${k.name} · ${k.followers.toLocaleString()} followers · ${k.category}`}>
+                  {k.avatar ? <img alt="" height={18} src={k.avatar} style={{ borderRadius: "50%" }} width={18} /> : <span style={{ background: "var(--arc-line)", borderRadius: "50%", display: "inline-block", height: 18, width: 18 }} />}
+                  @{k.handle}<span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10 }}>{k.followers >= 1e6 ? `${(k.followers / 1e6).toFixed(1)}M` : `${Math.round(k.followers / 1000)}K`}</span>
+                </a>
+              ))}
+              {kolList && kolList.kols.length > 60 && <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: "4px 0" }}>+{kolList.kols.length - 60} more</span>}
             </div>
           </div>}
 

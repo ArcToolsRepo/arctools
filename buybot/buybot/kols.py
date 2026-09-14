@@ -28,6 +28,9 @@ from sqlalchemy import text
 from . import db
 
 log = logging.getLogger("kols")
+bot = None  # set by main
+SITE = "https://arctools.fun"
+MENTION_ALERT_MIN_FOLLOWERS = int(os.getenv("KOL_ALERT_MIN_FOLLOWERS", "10000"))
 CORS = {"Access-Control-Allow-Origin": "*"}
 API = "https://api.twitterapi.io"
 KEY = os.getenv("TWITTERAPI_KEY", "")
@@ -336,13 +339,89 @@ async def mentions_scan() -> int:
             a = t.get("author") or {}
             for ca, kind in hits:
                 try:
+                    existed = await db.fetchone(text("SELECT 1 FROM kol_mentions WHERE tweet_id = :id").bindparams(id=str(t["id"])))
                     await db.execute(text("""INSERT INTO kol_mentions (tweet_id, kol, token, ts, text, url, likes, retweets, views, match)
                         VALUES (:id, :k, :t, :ts, :x, :u, :l, :r, :v, :m) ON CONFLICT (tweet_id) DO UPDATE SET likes = EXCLUDED.likes, retweets = EXCLUDED.retweets, views = EXCLUDED.views""")
                         .bindparams(id=str(t["id"]), k=(a.get("userName") or "").lower(), t=ca, ts=ts, x=txt[:600], u=t.get("url") or "", l=int(t.get("likeCount") or 0), r=int(t.get("retweetCount") or 0), v=int(t.get("viewCount") or 0), m=kind))
                     found += 1
+                    if not existed and time.time() - ts < 6 * 3600:
+                        await _alert_mention(a, t, ca, kind, txt)
                 except Exception as e:  # noqa
                     log.debug("mention upsert: %s", e)
     return found
+
+
+async def _alert_mention(a: dict, t: dict, ca: str, kind: str, txt: str):
+    """Post a KOL mention to the insiders channel (once per tweet, only fresh tweets)."""
+    try:
+        from .config import CFG
+        if bot is None or not CFG.insider_channel_id:
+            return
+        k = await db.fetchone(text("SELECT followers, name FROM kols WHERE handle = :h").bindparams(h=(a.get("userName") or "").lower()))
+        followers = int((k or {}).get("followers") or a.get("followers") or 0)
+        if followers < MENTION_ALERT_MIN_FOLLOWERS:
+            return
+        sym = await db.fetchone(text("SELECT symbol FROM token_symbols WHERE token = :t").bindparams(t=ca))
+        symbol = (sym or {}).get("symbol") or ca[:8]
+        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        from aiogram.utils.text_decorations import html_decoration as hd
+        fk = f"{followers/1000:.0f}K" if followers < 1e6 else f"{followers/1e6:.1f}M"
+        body = txt.replace("\n\n", "\n").strip()
+        body = body[:280] + ("…" if len(body) > 280 else "")
+        msg = "\n".join([
+            f"<b>📣 KOL MENTION · ${hd.quote(symbol)}</b>",
+            f"<a href='https://x.com/{a.get('userName')}'>@{hd.quote(a.get('userName') or '')}</a> · {fk} followers · matched by {kind}",
+            "",
+            f"<i>{hd.quote(body)}</i>",
+            "",
+            f"<a href='{t.get('url')}'>tweet</a> · <a href='{SITE}/token/{ca}'>token page</a>",
+        ])
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Buy in sniper", url=f"https://t.me/ArcSniper_bot?start={ca}"),
+            InlineKeyboardButton(text="Chart", url=f"{SITE}/token/{ca}"),
+        ]])
+        await bot.send_message(CFG.insider_channel_id, msg, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True)
+        log.info("kol mention alert %s %s", a.get("userName"), symbol)
+    except Exception as e:  # noqa
+        log.warning("kol mention alert: %s", e)
+
+
+async def api_kol_import(req: web.Request):
+    """POST /api/kol-import {handles:[...], category:'gmgn'} (X-Ref-Auth) — bulk add; profiles are fetched and only 10k+ stay active."""
+    if not ADMIN_AUTH or req.headers.get("X-Ref-Auth") != ADMIN_AUTH:
+        return web.json_response({"error": "auth"}, status=401, headers=CORS)
+    body = await req.json()
+    cat = str(body.get("category") or "manual")[:16]
+    handles = []
+    for h in body.get("handles") or []:
+        h = str(h or "").strip().lstrip("@").lower()
+        if h and _re.fullmatch(r"[a-z0-9_]{1,20}", h):
+            handles.append(h)
+    handles = list(dict.fromkeys(handles))[:500]
+    added = 0
+    for h in handles:
+        r = await db.execute(text("INSERT INTO kols (handle, category, active, ts) VALUES (:h, :c, 0, 0) ON CONFLICT (handle) DO NOTHING").bindparams(h=h, c=cat))
+        added += 1
+    asyncio.create_task(_import_verify(handles))
+    return web.json_response({"queued": len(handles), "note": "profiles are fetched in the background; accounts under 10k followers stay inactive"}, headers=CORS)
+
+
+async def _import_verify(handles: list[str]):
+    ok = 0
+    for h in handles:
+        row = await db.fetchone(text("SELECT active, followers FROM kols WHERE handle = :h").bindparams(h=h))
+        if row and row["active"] and int(row["followers"] or 0) >= KOL_MIN_FOLLOWERS:
+            continue
+        d = await user_info(h)
+        if not d:
+            continue
+        f = int(d.get("followers") or 0)
+        await db.execute(text("UPDATE kols SET user_id=:id, name=:n, followers=:f, avatar=:a, ts=:ts, active=:act WHERE handle=:h")
+                         .bindparams(id=str(d.get("id") or ""), n=d.get("name") or "", f=f, a=d.get("profilePicture") or "", ts=int(time.time()), act=1 if f >= KOL_MIN_FOLLOWERS else 0, h=h))
+        await upsert_account(d)
+        if f >= KOL_MIN_FOLLOWERS:
+            ok += 1
+    log.info("kol import: %s verified >=%s of %s", ok, KOL_MIN_FOLLOWERS, len(handles))
 
 
 async def mentions_loop():
@@ -391,7 +470,10 @@ async def smart_followers(handle: str) -> dict:
         account = {"handle": acc["handle"], "name": acc["name"], "followers": acc["followers"], "following": acc["following"], "created_at": acc["created_at"], "avatar": acc["avatar"], "verified": bool(acc["verified"]), "ts": acc["ts"]}
     elif acc:
         account = {"handle": h, "missing": True}
-    return {"enabled": enabled(), "handle": h, "account": account, "kols": [dict(k) for k in kols], "total_kols": int(total["n"] if total else 0)}
+    # a token whose metadata points at @coinbase / @circle / a KOL is borrowing someone else's audience — say so instead of "followed by 63 KOLs"
+    is_kol = bool(await db.fetchone(text("SELECT 1 FROM kols WHERE handle = :h").bindparams(h=h)))
+    third_party = h in _X_BLOCK or is_kol or (account and not account.get("missing") and int(account.get("followers") or 0) >= 150000)
+    return {"enabled": enabled(), "handle": h, "account": account, "kols": [dict(k) for k in kols], "total_kols": int(total["n"] if total else 0), "third_party": bool(third_party)}
 
 
 async def api_kol_follows(req: web.Request):
@@ -430,5 +512,6 @@ def register(app: web.Application):
     app.router.add_get("/api/kol-follows", api_kol_follows)
     app.router.add_get("/api/kols", api_kols)
     app.router.add_get("/api/kol-mentions", api_kol_mentions)
+    app.router.add_post("/api/kol-import", api_kol_import)
     app.router.add_get("/api/kol-mentions-feed", api_kol_mentions_feed)
     app.router.add_post("/api/kols", api_kols_admin)

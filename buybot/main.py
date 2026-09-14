@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 
 from buybot.config import CFG
-from buybot import balances, bridge_watch, insider_alerts, rules, watchlist, db, insider, social, watcher, trending
+from buybot import balances, bridge_watch, insider_alerts, rules, watchlist, db, insider, social, watcher, trending, kols
 from buybot.handlers import router
 
 logging.getLogger("web3.manager.RequestManager").setLevel(logging.CRITICAL)  # failover jest obslugiwany w chain.py; ERROR to szum
@@ -46,6 +46,7 @@ async def main():
 
     social.bot = bot
     insider_alerts.bot = bot
+    kols.bot = bot
     bridge_watch.bot = bot
     watchlist.bot = bot
     rules.bot = bot

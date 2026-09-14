@@ -4,7 +4,7 @@ const API = "https://bot-production-4200.up.railway.app";
 
 type Kol = { handle: string; name: string; followers: number; avatar: string; category: string };
 type Resp = {
-  enabled: boolean; handle: string; total_kols: number;
+  enabled: boolean; handle: string; total_kols: number; third_party?: boolean;
   account: { handle: string; name?: string; followers?: number; following?: number; created_at?: string; avatar?: string; verified?: boolean; missing?: boolean } | null;
   kols: Kol[];
 };
@@ -62,6 +62,11 @@ export function SmartFollowers({ x }: { x?: string | null }) {
         </div>
       )}
       {acc?.missing && <div className="arc-mono" style={{ color: "#f0534f", fontSize: 12, marginTop: 8 }}>X account not found — link in metadata points at a deleted, suspended or renamed profile.</div>}
+      {d.third_party && (
+        <div className="arc-mono" style={{ background: "rgba(240,83,79,0.12)", border: "1px solid #f0534f", borderRadius: 6, color: "#f0534f", fontSize: 12, marginTop: 10, padding: "8px 10px" }}>
+          ⚠ The X link in this token's metadata points at a large third-party account (@{h}) — not the project's own. Followers below belong to that account, not to this token.
+        </div>
+      )}
       <div style={{ marginTop: 10 }}>
         {d.kols.length > 0 ? (
           <>
