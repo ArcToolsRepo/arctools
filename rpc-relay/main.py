@@ -43,7 +43,7 @@ def method_ok(body, can_send: bool = False) -> bool:
 CORS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-Send-Auth",
+    "Access-Control-Allow-Headers": "Content-Type, X-Send-Auth, X-Priority",
     "Access-Control-Max-Age": "86400",
 }
 
@@ -60,6 +60,7 @@ async def relay(request: web.Request) -> web.Response:
              "error": {"code": -32601, "message": "method not allowed (read-only relay)"}},
             status=403, headers=CORS)
     payload = json.dumps(body)
+    _account(body, request.headers.get("User-Agent", "")[:20])
     # short read cache + in-flight dedupe: the site's edge isolates and the bots ask the same questions within
     # the same second (multicalls, getCode, blockNumber). One upstream call serves all of them.
     ckey = None
@@ -78,6 +79,15 @@ async def relay(request: web.Request) -> web.Response:
                 return web.Response(text=_reid(txt, body.get("id")), content_type="application/json", headers={**CORS, "X-Relay-Cache": "join"})
         loop = asyncio.get_event_loop(); fut = loop.create_future(); _inflight[ckey] = fut
     try:
+        # priority lane: interactive calls (swap routing / quotes behind the Buy button) skip the batch queue and the
+        # token wait — a user waiting on a quote must not queue behind list recomputes
+        if request.headers.get("X-Priority") == "high" and isinstance(body, dict):
+            text, status = await _post_raw(payload, tokened=True)
+            if status == 200 and ckey and '"error"' not in text[:200].replace(" ", ""):
+                _rcache[ckey] = (time.time(), text)
+                if fut and not fut.done():
+                    fut.set_result(text)
+            return web.Response(text=text, content_type="application/json", status=status, headers=CORS)
         if isinstance(body, dict) and body.get("method") in BATCH_METHODS and _bq is not None:
             bf = asyncio.get_event_loop().create_future()
             await _bq.put((body, bf))
@@ -92,6 +102,31 @@ async def relay(request: web.Request) -> web.Response:
         if ckey and not fut.done():
             fut.set_result(None)
         _inflight.pop(ckey, None)
+
+
+_prof: dict[str, int] = {}
+
+
+def _account(body, ua: str):
+    """Who asks what: method + eth_call target/selector, per client UA — surfaced in /stats?prof=1."""
+    try:
+        items = body if isinstance(body, list) else [body]
+        for b in items[:50]:
+            m = b.get("method", "?")
+            k = m
+            if m == "eth_call":
+                p = (b.get("params") or [{}])[0] or {}
+                k = f"eth_call {str(p.get('to', ''))[:10]} {str(p.get('data', ''))[:10]}"
+            elif m == "eth_getLogs":
+                p = (b.get("params") or [{}])[0] or {}
+                k = f"eth_getLogs {str(p.get('address', ''))[:10]}"
+            key = f"{ua}|{k}"
+            _prof[key] = _prof.get(key, 0) + 1
+        if len(_prof) > 3000:
+            for kk in sorted(_prof, key=_prof.get)[:1500]:
+                _prof.pop(kk, None)
+    except Exception:  # noqa
+        pass
 
 
 CACHEABLE = {"eth_call", "eth_getCode", "eth_getBalance", "eth_blockNumber", "eth_getLogs", "eth_getTransactionReceipt",
@@ -254,7 +289,7 @@ async def _post_raw(payload: str, tokened: bool = False) -> tuple[str, int]:
                 if rate:
                     # 503 from the primary = their edge hiccup → no cooldown, just try the others and come back;
                     # 429 → 5 s (primary) / 60 s (fallbacks); provider quota exhausted → 10 min
-                    quota = any(m in low for m in QUOTA_MARKERS)
+                    quota = any(m in low for m in QUOTA_MARKERS) and ("infura" in up or "alchemy" in up)
                     if quota:
                         _cooldown[up] = time.time() + 600
                     elif r.status != 503 or up != UPSTREAMS[0]:
@@ -279,8 +314,10 @@ async def _upstream(payload: str, ckey, fut, rid) -> web.Response:
         for k in [k for k, v in _rcache.items() if now - v[0] > 600][:10000]:
             _rcache.pop(k, None)
     for attempt in range(4):
+        # every upstream cooling at once must not turn into "502 no upstream" — try them all anyway (same as _post_raw)
+        all_cool = all(_cooldown.get(u, 0) > time.time() for u in UPSTREAMS)
         for up in UPSTREAMS:
-            if _cooldown.get(up, 0) > time.time():
+            if _cooldown.get(up, 0) > time.time() and not all_cool:
                 continue
             try:
                 if up == UPSTREAMS[0]:
@@ -305,7 +342,7 @@ async def _upstream(payload: str, ckey, fut, rid) -> web.Response:
                 if rate:
                     # 503 from the primary = their edge hiccup → no cooldown, just try the others and come back;
                     # 429 → 5 s (primary) / 60 s (fallbacks); provider quota exhausted → 10 min
-                    quota = any(m in low for m in QUOTA_MARKERS)
+                    quota = any(m in low for m in QUOTA_MARKERS) and ("infura" in up or "alchemy" in up)
                     if quota:
                         _cooldown[up] = time.time() + 600
                     elif r.status != 503 or up != UPSTREAMS[0]:
@@ -323,7 +360,10 @@ async def _upstream(payload: str, ckey, fut, rid) -> web.Response:
                         status=last_status if last_status >= 400 else 502, headers=CORS)
 
 
-async def relay_stats(_):
+async def relay_stats(req):
+    if req.query.get("prof"):
+        top = sorted(_prof.items(), key=lambda x: -x[1])[:60]
+        return web.json_response({"top": top, "total": sum(_prof.values())}, headers=CORS)
     return web.json_response({**_stats, **_bstats, "cooldown": {k: round(v - time.time()) for k, v in _cooldown.items() if v > time.time()}}, headers=CORS)
 
 

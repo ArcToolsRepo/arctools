@@ -124,7 +124,7 @@ async function padAddrs(pad: string): Promise<string[]> {
 }
 
 export const padList = createServerFn({ method: "POST" }).handler(() =>
-  memo("padlist", 15_000, async (): Promise<PadListItem[]> => {
+  memo("padlist", 45_000, async (): Promise<PadListItem[]> => {
     const [a2, a3] = await Promise.all([padAddrs(PAD), padAddrs(PAD_V3)]);
     const owners = [...a2.map((a) => [a, PAD] as const), ...a3.map((a) => [a, PAD_V3] as const)]
       .filter(([a]) => !HIDDEN_TOKENS.has(a.toLowerCase()));

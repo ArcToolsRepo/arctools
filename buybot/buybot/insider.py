@@ -50,11 +50,17 @@ SEL_SYMBOL = "0x95d89b41"
 _sym_cache: dict[str, str] = {}
 
 
+_sym_neg: dict[str, float] = {}
+
+
 async def _symbol(token: str) -> str:
     """Symbol tokena: dynamic string albo bytes32, z cache w pamieci i w bazie."""
     key = token.lower()
     if key in _sym_cache:
         return _sym_cache[key]
+    neg = _sym_neg.get(key)
+    if neg and time.time() - neg < 600:              # unreadable symbol: do not hammer the relay 3× per swap for 10 min
+        return key[2:8].upper()
     row = await db.fetchone(text("SELECT symbol FROM token_symbols WHERE token = :t").bindparams(t=key))
     if row and row["symbol"]:
         _sym_cache[key] = row["symbol"]
@@ -81,6 +87,9 @@ async def _symbol(token: str) -> str:
         except Exception:  # noqa
             await asyncio.sleep(0.5 * (attempt + 1))
     sym = "".join(ch for ch in sym if ch.isprintable())[:24] or "?"
+    if sym == "?":
+        _sym_neg[key] = time.time()
+        return key[2:8].upper()
     if sym != "?":                                  # nieudanych nie utrwalamy — sprobujemy pozniej
         _sym_cache[key] = sym
         await db.execute(text(

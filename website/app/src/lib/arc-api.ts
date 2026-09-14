@@ -68,18 +68,19 @@ const topicAddr = (t: string) => "0x" + t.slice(-40);
 export { pad32, padNum, topicAddr };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function rpc(method: string, params: any[]): Promise<any> {
+export async function rpc(method: string, params: any[], opts?: { priority?: boolean }): Promise<any> {
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     const url = RPCS[attempt % RPCS.length];
     try {
       const res = await fetch(url, {
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(opts?.priority ? 6000 : 8000),
         body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params }),
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
           "User-Agent": "Mozilla/5.0 (compatible; ArcToolsSite/1.0)",
+          ...(opts?.priority ? { "X-Priority": "high" } : {}),   // relay: skip the batch queue (interactive quote)
         },
         method: "POST",
       });
@@ -121,27 +122,36 @@ export async function memo<T>(key: string, ttlMs: number, fn: () => Promise<T>, 
   const inflight = memoInflight.get(key);
   if (inflight && hit) return hit.v as T;
   const store = kv();
-  // tier 2: shared KV (also consulted before joining a slow in-flight compute)
-  if (!hit && store) {
+  // tier 2: shared KV — consulted on a cold isolate AND when this isolate's copy is stale: another isolate (or the
+  // warmer) usually refreshed it already, so we adopt that copy instead of recomputing per isolate (this alone was
+  // N-isolates × every list recompute → most of the relay load)
+  if (store) {
     try {
       const raw = await store.get(`memo:${key}`, "text");
       if (raw) {
         const rec = JSON.parse(raw) as { ts: number; v: T };
-        memoStore.set(key, rec);
+        if (!hit || rec.ts > hit.ts) memoStore.set(key, rec);
         if (now - rec.ts < ttlMs) return rec.v;
-        // stale: refresh in background (unless one is already running), answer now
-        if (!memoInflight.get(key)) keepAlive(refresh());
+        // stale everywhere: refresh in background (unless one is already running here or elsewhere), answer now
+        if (!memoInflight.get(key)) keepAlive(refresh(true));
         return rec.v;
       }
     } catch { /* KV unavailable: fall through */ }
   }
   if (inflight) return inflight as Promise<T>;
-  if (hit) { keepAlive(refresh()); return hit.v as T; }
-  return refresh();
+  if (hit) { keepAlive(refresh(true)); return hit.v as T; }
+  return refresh(false);
 
-  async function refresh(): Promise<T> {
+  async function refresh(background: boolean): Promise<T> {
     const p = (async () => {
       try {
+        // cross-isolate lock: a background refresh is skipped when another isolate started one in the last 20 s
+        if (background && store) {
+          try {
+            if (await store.get(`lock:${key}`, "text")) return (memoStore.get(key)?.v ?? (await fn())) as T;
+            keepAlive(store.put(`lock:${key}`, "1", { expirationTtl: 60 }).catch(() => null));
+          } catch { /* no lock: just refresh */ }
+        }
         // hard ceiling: a hung upstream must never pin the in-flight slot (and every joiner) forever
         const v = await Promise.race([fn(), new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`memo timeout: ${key}`)), MEMO_HARD_TIMEOUT_MS))]);
         // transient failures (RPC down, upstream 5xx) must never be remembered — the next visitor recomputes
@@ -1247,11 +1257,23 @@ function warpMeta(data: string): { image: string | null; twitter: string | null;
 
 async function warpTokens(): Promise<PadToken[]> {
   if (warpCache && Date.now() - warpTs < 5 * 60_000) return warpCache;
+  // shared across isolates (KV) + incremental: the full 400k-block scan (40 eth_getLogs) ran on EVERY cold isolate and
+  // was ~40 % of all relay traffic. Now: one scan ever, then only the blocks since the last scan.
+  return memo<PadToken[]>("warp:tokens:v2", 10 * 60_000, () => warpTokensImpl(), (v) => v.length > 0);
+}
+
+type WarpState = { head: number; tokens: PadToken[] };
+async function warpTokensImpl(): Promise<PadToken[]> {
+  const store = kv();
+  let state: WarpState | null = null;
+  try { const raw = store ? await store.get("warp:state:v1", "text") : null; if (raw) state = JSON.parse(raw) as WarpState; } catch { state = null; }
   const head = Number(toNum((await rpc("eth_blockNumber", [])) as string));
   const factory = "0x0dCad158e98bC24455f9e94F46709d8a5F6D1255";
   const topic = "0x0b4cfda446fdf9ec5a85855f088c154869eb62e3e723d7d80319b680f90e0cfd";
-  const out: PadToken[] = [];
-  const lo = Math.max(0, head - 400_000);
+  const prev: PadToken[] = state ? [...state.tokens] : [];
+  const out: PadToken[] = [];   // newly found in this scan (chronological), merged newest-first below
+  const seen = new Set(prev.map((t) => t.token.toLowerCase()));
+  const lo = state ? Math.max(0, state.head - 50) : Math.max(0, head - 400_000);
   const chunks: { from: number; to: number }[] = [];
   for (let b = lo; b <= head; b += 10_000) chunks.push({ from: b, to: Math.min(b + 9_999, head) });
   const results = await Promise.all(
@@ -1264,6 +1286,8 @@ async function warpTokens(): Promise<PadToken[]> {
   for (const logs of results as { data: string; topics: string[] }[][]) {
     for (const l of logs) {
       const token = topicAddr(l.topics[1]);
+      if (seen.has(token.toLowerCase())) continue;
+      seen.add(token.toLowerCase());
       const wm = warpMeta(l.data);
       out.push({
         createdAt: null,
@@ -1284,9 +1308,13 @@ async function warpTokens(): Promise<PadToken[]> {
     }
   }
   out.reverse();
-  warpCache = out;
+  const merged = [...out, ...prev];
+  // a scan where every chunk failed must not advance the cursor (we would skip launches for good)
+  const scanned = (results as unknown[][]).some((r) => Array.isArray(r) && r.length > 0) || chunks.length <= 2;
+  if (store && (scanned || !state)) keepAlive(store.put("warp:state:v1", JSON.stringify({ head, tokens: merged } satisfies WarpState), { expirationTtl: 30 * 86400 }).catch(() => null));
+  warpCache = merged;
   warpTs = Date.now();
-  return out;
+  return merged;
 }
 
 /**
@@ -1796,7 +1824,7 @@ export const holderRisk = createServerFn({ method: "POST" })
     } catch { return {}; }
   });
 
-type MetaMem = { l?: string | null; n?: string; s?: string; x?: string | null; t?: string | null; w?: string | null; p?: string; ts: number };
+type MetaMem = { l?: string | null; n?: string; s?: string; x?: string | null; t?: string | null; w?: string | null; p?: string; lb?: 1; ts: number };
 let _metaMem: { ts: number; m: Record<string, MetaMem> } | null = null;
 const META_KEY = "tokmeta:v1";
 const bad = (v: string | null | undefined) => !v || v === "?" || v === "NO LOGO";
@@ -1812,12 +1840,27 @@ async function healFromMemory(rows: PadToken[]): Promise<void> {
   const m = _metaMem.m;
   let dirty = 0;
   const now = Date.now();
+  // image-host PAGE links (https://ibb.co/abc, https://imgur.com/abc, postimg.cc/abc) are not images: resolve the real
+  // file via og:image — a few per compute, remembered forever in the metadata memory (key "l" gets the direct URL)
+  const PAGE_HOST = /^https?:\/\/(?:www\.)?(ibb\.co|imgur\.com|postimg\.cc)\/[A-Za-z0-9]+\/?$/i;
+  const toResolve = rows.filter((r) => r.logo && PAGE_HOST.test(r.logo) && !(m[r.token.toLowerCase()]?.l && !PAGE_HOST.test(m[r.token.toLowerCase()].l!)) && !m[r.token.toLowerCase()]?.lb).slice(0, 12);
+  if (toResolve.length) {
+    await Promise.all(toResolve.map(async (r) => {
+      const k = r.token.toLowerCase();
+      try {
+        const html = await fetch(r.logo!, { signal: AbortSignal.timeout(5000), headers: { "User-Agent": "Mozilla/5.0 (compatible; ArcToolsSite/1.0)" } }).then((x) => (x.ok ? x.text() : ""));
+        const og = html.match(/property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1] ?? html.match(/content=["']([^"']+)["'][^>]*property=["']og:image["']/i)?.[1] ?? null;
+        if (og && /^https?:\/\//.test(og)) { r.logo = og; m[k] = { ...(m[k] ?? { ts: now }), l: og, ts: now }; dirty++; }
+        else { m[k] = { ...(m[k] ?? { ts: now }), lb: 1, ts: now }; dirty++; }   // unresolvable: do not retry every compute
+      } catch { /* next compute */ }
+    }));
+  }
   for (const r of rows) {
     const k = r.token.toLowerCase();
     const cur = m[k];
     // heal
     if (cur) {
-      if (bad(r.logo) && cur.l) { r.logo = cur.l; }
+      if ((bad(r.logo) || (PAGE_HOST.test(r.logo!) && cur.l && !PAGE_HOST.test(cur.l))) && cur.l) { r.logo = cur.l; }
       if (bad(r.symbol) && cur.s) r.symbol = cur.s;
       if ((!r.name || r.name === "?") && cur.n) r.name = cur.n;
       if (!r.twitter && cur.x) r.twitter = cur.x;
@@ -1827,7 +1870,7 @@ async function healFromMemory(rows: PadToken[]): Promise<void> {
     // remember (only good values; never overwrite a logo with null)
     const next: MetaMem = { ...(cur ?? { ts: now }) };
     let ch = false;
-    if (!bad(r.logo) && r.logo !== cur?.l) { next.l = r.logo; ch = true; }
+    if (!bad(r.logo) && r.logo !== cur?.l && !(PAGE_HOST.test(r.logo!) && cur?.l)) { next.l = r.logo; ch = true; }
     if (!bad(r.symbol) && r.symbol !== cur?.s) { next.s = r.symbol; ch = true; }
     if (r.name && r.name !== "?" && r.name !== cur?.n) { next.n = r.name; ch = true; }
     if (r.twitter && r.twitter !== cur?.x) { next.x = r.twitter; ch = true; }
@@ -1907,10 +1950,37 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
     .map(relabel).filter((t) => { const k = t.token.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
   {
     const have = new Set(all.map((t) => t.token.toLowerCase()));
+    const fresh: PadToken[] = [];
     for (const [tok, r] of Object.entries(registry)) {
       if (have.has(tok)) continue;
-      all.push({ token: tok, symbol: r.symbol ?? tok.slice(2, 8).toUpperCase(), name: r.symbol ?? "", pad: r.pad, logo: null, mcapUsd: null, priceUsd: null, volUsd: null, pool: null, stage: null,
-        createdAt: r.ts ? new Date(r.ts * 1000).toISOString() : null, venueUrl: r.url ?? `/token/${tok}`, website: null, twitter: null, telegram: null, og: false, dexes: [] } as PadToken);
+      const row = { token: tok, symbol: r.symbol ?? tok.slice(2, 8).toUpperCase(), name: r.symbol ?? "", pad: r.pad, logo: null, mcapUsd: null, priceUsd: null, volUsd: null, pool: null, stage: null,
+        createdAt: r.ts ? new Date(r.ts * 1000).toISOString() : null, venueUrl: r.url ?? `/token/${tok}`, website: null, twitter: null, telegram: null, og: false, dexes: ["v3"] } as PadToken;
+      all.push(row); fresh.push(row);
+    }
+    // symbol + name straight from the contract when the registry has none yet (never show a hex stub as a name)
+    const noSym = fresh.filter((t) => !t.name).slice(0, 120);
+    if (noSym.length) {
+      try {
+        const res = await memo(`padreg:sym:${noSym.map((t) => t.token.slice(2, 8)).join("")}`, 600_000, () =>
+          multicall(noSym.flatMap((t) => [{ data: "0x95d89b41", target: t.token }, { data: "0x06fdde03", target: t.token }]), 60));
+        noSym.forEach((t, i) => {
+          try { const sym = decodeString(res[i * 2]).trim(); if (sym) t.symbol = sym.slice(0, 16); } catch { /* keep stub */ }
+          try { const nm = decodeString(res[i * 2 + 1]).trim(); if (nm) t.name = nm.slice(0, 40); } catch { /* keep stub */ }
+          if (!t.name) t.name = t.symbol;
+        });
+      } catch { /* next compute */ }
+    }
+    // price the factory-registry tokens (eve.fun & co. have no public API): one QuoterV2 multicall, 1M tokens → USDC, 1B supply
+    const toQuote = fresh.filter((t) => t.mcapUsd == null).slice(0, 160);
+    if (toQuote.length) {
+      try {
+        const res = await memo(`padreg:mc:${toQuote.map((t) => t.token.slice(2, 8)).join("")}`, 120_000, () =>
+          multicall(toQuote.map((t) => ({ data: quoteCalldata(t.token, 10n ** 18n * 1_000_000n), target: QUOTER_V2 })), 40));
+        toQuote.forEach((t, i) => {
+          const q = res[i];
+          if (q && q.length >= 66) { const p1m = Number(BigInt("0x" + q.slice(2, 66))) / 1e6; if (p1m > 0) { t.mcapUsd = p1m * 1000; t.priceUsd = p1m / 1e6; } }
+        });
+      } catch { /* priced on the next compute */ }
     }
   }
   // keep the payload small (the Terminal shows 100 rows per tab): newest 600 + top 300 by volume, compact fields

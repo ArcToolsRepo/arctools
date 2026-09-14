@@ -49,6 +49,8 @@ export type RouteResult = {
   single: { label: string; out: string }[];   // per-venue quotes for display
   split: boolean;
   error?: string;
+  /** venue known but no quote could be fetched (RPC busy): out = 0, buyer goes in at market with minOut 0 */
+  unquoted?: boolean;
 };
 
 type Venue = { kind: "v3"; fee: number; label: string } | { kind: "v3path"; mid: string; midSymbol: string; fee1: number; fee2: number; label: string } | { kind: "padquote"; target: string; quote: string; fee1: number; label: string } | { kind: "v4"; key: V4Key; label: string } | { kind: "pad"; target: string; label: string } | { kind: "curve"; target: string; label: string };
@@ -57,7 +59,7 @@ async function call(to: string, data: string): Promise<string | null> {
   // a relay hiccup (502 / timeout) must not make a venue vanish from the route → one quick retry on transport errors
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const r = (await rpc("eth_call", [{ data, to }, "latest"])) as string;
+      const r = (await rpc("eth_call", [{ data, to }, "latest"], { priority: true })) as string;
       return r && r !== "0x" ? r : null;
     } catch (e) {
       const msg = String((e as Error)?.message ?? e);
@@ -244,14 +246,31 @@ export const routeSwap = createServerFn({ method: "POST" })
     // venue discovery is ~8 RPC round-trips (0.3–1 s each through the relay) → remember it for a minute per token,
     // shared across isolates via KV; quotes themselves are always live
     const { memo } = await import("./arc-api");
-    const venues = await memo<Venue[]>(`venues:${token.toLowerCase()}`, 60_000, () => discoverVenues(token), (v) => v.length > 0);
+    let venues = await memo<Venue[]>(`venues:${token.toLowerCase()}`, 300_000, () => discoverVenues(token), (v) => v.length > 0);
+    if (venues.length === 0) {
+      // discovery needs ~8 RPC round-trips; when the public RPCs are melting we still know the venue for most tokens from
+      // the token list (launchpad → pool type). Instant-V3 pads all seed a 1 % USDC pool.
+      try {
+        const { listAllTokensImpl } = await import("./arc-api");
+        const all = await memo("list:__all", 60_000, listAllTokensImpl, (v) => v.length > 50);
+        const t = all.find((x) => x.token.toLowerCase() === token);
+        const V3_PADS = new Set(["Lift", "eve.fun", "ArcPad", "Archemist", "RadarDex", "UniswapV3", "Arguspad V3", "Tolly"]);
+        if (t && V3_PADS.has(t.pad) && !t.quote && !t.stock) venues = [{ kind: "v3", fee: 10000, label: "Uniswap V3 1% (assumed)" }];
+      } catch { /* no list either */ }
+    }
     if (venues.length === 0) return { legs: [], out: "0", single: [], split: false, error: "no venue" };
     const quotes = await Promise.all(venues.map((v) => quoteVenue(v, token, data.side, amount)));
     const ranked = venues
       .map((v, i) => ({ v, out: quotes[i] }))
       .filter((x): x is { v: Venue; out: bigint } => x.out !== null && x.out > 0n)
       .sort((a, b) => (b.out > a.out ? 1 : b.out < a.out ? -1 : 0));
-    if (ranked.length === 0) return { legs: [], out: "0", single: [], split: false, error: "no liquidity" };
+    if (ranked.length === 0) {
+      // every quote failed (RPC busy) but the venue exists: hand back an UNQUOTED single-venue route so the buyer can still
+      // go in at market with minOut = 0 (house rule: speed over protection) — the UI labels it "no quote".
+      const pick = venues.find((v) => v.kind === "v3" && v.fee === 10000) ?? venues.find((v) => v.kind === "v3") ?? venues.find((v) => v.kind === "pad" || v.kind === "curve" || v.kind === "v4") ?? null;
+      if (pick && quotes.some((q) => q === null)) return { legs: [toLeg(pick, amount, 0n)], out: "0", single: [], split: false, unquoted: true };
+      return { legs: [], out: "0", single: [], split: false, error: "no liquidity" };
+    }
     const single = ranked.map((x) => ({ label: x.v.label, out: x.out.toString() }));
     let best: { legs: Leg[]; out: bigint; split: boolean } = { legs: [toLeg(ranked[0].v, amount, ranked[0].out)], out: ranked[0].out, split: false };
     // 2-venue split: only worth it when the runner-up is within 40% of the best (else the split cannot win)

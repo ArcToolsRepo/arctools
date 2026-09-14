@@ -294,6 +294,7 @@ function TokenPage() {
           const r = await routeSwap({ data: { token: ca, side, amount: spend.toString() } });
           setRoute(r);
           if (r.error || r.legs.length === 0) { setQuote(null); return; }
+          if (r.unquoted) { setQuote(0); return; }   // venue known, quoter unreachable (RPC busy): market buy with minOut 0
           const out = BigInt(r.out);
           setQuote(side === "buy"
             ? Number(out / BigInt(10) ** BigInt(Math.max(0, dec - 6))) / 1e6
@@ -361,6 +362,7 @@ function TokenPage() {
       const n = Number(amount);
       if (!n || n <= 0) throw new Error("Enter an amount.");
       if (quote === null) throw new Error("No quote yet.");
+      if (quote === 0 && !(useAgg && route?.unquoted && side === "buy")) throw new Error("No quote yet.");
       setBusy("Confirm in wallet...");
       let hash: string;
       let feeUsdForRef = 0;

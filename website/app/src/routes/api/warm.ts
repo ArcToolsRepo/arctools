@@ -33,10 +33,10 @@ export const Route = createFileRoute("/api/warm")({
         ]);
         // token pages of what people click most (trending + newest) — 6 at a time so upstreams stay happy
         // token pages: only every 4th run (~60 s) — they cost RPC; between runs stale-while-revalidate keeps them instant
-        const runPages = Math.floor(Date.now() / 15_000) % 4 === 0;
+        const runPages = Math.floor(Date.now() / 15_000) % 16 === 0;   // every ~4 min: the public RPCs cannot afford more
         // ArcToolsPad launches + newest 12 + trending 12 + long.supply top: these are the pages people open from the Terminal
         const pads = all.filter((t) => t.pad === "ArcToolsPad").map((t) => t.token);
-        const hot = runPages ? [...new Set([...pads, ...trend.slice(0, 12).map((t) => t.token), ...all.slice(0, 12).map((t) => t.token), ...all.filter((t) => t.pad === "long.supply" && !t.stock).slice(0, 6).map((t) => t.token)])].slice(0, 40) : [];
+        const hot = runPages ? [...new Set([...pads, ...trend.slice(0, 8).map((t) => t.token), ...all.slice(0, 4).map((t) => t.token), ...all.filter((t) => t.pad === "long.supply" && !t.stock).slice(0, 2).map((t) => t.token)])].slice(0, 16) : [];
         let warmed = 0;
         for (let i = 0; i < hot.length; i += 6) {
           await Promise.all(hot.slice(i, i + 6).map((t) => tokenPage({ data: { token: t } }).then(() => { warmed++; }).catch(() => null)));
