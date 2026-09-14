@@ -1886,6 +1886,12 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   }, (v) => v.length > 0).catch(() => [] as PadToken[]);
   // long.supply: memecoins quoted in wrapped stocks + the wrapped stocks themselves (their public API)
   const longs: PadToken[] = await import("@/lib/longsupply").then((m) => m.longSupplyTokens()).catch(() => [] as PadToken[]);
+  // Lift + Ellipse: public APIs with pool, logo, socials, mcap, 24 h volume — these rows win over the bare V3-pool rows of the same tokens
+  const [lift, ellipse] = await Promise.all([
+    import("@/lib/newpads").then((m) => m.liftTokens()).catch(() => [] as PadToken[]),
+    import("@/lib/newpads").then((m) => m.ellipseTokens()).catch(() => [] as PadToken[]),
+  ]);
+  const apiPads = new Set([...lift, ...ellipse].map((t) => t.token.toLowerCase()));
   // launchpad registry (buybot watches each factory): tokens Lift / eve.fun / Ellipse / Sashimi / aka.fun … created — most of them
   // go straight into a Uniswap V3 pool, so they are already in the V3/screener lists; here they get their pad label + venue link
   const registry = await memo<Record<string, { pad: string; padId: string; url: string | null; ts: number; symbol: string | null }>>("padreg", 120_000, async () =>
@@ -1896,7 +1902,9 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
     if (!r || !["UniswapV3", "UniswapV4", "RadarDex", "DYORSwap"].includes(t.pad)) return t;
     return { ...t, pad: r.pad, venueUrl: r.url ? `${r.url}` : t.venueUrl, createdAt: t.createdAt ?? (r.ts ? new Date(r.ts * 1000).toISOString() : null) };
   };
-  const all = [...pad, ...longs, ...order.filter((p) => p !== "RadarDex").flatMap((p) => byName.get(p as typeof ALL_PADS[number]) ?? []), ...v2, ...(byName.get("RadarDex") ?? []), ...screener].map(relabel).filter((t) => { const k = t.token.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  const all = [...pad, ...longs, ...lift, ...ellipse, ...order.filter((p) => p !== "RadarDex").flatMap((p) => byName.get(p as typeof ALL_PADS[number]) ?? []), ...v2, ...(byName.get("RadarDex") ?? []), ...screener]
+    .filter((t) => !(apiPads.has(t.token.toLowerCase()) && t.pad !== "Lift" && t.pad !== "Ellipse"))
+    .map(relabel).filter((t) => { const k = t.token.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
   {
     const have = new Set(all.map((t) => t.token.toLowerCase()));
     for (const [tok, r] of Object.entries(registry)) {
