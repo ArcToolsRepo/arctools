@@ -17,6 +17,12 @@ let scheduled = false;
 const ATTRS = ["title", "placeholder", "aria-label"];
 const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "CODE", "PRE", "TEXTAREA", "NOSCRIPT"]);
 
+/** Audit hook: every English-looking string the dictionary could not translate (read it as window.__i18nMisses). */
+const misses = new Set<string>();
+if (typeof window !== "undefined") (window as unknown as { __i18nMisses: Set<string> }).__i18nMisses = misses;
+const LOOKS_ENGLISH = /[A-Za-z]{3,}/;
+const NOT_TEXT = /^(0x[0-9a-fA-F]{6,}|[\d\s.,%$+\-–—:/·…()KMBkmb]+|https?:\/\/\S+|@\w+|\$?[A-Z0-9]{2,12})$/;
+
 function lookup(en: string): string | null {
   if (!dict) return null;
   const key = en.trim().replace(/\s+/g, " ");   // multi-line JSX paragraphs arrive with newlines + indentation
@@ -24,7 +30,9 @@ function lookup(en: string): string | null {
   const hit = dict[key];
   if (hit) return en.replace(en.trim(), hit);
   const tr = translateKey(key);
-  return tr ? en.replace(en.trim(), tr) : null;
+  if (tr) return en.replace(en.trim(), tr);
+  if (LOOKS_ENGLISH.test(key) && !NOT_TEXT.test(key) && key.length < 400) misses.add(key);
+  return null;
 }
 
 /** Composite strings: "2 red flags", "(3 older than …)", "dev holds 20% · top-10 hold 49%", "Foo:" → translate the parts. */
@@ -44,6 +52,11 @@ function translateKey(key: string, depth = 0): string | null {
   // trailing number: "dev holds 20%"
   m = key.match(/^(.+?)(\s+[-+]?[$]?[\d.,]+[KMB%]?)$/);
   if (m) { const inner = translateKey(m[1].trim(), depth + 1); if (inner) return inner + m[2]; }
+  // "registered 12d ago", "2d ago", "age 12d"
+  m = key.match(/^(.*?)\s*(\d+(?:\.\d+)?[smhdwy])\s+ago$/);
+  if (m) { const pre = m[1].trim(); const preT = pre ? (translateKey(pre, depth + 1) ?? pre) : ""; const ago = dict["ago"] ?? "ago"; return `${preT ? preT + " " : ""}${m[2]} ${ago}`.trim(); }
+  m = key.match(/^(.*?)\s*(\d+(?:\.\d+)?[smhdwy])$/);
+  if (m && m[1].trim()) { const inner = translateKey(m[1].trim(), depth + 1); if (inner) return `${inner} ${m[2]}`; }
   // segments joined by " · "
   if (key.includes(" · ")) {
     const parts = key.split(" · ");
@@ -103,7 +116,7 @@ function schedule(nodes?: Node[]) {
   requestAnimationFrame(() => {
     scheduled = false;
     observer?.disconnect();
-    try { if (nodes) for (const n of nodes) walk(n); else walk(document.body); } finally { observe(); }
+    try { if (nodes) for (const n of nodes) walk(n); else walk(document.body); translateTitle(); } finally { observe(); }
   });
 }
 
@@ -122,18 +135,32 @@ function observe() {
   observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ATTRS });
 }
 
-/** Apply `lang` to the whole document (idempotent; call on every language change). */
+let titleEn: string | null = null;
+function translateTitle() {
+  if (titleEn === null || !document.title.startsWith(titleEn.split(" · ")[0].slice(0, 8))) titleEn = document.title;
+  let want = currentLang === "en" ? titleEn : (lookup(titleEn) ?? titleEn);
+  if (want === titleEn && currentLang !== "en" && dict) {
+    // "LONG · LONG on Arc: chart, trades, swap" → keep the ticker/name, translate the fixed tail
+    const m = titleEn.match(/^(.*?) (on Arc: chart, trades, swap)$/);
+    if (m && dict[m[2]]) want = `${m[1]} ${dict[m[2]]}`;
+  }
+  if (document.title !== want) document.title = want;
+}
+
+/** Apply `lang` to the whole document (idempotent; call on every language change). The first pass is synchronous once the
+ *  dictionary is in memory, and the page stays hidden (data-i18n-pending, set by the head script) until it has run — no
+ *  flash of English. */
 export async function applyLanguage(lang: Lang) {
   if (typeof document === "undefined") return;
   currentLang = lang;
-  if (lang !== "en" && !dict) {
-    const m = await import("./i18n-dict");
-    dict = m.dictFor(lang);
-  } else if (lang !== "en") {
+  misses.clear();
+  if (lang !== "en") {
     const m = await import("./i18n-dict");
     dict = m.dictFor(lang);
   }
   observer?.disconnect();
   walk(document.body);
+  translateTitle();
   observe();
+  delete document.documentElement.dataset.i18nPending;
 }

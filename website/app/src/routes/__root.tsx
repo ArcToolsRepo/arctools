@@ -6,8 +6,7 @@ import {
   createRootRouteWithContext,
   useRouter,
   HeadContent,
-  Scripts,
-} from "@tanstack/react-router";
+  Scripts,, useRouterState } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 import { button } from "@higgsfield/quanta/button";
 import { NotFound } from "@higgsfield/quanta/not-found";
@@ -168,13 +167,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: ReactNode }) {
+  const pathname = useRouterState({ select: (st) => st.location.pathname });
   return (
     <html lang="en" data-theme="default-dark" style={{ colorScheme: "dark" }}>
       {/* Marketplace apps are permanently dark: data-theme is pinned on <html>
           above. Do not add quanta's bootstrapScript/ThemeController, a theme
           toggle, or a light mode. */}
       <head>
-        <script dangerouslySetInnerHTML={{ __html: "try{var t=localStorage.getItem('arctools_theme');if(t)document.documentElement.dataset.theme=t;var l=localStorage.getItem('arctools_lang');if(l)document.documentElement.lang=l;}catch(e){}" }} />
+        {["en", "zh", "es", "ru", "pl"].map((l) => <link hrefLang={l} href={`https://arctools.fun${pathname}?lang=${l}`} key={l} rel="alternate" />)}
+        <script dangerouslySetInnerHTML={{ __html: "try{var t=localStorage.getItem('arctools_theme');if(t)document.documentElement.dataset.theme=t;var q=new URLSearchParams(location.search).get('lang');var l=q||localStorage.getItem('arctools_lang');if(l){document.documentElement.lang=l;if(l!=='en'){document.documentElement.dataset.i18nPending='1';setTimeout(function(){delete document.documentElement.dataset.i18nPending;},700);}}}catch(e){}" }} />
         <HeadContent />
       </head>
       <body className="bg-q-background-primary text-q-text-primary">

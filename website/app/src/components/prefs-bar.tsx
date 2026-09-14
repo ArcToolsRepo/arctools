@@ -10,8 +10,9 @@ export function PrefsBar({ fixed }: { fixed?: boolean }) {
   useEffect(() => {
     if (!open) return;
     const h = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", h); document.addEventListener("keydown", k);
+    return () => { document.removeEventListener("mousedown", h); document.removeEventListener("keydown", k); };
   }, [open]);
   const cur = LANGS.find(([k]) => k === lang) ?? LANGS[0];
   const btn: React.CSSProperties = { alignItems: "center", background: "var(--arc-paper-deep)", border: "1px solid var(--arc-line)", borderRadius: 8, color: "var(--arc-ink)", cursor: "pointer", display: "inline-flex", fontSize: 12, gap: 6, height: 30, padding: "0 10px" };
@@ -26,7 +27,7 @@ export function PrefsBar({ fixed }: { fixed?: boolean }) {
             {LANGS.map(([k, short, name]) => (
               <button aria-selected={k === lang} key={k} onClick={() => { setLang(k); setOpen(false); }} role="option" type="button"
                 style={{ alignItems: "center", background: k === lang ? "rgba(34,197,94,0.14)" : "transparent", border: "none", borderRadius: 7, color: "var(--arc-ink)", cursor: "pointer", display: "flex", fontSize: 12, gap: 10, justifyContent: "space-between", padding: "8px 10px", width: "100%" }}>
-                <span>{name}</span><span style={{ color: "var(--arc-muted)" }}>{short}</span>
+                <span>{name}</span><span style={{ color: k === lang ? "var(--arc-up)" : "var(--arc-muted)" }}>{k === lang ? "✓" : short}</span>
               </button>
             ))}
           </div>

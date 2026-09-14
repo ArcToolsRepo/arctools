@@ -101,9 +101,14 @@ const listeners = new Set<() => void>();
 
 function readPrefs() {
   try {
-    const l = localStorage.getItem("arctools_lang") as Lang | null;
-    if (l && LANGS.some(([k]) => k === l)) _lang = l;
-    else { const nav = (navigator.language || "en").slice(0, 2).toLowerCase(); if (LANGS.some(([k]) => k === nav)) _lang = nav as Lang; }
+    const valid = (x: string | null): x is Lang => !!x && LANGS.some(([k]) => k === x);
+    // priority: ?lang=xx in the URL (shareable, then remembered) → saved preference → browser language → English
+    const q = new URLSearchParams(location.search).get("lang");
+    const saved = localStorage.getItem("arctools_lang");
+    const nav = (navigator.language || "en").slice(0, 2).toLowerCase();
+    if (valid(q)) { _lang = q; try { localStorage.setItem("arctools_lang", q); } catch { /* ignore */ } }
+    else if (valid(saved)) _lang = saved;
+    else if (valid(nav)) _lang = nav;
     const t = localStorage.getItem("arctools_theme") as Theme | null;
     if (t === "light" || t === "dark") _theme = t;
   } catch { /* SSR / privacy mode */ }

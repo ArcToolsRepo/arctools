@@ -852,3 +852,5 @@ html[data-theme="light"] [style*="color: rgb(124, 136, 158)"] { color: #5c6880 !
 html[data-theme="light"] [style*="color: rgb(245, 197, 66)"] { color: #a16207 !important; }
 html[data-theme="light"] [style*="color: rgb(124, 196, 255)"], html[data-theme="light"] [style*="border: 1px solid rgb(124, 196, 255)"] { color: #1f6fe0 !important; border-color: #1f6fe0 !important; }
 html[data-theme="light"] .arc-toasts > *, html[data-theme="light"] .arc-sysstatus > * { background-color: #ffffff !important; }
+/* no flash of English: the head script marks the page pending until the first dictionary pass (max 700 ms) */
+html[data-i18n-pending] body { visibility: hidden; }
