@@ -73,8 +73,13 @@ async def resolve_v4_key(token: str, blocks_back: int = 100_000) -> dict | None:
                    "fee": int(best["fee"]), "tick_spacing": int(best["tick_spacing"]), "hooks": best["hooks"]}
             _v4_keys[t] = key
             return key
+        if isinstance(j, dict) and "pools" in j:
+            # the index answered and knows no V4 pool for this token — trust it; a 100k-block log scan
+            # on a bad RPC day cost 15+ s per buy for nothing
+            return None
     except Exception as e:  # noqa
         log.debug("v4pool api: %s", e)
+    blocks_back = min(blocks_back, 20_000)
     try:
         head = await CHAIN.w3.eth.block_number
         tok_topic = "0x" + t[2:].rjust(64, "0")
@@ -205,7 +210,7 @@ class Pad:
         token = to_checksum_address(token)
         if self.router_kind == "univ3":
             router = to_checksum_address(self.cfg.get("router") or CFG.univ3_router)
-            fee = int(self.cfg.get("fee_tier", 10000))
+            fee = int(curve["fee"]) if isinstance(curve, dict) and curve.get("fee") else int(self.cfg.get("fee_tier", 10000))
             amount_in = usdc_units(amount_usdc)
             params = abi_encode(
                 ["(address,address,uint24,address,uint256,uint256,uint160)"],
@@ -260,7 +265,7 @@ class Pad:
         token = to_checksum_address(token)
         if self.router_kind == "univ3":
             router = to_checksum_address(self.cfg.get("router") or CFG.univ3_router)
-            fee = int(self.cfg.get("fee_tier", 10000))
+            fee = int(curve["fee"]) if isinstance(curve, dict) and curve.get("fee") else int(self.cfg.get("fee_tier", 10000))
             params = abi_encode(
                 ["(address,address,uint24,address,uint256,uint256,uint160)"],
                 [(token, to_checksum_address(CFG.wrapped_usdc), fee,
@@ -324,21 +329,65 @@ def v4_pad() -> Pad | None:
     return pad_by_name("UniswapV4") or next((p for p in PADS if p.router_kind == "univ4"), None)
 
 
-async def auto_pad(token: str) -> tuple[Pad | None, dict | None]:
-    """Venue for a manual buy of an arbitrary token: canonical V3 pool -> UniswapV3; else V4 pool -> univ4 pad
-    with its PoolKey; else default. Returns (pad, curve_or_key)."""
+async def _v3_tier_probe(token: str, fee: int, amount_usdc: float) -> tuple[int, int, int]:
+    """(fee, quoted_out, liquidity) for one V3 fee tier; zeros when the pool is missing/unquotable."""
+    tok = to_checksum_address(token); usdc = to_checksum_address(CFG.wrapped_usdc)
+    data = _sel("getPool(address,address,uint24)") + abi_encode(["address", "address", "uint24"], [tok, usdc, fee])
+    res = await CHAIN.call_any(lambda w3, d=data: w3.eth.call({"to": to_checksum_address(CFG.univ3_factory), "data": d}))
+    pool = int.from_bytes(res[-20:], "big")
+    if pool == 0:
+        return fee, 0, 0
+    pool_addr = to_checksum_address("0x" + res[-20:].hex())
+
+    async def _quote():
+        d = _sel("quoteExactInputSingle((address,address,uint256,uint24,uint160))") + abi_encode(
+            ["(address,address,uint256,uint24,uint160)"], [(usdc, tok, usdc_units(max(amount_usdc, 0.01)), fee, 0)])
+        r = await CHAIN.call_any(lambda w3, dd=d: w3.eth.call({"to": to_checksum_address(CFG.univ3_quoter), "data": dd}))
+        return int.from_bytes(r[:32], "big")
+
+    async def _liq():
+        r = await CHAIN.call_any(lambda w3: w3.eth.call({"to": pool_addr, "data": _sel("liquidity()")}))
+        return int.from_bytes(r[:32], "big")
+    q, l = await asyncio.gather(_quote(), _liq(), return_exceptions=True)
+    return fee, (q if isinstance(q, int) else 0), (l if isinstance(l, int) else 0)
+
+
+async def auto_pad(token: str, amount_usdc: float = 1.0) -> tuple[Pad | None, dict | None]:
+    """Venue for a manual buy of an arbitrary token. Every candidate is probed IN PARALLEL:
+    V3 fee tiers (real QuoterV2 quote + pool liquidity) and the V4 PoolKey. The V3 tier that actually quotes wins
+    (fee travels with the order as {"fee": N} — the router is never called on a tier without a pool);
+    no V3 quote → V4 if a pool exists → V3 tier that merely has liquidity (buy at any cost) → stock hop → default."""
+    tasks = [asyncio.create_task(_v3_tier_probe(token, f, amount_usdc)) for f in (10000, 3000, 500)]
+    tiers: list[tuple] = []
+    deadline = time.monotonic() + 8
     try:
-        for fee in (10000, 3000, 500):
-            data = _sel("getPool(address,address,uint24)") + abi_encode(
-                ["address", "address", "uint24"], [to_checksum_address(token), to_checksum_address(CFG.wrapped_usdc), fee])
-            res = await CHAIN.call_any(lambda w3, d=data: w3.eth.call({"to": to_checksum_address(CFG.univ3_factory), "data": d}))
-            if int.from_bytes(res[-20:], "big") != 0:
-                return default_pad(), None
-    except Exception as e:  # noqa
-        log.debug("auto_pad v3: %s", e)
-    key = await resolve_v4_key(token)
+        pending = set(tasks)
+        while pending and time.monotonic() < deadline:
+            done, pending = await asyncio.wait(pending, timeout=max(0.05, deadline - time.monotonic()),
+                                               return_when=asyncio.FIRST_COMPLETED)
+            for t in done:
+                r = t.result() if not t.exception() else None
+                if isinstance(r, tuple):
+                    tiers.append(r)
+                    if r[1] > 0:  # speed over the last basis point: the first tier that really quotes wins
+                        log.info("auto_pad %s: V3 fee %s (quoted)", token[:10], r[0])
+                        return default_pad(), {"fee": r[0]}
+    finally:
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+    try:
+        key = await asyncio.wait_for(resolve_v4_key(token), timeout=8)
+    except Exception:  # noqa
+        key = None
     if key and v4_pad():
+        log.info("auto_pad %s: V4 pool", token[:10])
         return v4_pad(), key
+    with_liq = [t for t in tiers if t[2] > 0]
+    if with_liq:
+        fee = max(with_liq, key=lambda t: t[2])[0]
+        log.info("auto_pad %s: V3 fee %s (liquidity only)", token[:10], fee)
+        return default_pad(), {"fee": fee}
     # long.supply launches: only market is a V3 pool quoted in a wrapped stock → hop USDC -> stock -> token
     hop = await resolve_stock_hop(token)
     if hop:

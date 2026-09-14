@@ -530,7 +530,7 @@ async def sn_arm(cb: CallbackQuery):
         if s["pad"] != "auto":
             pad = pad_by_name(s["pad"])
         else:
-            pad, key = await auto_pad(s["token"])   # canonical V3 -> V3; else Uniswap V4 PoolKey
+            pad, key = await auto_pad(s["token"], s["amount_usdc"])   # quoted V3 tier -> V3 (+fee); else Uniswap V4 PoolKey
 
         async def _sent(h: str):
             try:

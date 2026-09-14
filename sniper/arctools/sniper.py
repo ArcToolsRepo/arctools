@@ -177,6 +177,13 @@ async def execute_sell(tg_id: int, pos: dict, pct: int, gas_mode: str = "turbo")
             curve = _json.loads(curve) if (isinstance(curve, str) and curve.startswith("{")) else await resolve_v4_key(token)
             if not curve:
                 return {"ok": False, "err": "no Uniswap V4 pool for this token"}
+        if pad.router_kind == "univ3":
+            import json as _json
+            curve = _json.loads(curve) if (isinstance(curve, str) and curve.startswith("{")) else None
+            if not (isinstance(curve, dict) and curve.get("fee")):
+                from .pads import auto_pad as _ap
+                _pad, _key = await _ap(token)          # find the tier that really has the pool
+                curve = _key if (_pad is pad and isinstance(_key, dict)) else curve
         to, data, approve_spender = pad.sell_calldata(token, acct.address, amount,
                                                       min_out=0, curve=curve)
         await ensure_allowance(acct, token, approve_spender, amount, gas_mode)
