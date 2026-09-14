@@ -114,6 +114,12 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
   const [typeOpen, setTypeOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [theme, setTheme] = useState(() => themeColors());
+  const [h, setH] = useState<number>(() => { try { const v = Number(localStorage.getItem("arc_chart_h")); return v >= 260 && v <= 1400 ? v : height; } catch { return height; } });
+  const dragRef = useRef<{ y0: number; h0: number } | null>(null);
+  const onHandleDown = (e: React.PointerEvent) => { dragRef.current = { y0: e.clientY, h0: h }; (e.target as HTMLElement).setPointerCapture(e.pointerId); };
+  const onHandleMove = (e: React.PointerEvent) => { const d = dragRef.current; if (!d) return; setH(Math.max(260, Math.min(1400, d.h0 + (e.clientY - d.y0)))); };
+  const onHandleUp = () => { if (!dragRef.current) return; dragRef.current = null; try { localStorage.setItem("arc_chart_h", String(h)); } catch { /* ignore */ } };
+  useEffect(() => { try { localStorage.setItem("arc_chart_h", String(h)); } catch { /* ignore */ } }, [h]);
 
   const dkey = storageKey ? `arc_draw:${storageKey.toLowerCase()}:${interval ?? "x"}` : null;
   const scaleRef = useRef(scale); const modeRef = useRef(mode); const stepRef = useRef(60); const candlesRef = useRef(candles); const drawingsRef = useRef<Drawing[]>([]);
@@ -497,6 +503,8 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
         <span style={{ marginLeft: "auto" }} />
         <button onClick={fit} style={bar(false)} type="button" title="fit all bars">⤢ fit</button>
         <button onClick={realtime} style={bar(false)} type="button" title="jump to the latest bar">⏵ live</button>
+        <button onClick={() => setH((v) => Math.max(260, v - 120))} style={bar(false)} type="button" title="shorter chart">▁</button>
+        <button onClick={() => setH((v) => Math.min(1400, v + 120))} style={bar(false)} type="button" title="taller chart">▇</button>
         <button onClick={screenshot} style={bar(false)} type="button" title="download PNG">📷</button>
         <button onClick={toggleFs} style={bar(fs)} type="button" title="fullscreen">{fs ? "⤡" : "⛶"}</button>
       </div>
@@ -539,7 +547,7 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
               {tool === "level" ? "click a price to drop a level" : pending ? "click the second point" : `click the first point (${tool})`} · Esc to exit
             </div>
           )}
-          <div ref={box} style={{ height: fs ? "100%" : height, minHeight: fs ? 300 : undefined, width: "100%", cursor: tool !== "none" ? "crosshair" : undefined }} />
+          <div ref={box} style={{ height: fs ? "100%" : h, minHeight: fs ? 300 : undefined, width: "100%", cursor: tool !== "none" ? "crosshair" : undefined }} />
           {measure && (
             <div className="arc-mono" onClick={() => setMeasure(null)} style={{ background: "rgba(14,17,24,0.95)", border: "1px solid #f5c542", borderRadius: 6, color: "#f5c542", fontSize: 11, left: Math.max(4, Math.min(measure.x + 12, (box.current?.clientWidth ?? 400) - 200)), lineHeight: "16px", padding: "6px 9px", position: "absolute", top: Math.max(4, measure.y - 60), zIndex: 5, whiteSpace: "nowrap" }}>
               {measure.text.map((t, i) => <div key={i} style={{ color: i ? "#c3cddc" : undefined, fontWeight: i ? 400 : 700 }}>{t}</div>)}
@@ -559,6 +567,12 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
           )}
         </div>
       </div>
+      {!fs && (
+        <div className="arc-chart-resize" onPointerDown={onHandleDown} onPointerMove={onHandleMove} onPointerUp={onHandleUp} onPointerCancel={onHandleUp}
+          title="drag to resize the chart" style={{ alignItems: "center", cursor: "ns-resize", display: "flex", height: 14, justifyContent: "center", touchAction: "none", userSelect: "none", width: "100%" }}>
+          <span style={{ background: "rgba(120,135,160,0.5)", borderRadius: 2, display: "block", height: 4, width: 56 }} />
+        </div>
+      )}
     </div>
   );
 }

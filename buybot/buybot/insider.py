@@ -1238,11 +1238,95 @@ async def api_board(request: web.Request) -> web.Response:
     return web.json_response({"range": rng, "rows": [dict(r) for r in rows]}, headers=API_CORS)
 
 
+_wstats_cache: dict[str, tuple[float, list[dict]]] = {}
+
+
+async def wallet_stats_live(w: str) -> list[dict]:
+    """Avg-cost PnL for ONE wallet over 7d / 30d / all — same maths as the leaderboard, but for any address
+    (the leaderboard table only keeps the ranked top-200). Cached 3 min."""
+    hit = _wstats_cache.get(w)
+    if hit and time.time() - hit[0] < 180:
+        return hit[1]
+    now = int(time.time())
+    rows = await db.fetchall(text("""
+        SELECT token, ts, side, usdc, tokens FROM swaps WHERE wallet = :w AND ts > :since ORDER BY ts
+    """).bindparams(w=w, since=now - RANGES["all"]))
+    if not rows:
+        _wstats_cache[w] = (time.time(), [])
+        return []
+    toks = list({r["token"] for r in rows})
+    prices = await db.fetchall(text("""
+        WITH recent AS (
+            SELECT token, price1m, ROW_NUMBER() OVER (PARTITION BY token ORDER BY ts DESC) AS rn
+            FROM swaps WHERE token = ANY(:toks) AND usdc >= :dust AND price1m > 0
+        )
+        SELECT token, percentile_cont(0.5) WITHIN GROUP (ORDER BY price1m) AS price1m
+        FROM recent WHERE rn <= 5 GROUP BY token
+    """).bindparams(toks=toks, dust=PRICE_MIN_USD))
+    price_map = {p["token"]: float(p["price1m"] or 0) for p in prices}
+    out = []
+    for rng, span in RANGES.items():
+        since = now - span
+        agg: dict[str, dict] = {}
+        for r in rows:
+            if int(r["ts"]) <= since:
+                continue
+            a = agg.setdefault(r["token"], {"buy_usd": 0.0, "buy_tok": 0.0, "sell_usd": 0.0, "sell_tok": 0.0, "n": 0, "last": 0})
+            if r["side"] == "buy":
+                a["buy_usd"] += float(r["usdc"] or 0); a["buy_tok"] += float(r["tokens"] or 0)
+            else:
+                a["sell_usd"] += float(r["usdc"] or 0); a["sell_tok"] += float(r["tokens"] or 0)
+            a["n"] += 1; a["last"] = max(a["last"], int(r["ts"]))
+        st = {"best": (None, 0.0), "closed": 0, "last": 0, "open": 0, "pnl_r": 0.0, "pnl_u": 0.0, "spent": 0.0, "trades": 0, "vol": 0.0, "wins": 0}
+        for tok, a in agg.items():
+            st["trades"] += a["n"]; st["vol"] += a["buy_usd"] + a["sell_usd"]; st["last"] = max(st["last"], a["last"])
+            if a["buy_tok"] <= 0:
+                continue
+            avg_cost = a["buy_usd"] / a["buy_tok"]
+            sold = min(a["sell_tok"], a["buy_tok"])
+            proceeds = a["sell_usd"] * (sold / a["sell_tok"]) if a["sell_tok"] > 0 else 0.0
+            realized = proceeds - sold * avg_cost
+            remaining = max(0.0, a["buy_tok"] - a["sell_tok"])
+            cost_open = remaining * avg_cost
+            value_open = min(remaining / 1e6 * price_map.get(tok, 0), cost_open * UNREAL_CAP)
+            unrealized = value_open - cost_open
+            st["pnl_r"] += realized; st["pnl_u"] += unrealized; st["spent"] += a["buy_usd"]
+            if a["sell_tok"] > 0:
+                st["closed"] += 1
+                if realized > 0:
+                    st["wins"] += 1
+            if remaining > 0:
+                st["open"] += 1
+            if realized + unrealized > st["best"][1]:
+                st["best"] = (tok, realized + unrealized)
+        if st["trades"] == 0:
+            continue
+        best_sym = ""
+        if st["best"][0]:
+            try:
+                best_sym = await _symbol(st["best"][0])
+            except Exception:  # noqa
+                best_sym = ""
+        pnl = st["pnl_r"] + st["pnl_u"]
+        out.append({"wallet": w, "range": rng, "pnl_realized": st["pnl_r"], "pnl_unrealized": st["pnl_u"], "pnl_total": pnl,
+                    "pnl_pct": (pnl / st["spent"] * 100) if st["spent"] > 0 else 0, "winrate": (st["wins"] / st["closed"] * 100) if st["closed"] else 0,
+                    "trades": st["trades"], "closed": st["closed"], "volume": st["vol"], "best_token": st["best"][0] or "", "best_symbol": best_sym,
+                    "best_pnl": st["best"][1], "last_trade": st["last"], "bot_suspect": 0, "open_positions": st["open"], "live": 1})
+    _wstats_cache[w] = (time.time(), out)
+    return out
+
+
 async def api_wallet(request: web.Request) -> web.Response:
     w = request.match_info["wallet"].lower()
     if not (w.startswith("0x") and len(w) == 42):
         return web.json_response({"error": "bad wallet"}, status=400, headers=API_CORS)
     stats = await db.fetchall(text("SELECT * FROM wallet_stats WHERE wallet = :w").bindparams(w=w))
+    if not stats:
+        try:
+            stats = await asyncio.wait_for(wallet_stats_live(w), timeout=8)
+        except Exception as e:  # noqa
+            log.debug("wallet_stats_live %s: %s", w, e)
+            stats = []
     trades = await db.fetchall(text(
         "SELECT tx, ts, token, side, usdc, tokens, price1m, venue FROM swaps "
         "WHERE wallet = :w ORDER BY ts DESC LIMIT 25").bindparams(w=w))

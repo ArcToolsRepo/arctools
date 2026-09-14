@@ -895,3 +895,6 @@ html[data-i18n-pending] body { visibility: hidden; }
 html[data-theme="light"] .arc-chart-draw button, html[data-theme="light"] .arc-chart-tools button { background: #ffffff !important; color: #3c4658 !important; border-color: rgba(15,21,34,0.18) !important; }
 html[data-theme="light"] .arc-chart-draw { border-right-color: rgba(15,21,34,0.12) !important; }
 @media (max-width: 720px) { .arc-chart-draw { width: 44px !important; } .arc-chart-legend { font-size: 10px !important; } .arc-chart-tools button { min-height: 34px !important; } }
+.arc-chart-resize:hover span, .arc-chart-resize:active span { background: var(--arc-cobalt) !important; width: 90px !important; }
+.arc-chart-resize { transition: background .12s; border-top: 1px solid rgba(60,70,90,0.25); }
+.arc-chart-resize:hover { background: rgba(46,124,255,0.08); }
