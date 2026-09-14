@@ -119,6 +119,8 @@ function applyDom() {
   if (typeof document === "undefined") return;
   document.documentElement.lang = _lang;
   document.documentElement.dataset.theme = _theme;
+  // whole-page dictionary pass (text nodes + title/placeholder), kept in sync by a MutationObserver
+  void import("./i18n-dom").then((m) => m.applyLanguage(_lang)).catch(() => null);
 }
 function emit() { for (const l of listeners) l(); }
 
