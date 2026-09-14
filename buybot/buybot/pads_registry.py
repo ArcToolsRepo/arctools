@@ -1,0 +1,144 @@
+"""Launchpad registry — who launched which token.
+
+Many Arc launchpads (Lift, eve.fun, Ellipse, Sashimi, aka.fun …) create the token AND seed a Uniswap V3 pool in the same
+transaction, so their tokens already trade through our aggregator; what is missing is the *label* ("launched on Lift")
+and the venue link. This module watches each factory's transactions, pulls the receipt, takes every fresh ERC-20 mint
+(Transfer from 0x0, excluding the V3 position NFT) as the launched token and stores token → pad.
+
+  GET /api/pad-tokens            → {tokens: {<token>: {pad, url, twitter, ts, tx, factory}}, pads: [...]}
+  GET /api/pad-tokens?pad=lift   → same, one pad
+Config-only extension: add a factory address to FACTORIES.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import time
+
+import aiohttp
+from aiohttp import web
+from sqlalchemy import text
+
+from . import db
+
+log = logging.getLogger("pads")
+CORS = {"Access-Control-Allow-Origin": "*"}
+RELAY = os.getenv("RELAY_URL", "https://rpc-production-ba7a.up.railway.app")
+SCAN = "https://api.arc-scan.org/v1"
+TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+V3_POS_NFT = "0x39654a85a4c05127f5fd6ed22caec077a0fb1377"
+
+# name → (label, url, twitter, [factory addresses], note)
+FACTORIES: dict[str, dict] = {
+    "lift":     {"label": "Lift",        "url": "https://lift.fun",      "twitter": "liftdotfun",      "factories": ["0x3f29dd25d1f6ad3d09d1d4a880f8a869e3039153"], "model": "instant V3 pool"},
+    "eve":      {"label": "eve.fun",     "url": "https://www.eve.fun",   "twitter": "eve_dot_fun",     "factories": ["0x05bf9d713e1f58779ad4dd8d6fef4c7529c7323a", "0xd51e6217bb3bc7586866713854ea75b7beff1009"], "model": "instant V3 pool"},
+    "ellipse":  {"label": "Ellipse",     "url": "https://ellipse.fun",   "twitter": "rwarcdotfun",     "factories": ["0x3daea5925dc688b7636065439d0b84760f285602"], "model": "V3 pool quoted in bridged CRCL / GLD / USDT"},
+    "sashimi":  {"label": "Sashimi",     "url": "https://sashimi.fun",   "twitter": "sashimidotfun",   "factories": ["0x0d85ac76baaed7a46cb5133b57bce7d8f9a44d58", "0x5b7bf9bd9c35a845ec1d469ed58616e7076a6f5c"], "model": "bonding curve"},
+    "aka":      {"label": "aka.fun",     "url": "https://aka.fun",       "twitter": "akadotfun",       "factories": ["0x268b41c0614d066dfc858455cb8f733deb3b04cc"], "model": "DN404"},
+    "arcane":   {"label": "Arcane",      "url": "https://arcane.fi",     "twitter": "Arcanedotfi",     "factories": ["0x2dca1c5acdcf362c6b61d91ec4661a410fe4e178", "0x86dfced95ad9231f3cbe0c73d4cb9d555357301c"], "model": "AMM"},
+}
+
+
+async def init():
+    await db.execute(text("CREATE TABLE IF NOT EXISTS pad_tokens (token VARCHAR(64) PRIMARY KEY, pad VARCHAR(24), factory VARCHAR(64), tx VARCHAR(80), ts BIGINT, symbol VARCHAR(64))"))
+    await db.execute(text("CREATE INDEX IF NOT EXISTS pad_tokens_pad ON pad_tokens (pad)"))
+    await db.execute(text("CREATE TABLE IF NOT EXISTS pad_cursor (factory VARCHAR(64) PRIMARY KEY, last_hash VARCHAR(80), ts BIGINT)"))
+    asyncio.create_task(registry_loop(), name="pads-registry")
+
+
+async def _rpc(s: aiohttp.ClientSession, method: str, params: list):
+    async with s.post(RELAY, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params}, timeout=aiohttp.ClientTimeout(total=25)) as r:
+        return (await r.json(content_type=None)).get("result")
+
+
+async def _symbol(s: aiohttp.ClientSession, token: str) -> str | None:
+    try:
+        r = await _rpc(s, "eth_call", [{"to": token, "data": "0x95d89b41"}, "latest"])
+        if not r or len(r) < 130:
+            return None
+        n = int(r[66:130], 16)
+        return bytes.fromhex(r[130:130 + n * 2]).decode("utf-8", "ignore")[:32] or None
+    except Exception:  # noqa
+        return None
+
+
+async def scan_factory(s: aiohttp.ClientSession, pad: str, factory: str, full: bool = False) -> int:
+    cur = await db.fetchone(text("SELECT last_hash FROM pad_cursor WHERE factory = :f").bindparams(f=factory))
+    last = cur["last_hash"] if cur else None
+    found = 0
+    cursor = None
+    newest = None
+    for page in range(30 if full or not last else 3):
+        url = f"{SCAN}/address/{factory}/txs?limit=100" + (f"&cursor={cursor}" if cursor else "")
+        async with s.get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; ArcTools/1.0)"}, timeout=aiohttp.ClientTimeout(total=30)) as r:
+            j = await r.json(content_type=None)
+        items = j.get("items") or []
+        if not items:
+            break
+        if newest is None:
+            newest = items[0]["hash"]
+        stop = False
+        for t in items:
+            if t["hash"] == last:
+                stop = True
+                break
+            if str(t.get("status", "")).lower() not in ("success", "1", "true", "ok"):
+                continue
+            rc = await _rpc(s, "eth_getTransactionReceipt", [t["hash"]]) or {}
+            logs = rc.get("logs") or []
+            mints = []
+            for l in logs:
+                tp = l.get("topics") or []
+                if len(tp) >= 3 and tp[0] == TRANSFER and int(tp[1], 16) == 0 and l["address"].lower() != V3_POS_NFT:
+                    if l["address"].lower() not in mints:
+                        mints.append(l["address"].lower())
+            for tok in mints[:1]:      # the launched token is the first fresh mint in the tx
+                sym = await _symbol(s, tok)
+                await db.execute(text("INSERT INTO pad_tokens (token, pad, factory, tx, ts, symbol) VALUES (:t, :p, :f, :h, :ts, :s) ON CONFLICT (token) DO NOTHING")
+                                 .bindparams(t=tok, p=pad, f=factory, h=t["hash"], ts=int(t["timestamp"]), s=sym))
+                found += 1
+        if stop:
+            break
+        cursor = (j.get("page") or {}).get("next")
+        if not cursor:
+            break
+    if newest:
+        await db.execute(text("INSERT INTO pad_cursor (factory, last_hash, ts) VALUES (:f, :h, :ts) ON CONFLICT (factory) DO UPDATE SET last_hash = EXCLUDED.last_hash, ts = EXCLUDED.ts")
+                         .bindparams(f=factory, h=newest, ts=int(time.time())))
+    return found
+
+
+async def registry_loop():
+    await asyncio.sleep(45)
+    first = True
+    while True:
+        try:
+            async with aiohttp.ClientSession() as s:
+                for pad, cfg in FACTORIES.items():
+                    for f in cfg["factories"]:
+                        try:
+                            n = await scan_factory(s, pad, f, full=first)
+                            if n:
+                                log.info("pads: %s +%s tokens from %s", pad, n, f[:10])
+                        except Exception as e:  # noqa
+                            log.warning("pads %s %s: %s", pad, f[:10], e)
+        except Exception as e:  # noqa
+            log.warning("pads loop: %s", e)
+        first = False
+        await asyncio.sleep(180)
+
+
+async def api_pad_tokens(req: web.Request):
+    pad = req.query.get("pad")
+    rows = await db.fetchall(text("SELECT token, pad, factory, tx, ts, symbol FROM pad_tokens" + (" WHERE pad = :p" if pad else "") + " ORDER BY ts DESC").bindparams(**({"p": pad} if pad else {})))
+    out = {}
+    for r in rows:
+        cfg = FACTORIES.get(r["pad"], {})
+        out[r["token"]] = {"pad": cfg.get("label", r["pad"]), "padId": r["pad"], "url": cfg.get("url"), "twitter": cfg.get("twitter"), "ts": r["ts"], "tx": r["tx"], "factory": r["factory"], "symbol": r["symbol"]}
+    pads = [{"id": k, **{kk: vv for kk, vv in v.items() if kk != "factories"}, "factories": v["factories"], "count": sum(1 for r in rows if r["pad"] == k)} for k, v in FACTORIES.items()]
+    return web.json_response({"tokens": out, "pads": pads}, headers={**CORS, "Cache-Control": "public, max-age=60"})
+
+
+def register(app: web.Application):
+    app.router.add_get("/api/pad-tokens", api_pad_tokens)

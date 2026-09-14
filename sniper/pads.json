@@ -118,7 +118,7 @@
    "event_topic": "0x1d8917231579f8ce39407f0d616f36f357b07329b0ce5164d0754ac15145ce0a",
    "token_arg_index": 0,
    "router_kind": "univ4",
-   "_comment": "arguspad.io: Uniswap V4 pool with Argus hook 0xa368005a\u2026; PoolKey taken from Initialize in the launch tx."
+   "_comment": "arguspad.io: Uniswap V4 pool with Argus hook 0xa368005a…; PoolKey taken from Initialize in the launch tx."
   },
   {
    "name": "Arguspad V3",
@@ -149,7 +149,7 @@
    "factory": "",
    "event_topic": "",
    "router_kind": "univ4",
-   "_comment": "generic Uniswap V4 venue for manual buys (auto_pad) \u2014 no launch watching (PoolManager Initialize is chain-wide; the Insider index covers it)."
+   "_comment": "generic Uniswap V4 venue for manual buys (auto_pad) — no launch watching (PoolManager Initialize is chain-wide; the Insider index covers it)."
   },
   {
    "name": "long.supply",
@@ -159,6 +159,42 @@
    "event_topic": "",
    "router_kind": "v3path",
    "_comment": "long.supply launches: Uniswap V3 pools quoted in a wrapped stock (CRCL/NVDA/...). Buys/sells go USDC -> stock -> token via SwapRouter02.exactInput; the hop (mid token + tiers) comes from the ArcTools route API (auto_pad)."
+  },
+  {
+   "name": "Lift",
+   "enabled": true,
+   "type": "instant_pool",
+   "factory": "0x3f29dd25d1f6ad3d09d1d4a880f8a869e3039153",
+   "event_topic": "0x71582b1e394dd933fcf7022c7300634213054be56aacc2f5becdc88fd79d664e",
+   "token_arg_index": 0,
+   "router": "0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77",
+   "router_kind": "univ3",
+   "fee_tier": 10000,
+   "_comment": "lift.fun (@liftdotfun): token + Uniswap V3 1% USDC pool in the launch tx; 0.1 USDC launch fee. Token = topics[1] of the factory event."
+  },
+  {
+   "name": "eve.fun",
+   "enabled": true,
+   "type": "instant_pool",
+   "factory": "0x05bf9d713e1f58779ad4dd8d6fef4c7529c7323a",
+   "event_topic": "0xf0ac7386d69b8cc4439c0d5c4ad286bae98d510fcdc1eb2e1b47b73503c1a321",
+   "token_arg_index": 0,
+   "router": "0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77",
+   "router_kind": "univ3",
+   "fee_tier": 10000,
+   "_comment": "eve.fun (@eve_dot_fun) factory #1: instant Uniswap V3 1% USDC pool. Token = topics[1]."
+  },
+  {
+   "name": "eve.fun v2",
+   "enabled": true,
+   "type": "instant_pool",
+   "factory": "0xd51e6217bb3bc7586866713854ea75b7beff1009",
+   "event_topic": "0xf0ac7386d69b8cc4439c0d5c4ad286bae98d510fcdc1eb2e1b47b73503c1a321",
+   "token_arg_index": 0,
+   "router": "0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77",
+   "router_kind": "univ3",
+   "fee_tier": 10000,
+   "_comment": "eve.fun second factory, same event."
   }
  ]
 }

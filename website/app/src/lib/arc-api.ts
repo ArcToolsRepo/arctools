@@ -1886,7 +1886,25 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   }, (v) => v.length > 0).catch(() => [] as PadToken[]);
   // long.supply: memecoins quoted in wrapped stocks + the wrapped stocks themselves (their public API)
   const longs: PadToken[] = await import("@/lib/longsupply").then((m) => m.longSupplyTokens()).catch(() => [] as PadToken[]);
-  const all = [...pad, ...longs, ...order.filter((p) => p !== "RadarDex").flatMap((p) => byName.get(p as typeof ALL_PADS[number]) ?? []), ...v2, ...(byName.get("RadarDex") ?? []), ...screener].filter((t) => { const k = t.token.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  // launchpad registry (buybot watches each factory): tokens Lift / eve.fun / Ellipse / Sashimi / aka.fun … created — most of them
+  // go straight into a Uniswap V3 pool, so they are already in the V3/screener lists; here they get their pad label + venue link
+  const registry = await memo<Record<string, { pad: string; padId: string; url: string | null; ts: number; symbol: string | null }>>("padreg", 120_000, async () =>
+    ((await fetch("https://bot-production-4200.up.railway.app/api/pad-tokens", { signal: AbortSignal.timeout(10_000) }).then((r) => r.json())) as { tokens?: Record<string, never> }).tokens ?? {},
+  (v) => Object.keys(v).length > 0).catch(() => ({} as Record<string, { pad: string; padId: string; url: string | null; ts: number; symbol: string | null }>));
+  const relabel = (t: PadToken): PadToken => {
+    const r = registry[t.token.toLowerCase()];
+    if (!r || !["UniswapV3", "UniswapV4", "RadarDex", "DYORSwap"].includes(t.pad)) return t;
+    return { ...t, pad: r.pad, venueUrl: r.url ? `${r.url}` : t.venueUrl, createdAt: t.createdAt ?? (r.ts ? new Date(r.ts * 1000).toISOString() : null) };
+  };
+  const all = [...pad, ...longs, ...order.filter((p) => p !== "RadarDex").flatMap((p) => byName.get(p as typeof ALL_PADS[number]) ?? []), ...v2, ...(byName.get("RadarDex") ?? []), ...screener].map(relabel).filter((t) => { const k = t.token.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  {
+    const have = new Set(all.map((t) => t.token.toLowerCase()));
+    for (const [tok, r] of Object.entries(registry)) {
+      if (have.has(tok)) continue;
+      all.push({ token: tok, symbol: r.symbol ?? tok.slice(2, 8).toUpperCase(), name: r.symbol ?? "", pad: r.pad, logo: null, mcapUsd: null, priceUsd: null, volUsd: null, pool: null, stage: null,
+        createdAt: r.ts ? new Date(r.ts * 1000).toISOString() : null, venueUrl: r.url ?? `/token/${tok}`, website: null, twitter: null, telegram: null, og: false, dexes: [] } as PadToken);
+    }
+  }
   // keep the payload small (the Terminal shows 100 rows per tab): newest 600 + top 300 by volume, compact fields
   const ts = (t: PadToken) => (t.createdAt ? Date.parse(t.createdAt) : 0);
   const newest = [...all].sort((a, b) => ts(b) - ts(a)).slice(0, 400);
