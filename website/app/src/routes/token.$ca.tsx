@@ -60,6 +60,11 @@ export const Route = createFileRoute("/token/$ca")({
     // Cached pages answer in ms. A cold page can take several seconds of upstream calls: never hold the
     // HTML for that — after 900 ms ship the shell and let the client finish (the server keeps computing
     // in the background, so the client's call lands on the same in-flight result).
+    // client-side navigation from the Terminal: the row is already in memory → render NOW, fetch the rest in the background
+    if (typeof window !== "undefined") {
+      const c = (globalThis as unknown as { __arcLite?: Map<string, PadToken> }).__arcLite?.get(params.ca.toLowerCase());
+      if (c) return { info: null, error: null, pending: true as const, lite: c };
+    }
     const p = tokenPage({ data: { token: params.ca } });
     // the cached Terminal row (name, symbol, logo, MC, pool, socials) is fetched in PARALLEL: if the full page is not in
     // cache within 450 ms we ship the shell with that row and the client renders the whole page from it immediately

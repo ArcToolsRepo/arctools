@@ -1,9 +1,10 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
 import { usePrefs } from "@/lib/i18n";
 import { holderRisk, listAllTokens, tokenLogos, xAvatar, type PadToken } from "@/lib/arc-api";
+import { rememberRows } from "@/lib/lite-cache";
 import { ARC_AGGREGATOR, connectWallet, encodeAggregatorSwap, ethCall, getStoredWallet, onWalletChange, p32, sendTx, waitReceipt } from "@/lib/arc-wallet";
 import { hotAddress, hotCall, hotSend, hotWait } from "@/lib/arc-hotwallet";
 import { TokenLogo } from "@/components/token-logo";
@@ -209,6 +210,22 @@ function Trade() {
     setPositions((j?.positions ?? []).filter((p: Position) => p.net > 0));
   }, [addr]);
   useEffect(() => { void loadPositions(); const id = setInterval(loadPositions, 20_000); return () => clearInterval(id); }, [loadPositions]);
+
+  // client-side nav to a token page renders from these rows instantly; warm the chart chunks while the user browses
+
+  useEffect(() => { rememberRows(rows as PadToken[]); }, [rows]);
+
+  const router = useRouter();
+  useEffect(() => {
+    // warm everything a token click needs: the route's code chunk, the chart component and the chart library
+    const t = setTimeout(() => {
+      void import("../components/tv-chart"); void import("lightweight-charts");
+      const first = (rows as PadToken[])[0]?.token;
+      if (first) void router.preloadRoute({ to: "/token/$ca", params: { ca: first } }).catch(() => null);
+    }, 1200);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   const byToken = useMemo(() => { const m = new Map(rows.map((r) => [r.token.toLowerCase(), r])); if (!m.has(OFFICIAL_TOKEN)) m.set(OFFICIAL_TOKEN, OFFICIAL_META); return m; }, [rows]);
   const clusterMap = useMemo(() => new Map(clusters.map((c) => [c.token.toLowerCase(), c])), [clusters]);
