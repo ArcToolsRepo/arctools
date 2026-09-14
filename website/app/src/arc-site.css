@@ -307,10 +307,40 @@
 .arc-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
 .arc-grid-3--wide { gap: 16px; }
 
+/* ---- top nav (landing): always ONE row — links scroll horizontally instead of wrapping under the brand,
+   wallet + prefs never break into two lines, socials collapse first ---- */
+.arc-nav:not(.arc-nav--side) { flex-wrap: nowrap; height: 58px; box-sizing: border-box; padding-top: 0; padding-bottom: 0; }
+@media (min-width: 721px) { .arc-nav:not(.arc-nav--side) .arc-nav__links { padding-bottom: 0; } }
+.arc-nav:not(.arc-nav--side) .arc-nav__brand { flex: 0 0 auto; white-space: nowrap; }
+.arc-nav:not(.arc-nav--side) .arc-nav__links {
+  flex: 1 1 auto; min-width: 0; flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 24px), transparent);
+}
+.arc-nav:not(.arc-nav--side) .arc-nav__links::-webkit-scrollbar { display: none; }
+.arc-nav:not(.arc-nav--side) .arc-nav__links a { white-space: nowrap; flex: 0 0 auto; }
+.arc-nav:not(.arc-nav--side) .arc-nav__socials, .arc-nav:not(.arc-nav--side) .arc-prefs { flex: 0 0 auto; }
+.arc-nav:not(.arc-nav--side) .arc-wallet { flex: 0 0 auto; white-space: nowrap; }
+@media (max-width: 1360px) {
+  .arc-nav:not(.arc-nav--side) { gap: 10px; padding: 0 14px; }
+  .arc-nav:not(.arc-nav--side) .arc-nav__links { gap: 10px !important; }
+  .arc-nav:not(.arc-nav--side) .arc-link-tick { font-size: 11px; letter-spacing: 0.04em; }
+  .arc-nav:not(.arc-nav--side) .arc-nav__socials { display: none; }
+  .arc-nav:not(.arc-nav--side) .arc-wallet { padding: 8px 12px; font-size: 12px; }
+}
+@media (max-width: 980px) {
+  .arc-nav:not(.arc-nav--side) .arc-nav__brand { font-size: 0; gap: 0; }
+}
 /* ---- mobile polish ---- */
 .arc-hero-mobile { display: none; }
 @media (max-width: 720px) {
   /* nav: static two-row layout — no fixed overlap, no cut links */
+  .arc-nav:not(.arc-nav--side) { flex-wrap: wrap; height: auto; padding: 10px 14px; }
+  .arc-nav:not(.arc-nav--side) .arc-nav__links { flex: 1 1 100%; mask-image: none; -webkit-mask-image: none; }
+  .arc-nav:not(.arc-nav--side) .arc-nav__socials { display: none; }   /* Telegram/X links live in the footer on phones */
+  .arc-nav:not(.arc-nav--side) .arc-wallet { margin-left: auto; order: 1; }
+  .arc-nav:not(.arc-nav--side) .arc-prefs { order: 2; }
+  .arc-nav:not(.arc-nav--side) .arc-nav__links { order: 3; }
   .arc-nav {
     position: static;
     flex-wrap: wrap;
