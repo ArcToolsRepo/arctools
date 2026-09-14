@@ -887,7 +887,11 @@ html[data-i18n-pending] body { visibility: hidden; }
 
 /* ---- pro chart ---- */
 .arc-tvchart--fs { position: fixed !important; inset: 0; z-index: 1000; padding: 8px; }
-.arc-chart-draw button:hover, .arc-chart-tools button:hover { filter: brightness(1.25); }
+.arc-chart-draw button, .arc-chart-tools button { transition: background .12s, border-color .12s, transform .05s; -webkit-tap-highlight-color: transparent; user-select: none; }
+.arc-chart-draw button:hover, .arc-chart-tools button:hover { background: rgba(46,124,255,0.16) !important; border-color: rgba(46,124,255,0.55) !important; color: #dbe6ff !important; }
+.arc-chart-draw button:active, .arc-chart-tools button:active { transform: scale(0.96); }
+.arc-chart-draw button:disabled { cursor: default; }
+.arc-chart-draw button:disabled:hover { background: rgba(20,24,32,0.85) !important; border-color: rgba(60,70,90,0.6) !important; color: #a6b1c4 !important; }
 html[data-theme="light"] .arc-chart-draw button, html[data-theme="light"] .arc-chart-tools button { background: #ffffff !important; color: #3c4658 !important; border-color: rgba(15,21,34,0.18) !important; }
 html[data-theme="light"] .arc-chart-draw { border-right-color: rgba(15,21,34,0.12) !important; }
-@media (max-width: 720px) { .arc-chart-draw { width: 28px !important; } .arc-chart-legend { font-size: 10px !important; } }
+@media (max-width: 720px) { .arc-chart-draw { width: 44px !important; } .arc-chart-legend { font-size: 10px !important; } .arc-chart-tools button { min-height: 34px !important; } }

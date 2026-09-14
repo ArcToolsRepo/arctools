@@ -116,6 +116,7 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
   const [theme, setTheme] = useState(() => themeColors());
 
   const dkey = storageKey ? `arc_draw:${storageKey.toLowerCase()}:${interval ?? "x"}` : null;
+  const scaleRef = useRef(scale); const modeRef = useRef(mode); const stepRef = useRef(60); const candlesRef = useRef(candles); const drawingsRef = useRef<Drawing[]>([]);
   const step = useMemo(() => (candles.length > 1 ? candles[1].t - candles[0].t : 60), [candles]);
   const times = useMemo(() => candles.map((k) => k.t), [candles]);
   const snapT = useCallback((t: number) => { if (!times.length) return t; let lo = 0, hi = times.length - 1; if (t <= times[0]) return times[0]; if (t >= times[hi]) return times[hi]; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (times[mid] <= t) lo = mid; else hi = mid - 1; } return times[lo]; }, [times]);
@@ -125,7 +126,7 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
   useEffect(() => { try { localStorage.setItem("arc_chart_type", ctype); } catch { /* ignore */ } }, [ctype]);
   useEffect(() => { try { localStorage.setItem("arc_chart_scale", scaleMode); } catch { /* ignore */ } }, [scaleMode]);
   useEffect(() => { if (!dkey) return; try { setDrawings(JSON.parse(localStorage.getItem(dkey) || "[]") as Drawing[]); } catch { setDrawings([]); } }, [dkey]);
-  const saveDrawings = (d: Drawing[]) => { setDrawings(d); if (dkey) { try { localStorage.setItem(dkey, JSON.stringify(d)); } catch { /* ignore */ } } };
+  const saveDrawings = (d: Drawing[]) => { drawingsRef.current = d; setDrawings(d); if (dkey) { try { localStorage.setItem(dkey, JSON.stringify(d)); } catch { /* ignore */ } } };
   useEffect(() => { toolRef.current = tool; if (tool === "none") { pendingRef.current = null; setPending(null); } }, [tool]);
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
   useEffect(() => {
@@ -148,6 +149,7 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
   useEffect(() => {
     let disposed = false;
     let ro: ResizeObserver | null = null;
+    let clickCleanup: (() => void) | null = null;
     void (async () => {
       const lw = await import("lightweight-charts");
       if (disposed || !box.current) return;
@@ -179,12 +181,23 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
         lw.createImageWatermark(pane, "/assets/brand/logo-mark.png", { alpha: 0.055, maxHeight: Math.min(220, height * 0.5), maxWidth: 220, padding: 0 });
         lw.createTextWatermark(pane, { horzAlign: "center", vertAlign: "bottom", lines: [{ text: "ArcTools", color: th.wm, fontSize: 44, fontStyle: "bold", fontFamily: "Inter, system-ui, sans-serif" }] });
       } catch { /* cosmetic */ }
-      chart.subscribeClick((p) => {
+      // drawing-tool clicks: our own pointer handling on the container (library click events are picky about
+      // synthetic/touch input) — a press+release within 5 px inside the main pane counts as a click
+      const handleChartClick = (x: number, y: number) => {
         const t = toolRef.current; const m = mainRef.current;
-        if (t === "none" || !p.point || !m || !p.time) return;
-        const price = m.coordinateToPrice(p.point.y);
+        if (t === "none" || !m) return;
+        const price = m.coordinateToPrice(y);
         if (price == null) return;
-        const pt = { t: Number(p.time), p: Number(price) };
+        const cs = candlesRef.current;
+        if (!cs.length) return;
+        const tt = chart.timeScale().coordinateToTime(x);
+        let time = tt != null ? Number(tt) : NaN;
+        if (!Number.isFinite(time)) {
+          const lg = chart.timeScale().coordinateToLogical(x);
+          if (lg == null) return;
+          time = cs[0].t + Math.round(lg) * stepRef.current;   // empty space right of the last bar
+        }
+        const pt = { t: time, p: Number(price) };
         if (t === "level") { addDrawing({ kind: "level", p: pt.p / scaleRef.current }); return; }
         const first = pendingRef.current;
         if (!first) { pendingRef.current = pt; setPending(pt); return; }
@@ -192,22 +205,36 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
         if (t === "measure") {
           const bars = Math.round((pt.t - first.t) / stepRef.current);
           const dp = pt.p - first.p; const pct = first.p ? (dp / first.p) * 100 : 0;
-          const vol = candlesRef.current.filter((k) => k.t >= Math.min(first.t, pt.t) && k.t <= Math.max(first.t, pt.t)).reduce((s, k) => s + k.v, 0);
-          setMeasure({ x: p.point.x, y: p.point.y, text: [`${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%  (${fmtAxis(Math.abs(dp), modeRef.current)})`, `${Math.abs(bars)} bars · ${fmtDur(Math.abs(pt.t - first.t))}`, `vol ${fmtVol(vol)}`] });
+          const vol = cs.filter((k) => k.t >= Math.min(first.t, pt.t) && k.t <= Math.max(first.t, pt.t)).reduce((sum, k) => sum + k.v, 0);
+          setMeasure({ x, y, text: [`${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%  (${fmtAxis(Math.abs(dp), modeRef.current)})`, `${Math.abs(bars)} bars · ${fmtDur(Math.abs(pt.t - first.t))}`, `vol ${fmtVol(vol)}`] });
           return;
         }
         if (first.t === pt.t && t !== "fib") return;
         addDrawing({ kind: t as "trend" | "ray" | "fib", t1: first.t, p1: first.p / scaleRef.current, t2: pt.t, p2: pt.p / scaleRef.current });
-      });
+      };
+      let press: { x: number; y: number } | null = null;
+      const el = box.current as HTMLDivElement;
+      const paneRect = () => { try { const pe = chart.panes()[0].getHTMLElement(); return (pe ?? el).getBoundingClientRect(); } catch { return el.getBoundingClientRect(); } };
+      const onDown = (e: PointerEvent) => { if (e.button !== 0 || toolRef.current === "none") return; press = { x: e.clientX, y: e.clientY }; };
+      const onUp = (e: PointerEvent) => {
+        if (!press || toolRef.current === "none") { press = null; return; }
+        const moved = Math.hypot(e.clientX - press.x, e.clientY - press.y); press = null;
+        if (moved > 5) return;                                   // that was a pan, not a click
+        const r = paneRect();
+        if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+        handleChartClick(e.clientX - r.left, e.clientY - r.top);
+      };
+      el.addEventListener("pointerdown", onDown); el.addEventListener("pointerup", onUp);
+      (window as unknown as { __arcChart?: unknown }).__arcChart = { click: handleChartClick, paneRect, tool: () => toolRef.current, drawings: () => drawingsRef.current };
+      clickCleanup = () => { el.removeEventListener("pointerdown", onDown); el.removeEventListener("pointerup", onUp); };
       chartRef.current = chart; lwRef.current = lw; volRef.current = vs;
       ro = new ResizeObserver(() => chart.timeScale().fitContent());
       ro.observe(box.current);
       setReady(true);
     })();
-    return () => { disposed = true; ro?.disconnect(); chartRef.current?.remove(); chartRef.current = null; mainRef.current = null; volRef.current = null; markRef.current = null; indSeries.current = {}; drawSeries.current = { lines: [], priceLines: [] }; };
+    return () => { disposed = true; ro?.disconnect(); clickCleanup?.(); chartRef.current?.remove(); chartRef.current = null; mainRef.current = null; volRef.current = null; markRef.current = null; indSeries.current = {}; drawSeries.current = { lines: [], priceLines: [] }; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const scaleRef = useRef(scale); const modeRef = useRef(mode); const stepRef = useRef(step); const candlesRef = useRef(candles); const drawingsRef = useRef(drawings);
   useEffect(() => { scaleRef.current = scale; modeRef.current = mode; stepRef.current = step; candlesRef.current = candles; drawingsRef.current = drawings; }, [scale, mode, step, candles, drawings]);
   const addDrawing = (d: Drawing) => saveDrawings([...drawingsRef.current, d]);
 
@@ -432,7 +459,7 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
   const chg = shown && shown.o > 0 ? ((shown.c - shown.o) / shown.o) * 100 : 0;
   const upC = chg >= 0;
   const countdown = lastC ? Math.max(0, lastC.t + step - Math.floor(now / 1000)) : 0;
-  const bar = (active: boolean, warn = false): React.CSSProperties => ({ background: active ? (warn ? "rgba(245,197,66,0.2)" : "rgba(46,124,255,0.18)") : "rgba(20,24,32,0.75)", border: "1px solid " + (active ? (warn ? "#f5c542" : "rgba(46,124,255,0.6)") : "rgba(60,70,90,0.5)"), borderRadius: 4, color: active ? (warn ? "#f5c542" : "#7fb0ff") : "#7c889e", cursor: "pointer", fontSize: 10.5, lineHeight: "16px", padding: "2px 6px", whiteSpace: "nowrap" });
+  const bar = (active: boolean, warn = false): React.CSSProperties => ({ background: active ? (warn ? "rgba(245,197,66,0.22)" : "rgba(46,124,255,0.2)") : "rgba(20,24,32,0.85)", border: "1px solid " + (active ? (warn ? "#f5c542" : "rgba(46,124,255,0.7)") : "rgba(60,70,90,0.6)"), borderRadius: 6, color: active ? (warn ? "#f5c542" : "#8fbaff") : "#a6b1c4", cursor: "pointer", fontSize: 12, lineHeight: "18px", minHeight: 30, padding: "5px 10px", whiteSpace: "nowrap" });
   const TYPE_LABEL: Record<ChartType, string> = { candles: "Candles", hollow: "Hollow", bars: "Bars", line: "Line", area: "Area", heikin: "Heikin Ashi" };
   const activeInd = (Object.keys(ind) as Ind[]).filter((k) => ind[k]);
   const indLegend = activeInd.flatMap((k) => k === "bb" ? [["bbu", "BB+"], ["bbm", "BB"], ["bbl", "BB−"]] : k === "macd" ? [["macd", "MACD"], ["macds", "Sig"], ["macdh", "Hist"]] : [[k, IND_LABEL[k]]]) as [string, string][];
@@ -440,11 +467,11 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
   return (
     <div ref={wrap} className={"arc-tvchart" + (fs ? " arc-tvchart--fs" : "")} style={{ position: "relative", width: "100%", background: fs ? (theme.light ? "#f4f6fa" : "#0b0d13") : undefined, display: fs ? "flex" : undefined, flexDirection: "column" }}>
       {/* top toolbar: chart type · indicators · scale · actions */}
-      <div className="arc-mono arc-chart-tools" style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 4, padding: "6px 8px 4px", position: "relative", zIndex: 4 }}>
+      <div className="arc-mono arc-chart-tools" style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, padding: "8px 10px 6px", position: "relative", zIndex: 4 }}>
         <div style={{ position: "relative" }}>
           <button onClick={() => { setTypeOpen((v) => !v); setIndOpen(false); }} style={bar(typeOpen)} type="button" title="chart type">{TYPE_LABEL[ctype]} ▾</button>
           {typeOpen && (
-            <div style={{ background: theme.light ? "#fff" : "#0e1118", border: "1px solid rgba(60,70,90,0.5)", borderRadius: 6, boxShadow: "0 10px 30px rgba(0,0,0,0.5)", left: 0, padding: 4, position: "absolute", top: 24, zIndex: 20, minWidth: 130 }}>
+            <div style={{ background: theme.light ? "#fff" : "#0e1118", border: "1px solid rgba(60,70,90,0.5)", borderRadius: 8, boxShadow: "0 10px 30px rgba(0,0,0,0.5)", left: 0, padding: 6, position: "absolute", top: 34, zIndex: 20, minWidth: 160 }}>
               {(Object.keys(TYPE_LABEL) as ChartType[]).map((k) => <button key={k} onClick={() => { setCtype(k); setTypeOpen(false); }} style={{ ...bar(ctype === k), border: "none", display: "block", textAlign: "left", width: "100%", background: ctype === k ? "rgba(46,124,255,0.18)" : "transparent" }} type="button">{TYPE_LABEL[k]}</button>)}
             </div>
           )}
@@ -452,7 +479,7 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
         <div style={{ position: "relative" }}>
           <button onClick={() => { setIndOpen((v) => !v); setTypeOpen(false); }} style={bar(indOpen || activeInd.length > 0)} type="button" title="indicators">ƒx Indicators{activeInd.length ? ` ${activeInd.length}` : ""} ▾</button>
           {indOpen && (
-            <div style={{ background: theme.light ? "#fff" : "#0e1118", border: "1px solid rgba(60,70,90,0.5)", borderRadius: 6, boxShadow: "0 10px 30px rgba(0,0,0,0.5)", left: 0, padding: 4, position: "absolute", top: 24, zIndex: 20, minWidth: 170 }}>
+            <div style={{ background: theme.light ? "#fff" : "#0e1118", border: "1px solid rgba(60,70,90,0.5)", borderRadius: 8, boxShadow: "0 10px 30px rgba(0,0,0,0.5)", left: 0, padding: 6, position: "absolute", top: 34, zIndex: 20, minWidth: 210 }}>
               {(Object.keys(IND_LABEL) as Ind[]).map((k) => (
                 <button key={k} onClick={() => toggleInd(k)} style={{ ...bar(ind[k]), alignItems: "center", background: ind[k] ? "rgba(46,124,255,0.14)" : "transparent", border: "none", display: "flex", gap: 8, textAlign: "left", width: "100%" }} type="button">
                   <span style={{ background: IND_COLOR[k === "bb" ? "bbu" : k] ?? "#888", borderRadius: 2, display: "inline-block", height: 8, width: 8 }} />{IND_LABEL[k]}{k === "rsi" || k === "macd" ? <span style={{ color: "#5c6880", marginLeft: "auto" }}>pane</span> : null}
@@ -464,7 +491,7 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
             </div>
           )}
         </div>
-        <span style={{ borderLeft: "1px solid rgba(60,70,90,0.5)", height: 16, margin: "0 2px" }} />
+        <span style={{ borderLeft: "1px solid rgba(60,70,90,0.5)", height: 22, margin: "0 4px" }} />
         {(["log", "lin", "pct"] as const).map((k) => <button key={k} onClick={() => setScaleMode(k)} style={bar(scaleMode === k)} type="button" title={k === "log" ? "logarithmic scale" : k === "lin" ? "linear scale" : "percent change scale"}>{k === "pct" ? "%" : k}</button>)}
         <button onClick={() => setMagnet((v) => !v)} style={bar(magnet)} type="button" title="magnet crosshair (snaps to OHLC)">🧲</button>
         <span style={{ marginLeft: "auto" }} />
@@ -476,13 +503,13 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
 
       <div style={{ display: "flex", flex: fs ? 1 : undefined, minHeight: 0, position: "relative" }}>
         {/* left toolbar: drawing tools */}
-        <div className="arc-mono arc-chart-draw" style={{ alignItems: "stretch", borderRight: "1px solid rgba(60,70,90,0.3)", display: "flex", flexDirection: "column", gap: 3, padding: "6px 4px", width: 34, zIndex: 4 }}>
+        <div className="arc-mono arc-chart-draw" style={{ alignItems: "stretch", borderRight: "1px solid rgba(60,70,90,0.3)", display: "flex", flexDirection: "column", gap: 6, padding: "8px 6px", width: 48, zIndex: 4 }}>
           {([["level", "—", "horizontal level: click a price"], ["trend", "╱", "trend line: click start, click end"], ["ray", "↗", "ray: click start, click direction — extends right"], ["fib", "𝑓", "Fibonacci retracement: click swing low, then swing high (or reverse)"], ["measure", "📐", "measure: click two points → Δ%, bars, time, volume"]] as [Tool, string, string][]).map(([k, icon, tip]) => (
-            <button key={k} onClick={() => { setTool((t) => (t === k ? "none" : k)); setMeasure(null); }} style={{ ...bar(tool === k, true), padding: "3px 0", textAlign: "center" }} title={tip} type="button">{icon}</button>
+            <button key={k} onClick={() => { const next = toolRef.current === k ? "none" : k; toolRef.current = next; pendingRef.current = null; setTool(next); setMeasure(null); }} style={{ ...bar(tool === k, true), fontSize: 16, height: 34, lineHeight: "22px", padding: 0, textAlign: "center" }} title={tip} type="button">{icon}</button>
           ))}
           <span style={{ borderTop: "1px solid rgba(60,70,90,0.4)", margin: "3px 0" }} />
-          <button disabled={!drawings.length} onClick={() => saveDrawings(drawings.slice(0, -1))} style={{ ...bar(false), opacity: drawings.length ? 1 : 0.35, padding: "3px 0", textAlign: "center" }} title="undo last drawing (Delete)" type="button">↶</button>
-          <button disabled={!drawings.length} onClick={() => { saveDrawings([]); setMeasure(null); }} style={{ ...bar(false), opacity: drawings.length ? 1 : 0.35, padding: "3px 0", textAlign: "center" }} title="clear all drawings" type="button">🗑</button>
+          <button disabled={!drawings.length} onClick={() => saveDrawings(drawings.slice(0, -1))} style={{ ...bar(false), fontSize: 16, height: 34, lineHeight: "22px", opacity: drawings.length ? 1 : 0.35, padding: 0, textAlign: "center" }} title="undo last drawing (Delete)" type="button">↶</button>
+          <button disabled={!drawings.length} onClick={() => { saveDrawings([]); setMeasure(null); }} style={{ ...bar(false), fontSize: 15, height: 34, lineHeight: "22px", opacity: drawings.length ? 1 : 0.35, padding: 0, textAlign: "center" }} title="clear all drawings" type="button">🗑</button>
           {drawings.length > 0 && <span style={{ color: "#5c6880", fontSize: 9, textAlign: "center" }}>{drawings.length}</span>}
         </div>
 
@@ -508,7 +535,7 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
             </div>
           )}
           {tool !== "none" && (
-            <div className="arc-mono" style={{ background: "rgba(245,197,66,0.15)", border: "1px solid #f5c542", borderRadius: 4, color: "#f5c542", fontSize: 10.5, padding: "2px 8px", position: "absolute", right: 70, top: 6, zIndex: 3 }}>
+            <div className="arc-mono" style={{ background: "rgba(245,197,66,0.18)", border: "1px solid #f5c542", borderRadius: 6, color: "#f5c542", fontSize: 12, padding: "5px 10px", position: "absolute", right: 70, top: 8, zIndex: 3 }}>
               {tool === "level" ? "click a price to drop a level" : pending ? "click the second point" : `click the first point (${tool})`} · Esc to exit
             </div>
           )}
