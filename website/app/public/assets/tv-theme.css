@@ -1,0 +1,3 @@
+/* TradingView Advanced Charts — ArcTools skin (loaded via custom_css_url) */
+:root { --tv-color-platform-background: #0b0d13; --tv-color-pane-background: #0b0d13; --tv-color-toolbar-button-background-hover: rgba(46,124,255,0.16); --tv-color-toolbar-button-background-active: rgba(46,124,255,0.28); --tv-color-toolbar-button-text-active: #8fbaff; --tv-color-item-active-text: #8fbaff; }
+.theme-light:root { --tv-color-platform-background: #ffffff; --tv-color-pane-background: #ffffff; }

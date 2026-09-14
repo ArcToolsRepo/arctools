@@ -1393,6 +1393,118 @@ async def api_ohlc(request: web.Request) -> web.Response:
     return web.json_response({"token": token, "tf": tf, "candles": out}, headers=API_CORS)
 
 
+# ---------------- TradingView UDF datafeed (Advanced Charts / charting_library) ----------------
+# Symbol = token address, optional ":mcap" suffix (values × supply/1e6 instead of price per token).
+# Resolutions map onto our swap-index candles; history is served from the same aggregation as /api/ohlc.
+
+UDF_RES = {"1": "1m", "5": "5m", "15": "15m", "60": "1h", "240": "4h", "1D": "1d", "D": "1d"}
+UDF_CORS = {**API_CORS, "Cache-Control": "public, max-age=5"}
+
+
+async def udf_config(request: web.Request) -> web.Response:
+    return web.json_response({
+        "supported_resolutions": ["1", "5", "15", "60", "240", "1D"],
+        "supports_group_request": False, "supports_marks": False, "supports_search": True,
+        "supports_time": True, "supports_timescale_marks": False,
+        "exchanges": [{"value": "Arc", "name": "Arc", "desc": "Arc mainnet — every launchpad + Uniswap V3/V4"}],
+        "symbols_types": [{"name": "crypto", "value": "crypto"}],
+    }, headers=UDF_CORS)
+
+
+async def udf_time(request: web.Request) -> web.Response:
+    return web.Response(text=str(int(time.time())), headers=UDF_CORS)
+
+
+def _udf_split(sym: str) -> tuple[str, bool]:
+    sym = (sym or "").strip()
+    mcap = sym.lower().endswith(":mcap")
+    if mcap:
+        sym = sym[:-5]
+    if "/" in sym:
+        sym = sym.split("/")[0]
+    return sym.lower(), mcap
+
+
+async def udf_symbols(request: web.Request) -> web.Response:
+    tok, mcap = _udf_split(request.query.get("symbol", ""))
+    if not (tok.startswith("0x") and len(tok) == 42):
+        return web.json_response({"s": "error", "errmsg": "unknown symbol"}, headers=UDF_CORS)
+    try:
+        sym = await _symbol(tok)
+    except Exception:  # noqa
+        sym = tok[:6]
+    name = f"{sym}/USDC" + (" · MCAP" if mcap else "")
+    # price scale: USD per token is tiny for memecoins → 10 significant digits via pricescale
+    return web.json_response({
+        "name": name, "ticker": request.query.get("symbol", tok), "description": f"{sym} on Arc" + (" (market cap)" if mcap else ""),
+        "type": "crypto", "session": "24x7", "timezone": "Etc/UTC", "exchange": "Arc", "listed_exchange": "Arc",
+        "minmov": 1, "pricescale": 100 if mcap else 10 ** 10, "has_intraday": True, "has_daily": True, "has_weekly_and_monthly": False,
+        "supported_resolutions": ["1", "5", "15", "60", "240", "1D"], "volume_precision": 2, "data_status": "streaming",
+        "currency_code": "USD", "format": "price",
+    }, headers=UDF_CORS)
+
+
+async def udf_search(request: web.Request) -> web.Response:
+    q = (request.query.get("query") or "").strip().lower()
+    limit = min(50, int(request.query.get("limit", "30") or 30))
+    if not q:
+        return web.json_response([], headers=UDF_CORS)
+    if q.startswith("0x") and len(q) == 42:
+        rows = [{"token": q, "symbol": await _symbol(q)}]
+    else:
+        rows = await db.fetchall(text("SELECT token, symbol FROM token_symbols WHERE LOWER(symbol) LIKE :q LIMIT :l").bindparams(q=f"%{q}%", l=limit))
+    return web.json_response([{"symbol": r["token"], "full_name": f"{r['symbol']}/USDC", "description": f"{r['symbol']} on Arc", "exchange": "Arc", "ticker": r["token"], "type": "crypto"} for r in rows], headers=UDF_CORS)
+
+
+async def udf_history(request: web.Request) -> web.Response:
+    tok, mcap = _udf_split(request.query.get("symbol", ""))
+    if not (tok.startswith("0x") and len(tok) == 42):
+        return web.json_response({"s": "error", "errmsg": "unknown symbol"}, headers=UDF_CORS)
+    tf = UDF_RES.get(request.query.get("resolution", "5"), "5m")
+    step = TF_SECONDS.get(tf, 300)
+    try:
+        frm = int(float(request.query.get("from", "0"))); to = int(float(request.query.get("to", str(int(time.time())))))
+    except ValueError:
+        return web.json_response({"s": "error", "errmsg": "bad range"}, headers=UDF_CORS)
+    countback = int(request.query.get("countback", "0") or 0)
+    rows = await db.fetchall(text("""
+        WITH b AS (
+            SELECT (ts / :step) * :step AS bucket, ts, log_index, price1m, usdc
+            FROM swaps WHERE token = :t AND usdc >= :dust AND price1m > 0 AND ts < :to
+        ),
+        agg AS (
+            SELECT bucket,
+                   (array_agg(price1m ORDER BY ts, log_index))[1]  AS o,
+                   MAX(price1m) AS h, MIN(price1m) AS l,
+                   (array_agg(price1m ORDER BY ts DESC, log_index DESC))[1] AS c,
+                   SUM(usdc) AS v
+            FROM b GROUP BY bucket
+        )
+        SELECT * FROM agg ORDER BY bucket DESC LIMIT :lim
+    """).bindparams(step=step, t=tok, dust=0.1, to=to, lim=max(countback, 2000)))
+    rows.reverse()
+    scale = 1e-6
+    if mcap:
+        try:
+            sup = await db.fetchone(text("SELECT supply FROM token_supply WHERE token = :t").bindparams(t=tok))
+            if sup and sup["supply"]:
+                scale = float(sup["supply"]) / 1e6
+        except Exception:  # noqa
+            pass
+    t_, o_, h_, l_, c_, v_ = [], [], [], [], [], []
+    prev_c = None
+    for r in rows:
+        c = float(r["c"]); o = float(r["o"]) if prev_c is None else prev_c
+        b = int(r["bucket"])
+        if b >= frm or (countback and len(t_) < countback):
+            t_.append(b); o_.append(o * scale); h_.append(max(float(r["h"]), o) * scale); l_.append(min(float(r["l"]), o) * scale); c_.append(c * scale); v_.append(float(r["v"] or 0))
+        prev_c = c
+    if not t_:
+        nb = rows[-1]["bucket"] if rows else None
+        return web.json_response({"s": "no_data", **({"nextTime": int(nb)} if nb else {})}, headers=UDF_CORS)
+    return web.json_response({"s": "ok", "t": t_, "o": o_, "h": h_, "l": l_, "c": c_, "v": v_}, headers=UDF_CORS)
+
+
 async def api_trades(request: web.Request) -> web.Response:
     token = _tok(request)
     if not token:
@@ -1458,6 +1570,8 @@ async def start_api():
     app.router.add_get("/api/insiders", api_board)
     app.router.add_get("/api/insider/{wallet}", api_wallet)
     app.router.add_get("/api/ohlc", api_ohlc)
+    app.router.add_get("/udf/config", udf_config); app.router.add_get("/udf/time", udf_time); app.router.add_get("/udf/symbols", udf_symbols)
+    app.router.add_get("/udf/search", udf_search); app.router.add_get("/udf/history", udf_history)
     app.router.add_get("/api/trades", api_trades)
     app.router.add_get("/api/token-stats", api_token_stats)
     app.router.add_get("/api/v4pool", api_v4pool)

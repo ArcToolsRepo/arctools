@@ -8,6 +8,7 @@ import { SmartFollowers } from "@/components/smart-followers";
 import { RiskCard, StockCard, Tags, useWalletLabels } from "@/components/risk";
 import { TokenLogo } from "@/components/token-logo";
 import { TvChart, type Candle } from "@/components/tv-chart";
+import { TvAdvanced, advancedAvailable } from "../components/tv-advanced";
 import { DevTokens, KolMentions, MarkerLegend, MyPosition, TopTraders, useTokenEvents } from "@/components/token-intel";
 import { ARC_V4_ROUTER, SWAP_FEE_ROUTER, tokenPage, venueData, type PadToken, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
 import { creditRef } from "@/lib/arc-ref";
@@ -202,6 +203,8 @@ function TokenPage() {
   const error = loaded.pending ? late?.error ?? null : loaded.error;
   const stillLoading = loaded.pending && !late && !liteRow;
   const [tf, setTf] = useState<TF>("5m");
+  const [adv, setAdv] = useState(false);
+  useEffect(() => { void advancedAvailable().then((ok) => setAdv(ok)); }, []);
   const [mode, setMode] = useState<"price" | "mcap">("mcap");
   const [candles, setCandles] = useState<Candle[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -686,7 +689,11 @@ function TokenPage() {
               {info.symbol}/{info.stock ? "USDC" : pairSym} · {mode === "mcap" ? "Market Cap" : "Price"} · {tf} · {info.venue === "pad" ? `ArcToolsPad curve (${qSym} pair)` : info.venue === "v3" ? `Uniswap V3 ${((info.poolFee ?? 0) / 10000).toFixed(2)}%${info.graduated ? " · graduated from ArcToolsPad" : ""}` : info.venue === "v4" ? `Uniswap V4${info.launchpad && info.launchpad !== "Uniswap V4" ? ` · ${info.launchpad}` : " · hookless pool"}` : info.venue === "curve" ? "Warp bonding curve" : (info.launchpad ?? "external pool")}
               {candles.length < 5 && effCandles.length > 0 && <span style={{ marginLeft: 10, opacity: 0.7 }}>· venue data (own index syncing)</span>}
             </div>
-            <TvChart avatars={chartAvatars} candles={effCandles} interval={tf} markers={chartMarkers} mode={mode} onVisible={setMarkersVisible} scale={scale} storageKey={params.ca} symbol={info ? `${info.symbol}/${pairSym}` : undefined} />
+            {adv ? (
+              <TvAdvanced height={Math.max(460, Number((typeof localStorage !== "undefined" && localStorage.getItem("arc_chart_h")) || 520))} interval={tf} light={typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light"} mode={mode} onFail={() => setAdv(false)} token={params.ca.toLowerCase()} />
+            ) : (
+              <TvChart avatars={chartAvatars} candles={effCandles} interval={tf} markers={chartMarkers} mode={mode} onVisible={setMarkersVisible} scale={scale} storageKey={params.ca} symbol={info ? `${info.symbol}/${pairSym}` : undefined} />
+            )}
             <MarkerLegend data={eventsData} visible={markersVisible} />
           </div>
 
