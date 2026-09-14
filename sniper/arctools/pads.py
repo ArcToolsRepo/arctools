@@ -357,7 +357,21 @@ async def auto_pad(token: str, amount_usdc: float = 1.0) -> tuple[Pad | None, di
     V3 fee tiers (real QuoterV2 quote + pool liquidity) and the V4 PoolKey. The V3 tier that actually quotes wins
     (fee travels with the order as {"fee": N} — the router is never called on a tier without a pool);
     no V3 quote → V4 if a pool exists → V3 tier that merely has liquidity (buy at any cost) → stock hop → default."""
+    cached = _route_cache.get(token.lower())
+    if cached and time.monotonic() - cached[0] < ROUTE_TTL:
+        return cached[1]
+    res = await _auto_pad_uncached(token, amount_usdc)
+    _route_cache[token.lower()] = (time.monotonic(), res)
+    return res
+
+
+_route_cache: dict[str, tuple[float, tuple]] = {}
+ROUTE_TTL = 90.0
+
+
+async def _auto_pad_uncached(token: str, amount_usdc: float) -> tuple[Pad | None, dict | None]:
     tasks = [asyncio.create_task(_v3_tier_probe(token, f, amount_usdc)) for f in (10000, 3000, 500)]
+    v4_task = asyncio.create_task(resolve_v4_key(token))   # in parallel — the index answers in well under a second
     tiers: list[tuple] = []
     deadline = time.monotonic() + 8
     try:
@@ -377,7 +391,7 @@ async def auto_pad(token: str, amount_usdc: float = 1.0) -> tuple[Pad | None, di
             if not t.done():
                 t.cancel()
     try:
-        key = await asyncio.wait_for(resolve_v4_key(token), timeout=8)
+        key = await asyncio.wait_for(v4_task, timeout=max(0.5, deadline - time.monotonic() + 3))
     except Exception:  # noqa
         key = None
     if key and v4_pad():

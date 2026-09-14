@@ -23,6 +23,9 @@ feed_publish = None    # async def feed_publish(token, pad_name)
 MAX_UINT = 2 ** 256 - 1
 
 
+TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+
+
 async def ensure_allowance(acct, token: str, spender: str, need: int, gas_mode: str = "fast"):
     ca = to_checksum_address(token)
     allowance = await CHAIN.call_any(
@@ -108,27 +111,46 @@ async def execute_buy(tg_id: int, token: str, pad: Pad, amount_usdc: float,
             ok = rcpt["status"] == 1
             got, sym = 0, "?"
             if ok:
-                for attempt in range(4):  # balans moze dojsc z opoznieniem 1 bloku
-                    try:
-                        got = await token_balance(token, acct.address)
-                        if got > 0:
-                            break
-                    except Exception:  # noqa
-                        pass
-                    await asyncio.sleep(1.5)
+                # tokens received = ERC-20 Transfer(token → wallet) in this very receipt: no balance polling
+                try:
+                    tl = to_checksum_address(token).lower(); me = acct.address.lower()[2:].rjust(64, "0")
+                    for lg in rcpt.get("logs", []):
+                        addr = lg["address"].lower() if isinstance(lg["address"], str) else lg["address"].hex().lower()
+                        tps = [tp.hex() if not isinstance(tp, str) else tp for tp in lg["topics"]]
+                        tps = [tp if tp.startswith("0x") else "0x" + tp for tp in tps]
+                        if addr == tl and len(tps) == 3 and tps[0] == TRANSFER_TOPIC and tps[2][2:].lower() == me:
+                            data = lg["data"]; data = data.hex() if not isinstance(data, str) else data
+                            got += int(data, 16)
+                except Exception as e:  # noqa
+                    log.debug("receipt transfer parse: %s", e)
+                if got <= 0:
+                    for attempt in range(3):  # fallback: balance (1-block lag possible)
+                        try:
+                            got = await token_balance(token, acct.address)
+                            if got > 0:
+                                break
+                        except Exception:  # noqa
+                            pass
+                        await asyncio.sleep(1.0)
                 try:
                     sym = await CHAIN.call_any(
                         lambda w3: CHAIN.erc20(to_checksum_address(token), w3).functions.symbol().call())
                 except Exception:  # noqa
                     pass
-                await db.execute(insert(db.positions).values(
-                    tg_id=tg_id, wallet=acct.address, token=token, symbol=sym,
-                    pad=pad.name, curve=(_json.dumps(curve) if isinstance(curve, dict) else (curve or "")),
-                    amount_tokens=float(got),
-                    cost_usdc=amount_usdc, created_at=int(time.time())))
-                await db.execute(insert(db.trades).values(
-                    tg_id=tg_id, token=token, side="buy", usdc=amount_usdc,
-                    tokens=float(got), tx=h, ts=int(time.time())))
+                # the buy is already on-chain: bookkeeping must never turn a filled order into a "buy fail"
+                try:
+                    await db.execute(insert(db.positions).values(
+                        tg_id=tg_id, wallet=acct.address, token=token, symbol=sym,
+                        pad=pad.name, curve=(_json.dumps(curve) if isinstance(curve, dict) else (curve or "")),
+                        amount_tokens=float(got),
+                        cost_usdc=amount_usdc, created_at=int(time.time())))
+                    await db.execute(insert(db.trades).values(
+                        tg_id=tg_id, token=token, side="buy", usdc=amount_usdc,
+                        tokens=float(got), tx=h, ts=int(time.time())))
+                except Exception as e:  # noqa
+                    log.exception("position bookkeeping failed for %s", h)
+                    if notify:
+                        asyncio.create_task(notify(tg_id, f"⚠️ Bought, but could not save the position ({str(e)[:80]}). Tokens are in {acct.address}."))
                 asyncio.create_task(send_fee(acct, fee, "buy"))
                 asyncio.create_task(referral.credit(tg_id, h, fee))
                 # protection: TP / SL / trailing / dump guard from the user's defaults
@@ -145,8 +167,12 @@ async def execute_buy(tg_id: int, token: str, pad: Pad, amount_usdc: float,
                 return {"ok": ok, "tx": h, "tokens": got, "wallet": acct.address, "protect": protect}
             return {"ok": ok, "tx": h, "tokens": got, "wallet": acct.address}
         except Exception as e:  # noqa
+            msg = str(e)
+            if "insufficient funds" in msg.lower():
+                log.warning("buy: wallet %s has no USDC for %s", acct.address, token)
+                return {"ok": False, "err": f"wallet has no USDC for the buy + gas — top it up (needs ≈{amount_usdc + 0.05:.2f} USDC)", "wallet": acct.address}
             log.exception("buy fail")
-            return {"ok": False, "err": str(e)[:200], "wallet": acct.address}
+            return {"ok": False, "err": msg[:200], "wallet": acct.address}
 
     return list(await asyncio.gather(*[_one(w) for w in wallet_ids]))
 

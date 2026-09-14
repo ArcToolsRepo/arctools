@@ -52,7 +52,7 @@ positions = Table("positions", meta,
     Column("token", String(64)),
     Column("symbol", String(32), default="?"),
     Column("pad", String(32), default=""),
-    Column("curve", String(64), default=""),   # kontrakt bonding curve (Warp/Sharc)
+    Column("curve", Text, default=""),   # bonding-curve contract, or JSON PoolKey / {"fee": N} for V4 / V3 routes
     Column("amount_tokens", Float, default=0),
     Column("cost_usdc", Float, default=0),
     Column("realized_usdc", Float, default=0),
@@ -98,6 +98,15 @@ kv = Table("kv", meta,
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(meta.create_all)
+        # migrations for existing databases (idempotent)
+        from sqlalchemy import text as _t
+        for stmt in (
+            "ALTER TABLE positions ALTER COLUMN curve TYPE TEXT",       # V4 PoolKey JSON is ~300 chars; was VARCHAR(64)
+        ):
+            try:
+                await conn.execute(_t(stmt))
+            except Exception:  # noqa - sqlite / already applied
+                pass
 
 
 async def fetchone(q):

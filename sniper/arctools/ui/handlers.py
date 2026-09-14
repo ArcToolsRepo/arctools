@@ -308,6 +308,13 @@ async def open_ca_panel(m: Message, token: str):
     asyncio.create_task(_enrich_panel(m.from_user.id, token, msg))
 
 
+async def _prefetch_route(token: str, amount: float):
+    try:
+        await asyncio.wait_for(auto_pad(token, amount), timeout=12)
+    except Exception:  # noqa
+        pass
+
+
 async def _enrich_panel(tg_id: int, token: str, msg: Message):
     from ..chain import CHAIN
 
@@ -317,6 +324,9 @@ async def _enrich_panel(tg_id: int, token: str, msg: Message):
         except Exception:  # noqa - RPC hiccup: nie blokuj panelu
             return None
 
+    s0 = DRAFTS.get(tg_id)
+    # pre-route while the user reads the panel: Buy then skips the 3-5 s venue lookup (auto_pad caches 90 s)
+    asyncio.create_task(_prefetch_route(token, s0["amount_usdc"] if s0 else 1.0))
     try:
         code, info = await asyncio.wait_for(asyncio.gather(_code(), token_overview(token)), timeout=8)
     except Exception:  # noqa
