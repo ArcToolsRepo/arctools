@@ -88,7 +88,7 @@ async def chk_pages(s):
         elif path.startswith("/token/") and "Token not found" in body:
             bad.append("token page: not found for ARCT")
     if bad:
-        await _warm(s, purge="lists")
+        await _warm(s)   # no purge: a recompute during an RPC outage would replace a good list with nothing
         await _warm(s, purge=f"token:{ARCT}")
         await _warm(s)
         _healed["pages"] = _healed.get("pages", 0) + 1
@@ -99,7 +99,7 @@ async def chk_tokens_api(s):
     j = await _json(s, f"{SITE}/api/tokens")
     n = int((j or {}).get("count") or 0)
     if n < 100:
-        await _warm(s, purge="lists"); await _warm(s)
+        await _warm(s)   # never purge: during an RPC outage the cached list is the only good copy
         _healed["tokens"] = _healed.get("tokens", 0) + 1
         return False, f"/api/tokens count={n}"
     # data quality: garbled rows ("?" symbols, empty names) or a logo-coverage drop mean an upstream chunk was lost
@@ -112,7 +112,7 @@ async def chk_tokens_api(s):
         prev = _healed.get("_logo_cov", cov)
         _healed["_logo_cov"] = max(prev, cov) if garbled == 0 else prev
         if garbled > 0 or cov < prev - 0.15:
-            await _warm(s, purge="lists"); await _warm(s)
+            await _warm(s)   # never purge: during an RPC outage the cached list is the only good copy
             _healed["quality"] = _healed.get("quality", 0) + 1
             return False, f"list quality: {garbled} garbled rows, logo coverage {cov:.0%} (was {prev:.0%})"
     j2 = await _json(s, f"{SITE}/api/tokenpage?ca={ARCT}", timeout=60)
@@ -163,18 +163,18 @@ async def chk_display(s):
     prev = _healed.get("_pad_n", 0)
     if n < prev:
         problems.append(f"pad list shrank {prev}->{n}")
-        await _warm(s, purge="lists")
+        await _warm(s)   # no purge: a recompute during an RPC outage would replace a good list with nothing
     else:
         _healed["_pad_n"] = n
     garbled = [r["symbol"] for r in rows if r.get("symbol") in ("?", "") or not r.get("name")]
     if garbled:
         problems.append(f"pad rows garbled: {garbled}")
-        await _warm(s, purge="lists")
+        await _warm(s)   # no purge: a recompute during an RPC outage would replace a good list with nothing
     nologo = [r["symbol"] for r in rows if not r.get("image")]
     prev_nl = _healed.get("_pad_nologo")
     if prev_nl is not None and len(nologo) > prev_nl:
         problems.append(f"pad logos disappeared: {nologo}")
-        await _warm(s, purge="lists")
+        await _warm(s)   # no purge: a recompute during an RPC outage would replace a good list with nothing
     _healed["_pad_nologo"] = min(len(nologo), prev_nl if prev_nl is not None else len(nologo))
     st = await _json(s, f"{SITE}/api/stocks", timeout=60) or {}
     stocks = st.get("stocks") or []
