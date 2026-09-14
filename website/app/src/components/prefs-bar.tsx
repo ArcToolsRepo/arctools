@@ -16,7 +16,7 @@ export function PrefsBar({ fixed }: { fixed?: boolean }) {
   const cur = LANGS.find(([k]) => k === lang) ?? LANGS[0];
   const btn: React.CSSProperties = { alignItems: "center", background: "var(--arc-paper-deep)", border: "1px solid var(--arc-line)", borderRadius: 8, color: "var(--arc-ink)", cursor: "pointer", display: "inline-flex", fontSize: 12, gap: 6, height: 30, padding: "0 10px" };
   return (
-    <div className="arc-prefs arc-mono" ref={box} style={fixed ? { alignItems: "center", display: "flex", gap: 6, position: "fixed", right: 14, top: 36, zIndex: 60 } : { alignItems: "center", display: "flex", gap: 6 }}>
+    <div className={"arc-prefs arc-mono" + (fixed ? " arc-prefs--fixed" : "")} ref={box} style={fixed ? { alignItems: "center", display: "flex", gap: 6, position: "fixed", right: 14, top: 36, zIndex: 60 } : { alignItems: "center", display: "flex", gap: 6 }}>
       <div style={{ position: "relative" }}>
         <button aria-haspopup="listbox" onClick={() => setOpen((v) => !v)} style={btn} title={t("Language")} type="button">
           🌐 {cur[1]}

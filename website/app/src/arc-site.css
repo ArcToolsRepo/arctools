@@ -814,3 +814,30 @@ html[data-theme="light"] .arc-site [style*="#f5c542"] { color: #a16207 !importan
 html[data-theme="light"] .arc-site [style*="#7cc4ff"], html[data-theme="light"] .arc-site [style*="#8ab4ff"] { color: #1f6fe0 !important; border-color: #1f6fe0 !important; }
 html[data-theme="light"] .arc-site .arc-status-pill, html[data-theme="light"] .arc-site [class*="system-status"] { background: #ffffff; color: #0f1522; border: 1px solid var(--arc-line); }
 html[data-theme="light"] .arc-site .arc-mono[style*="color: var(--arc-muted)"] { color: #5c6880; }
+/* ---- prefs bar on phones: the top-right corner is the Connect-wallet button → dock bottom-right, lift the toasts above it ---- */
+@media (max-width: 1023px) {
+  .arc-prefs--fixed { top: auto !important; bottom: 12px !important; right: 12px !important; }
+  .arc-toasts { bottom: 56px !important; }
+  .arc-toasts > *:nth-child(n+3) { display: none; }   /* at most two live toasts on a phone */
+}
+/* ---- light theme: the remaining dark surfaces ---- */
+html[data-theme="light"] .arc-tablewrap td:last-child, html[data-theme="light"] .arc-tablewrap th:last-child { background: #ffffff !important; box-shadow: -10px 0 12px -6px rgba(15, 21, 34, 0.18) !important; }
+html[data-theme="light"] .arc-token__table thead th { background: #eef1f6 !important; }
+html[data-theme="light"] select, html[data-theme="light"] select option, html[data-theme="light"] select optgroup { background: #ffffff !important; color: #0f1522 !important; }
+html[data-theme="light"] .arc-sysstatus > span, html[data-theme="light"] .arc-sysstatus [style*="rgba(10,14,22"] { background: #ffffff !important; color: #3c4658 !important; }
+html[data-theme="light"] .arc-toasts > * { background: #ffffff !important; color: #0f1522 !important; border: 1px solid var(--arc-line) !important; box-shadow: 0 8px 24px rgba(15, 21, 34, 0.18) !important; }
+html[data-theme="light"] .arc-pager button, html[data-theme="light"] .arc-site button[disabled] { color: #5c6880 !important; }
+html[data-theme="light"] .arc-site .arc-tabs > button { color: #3c4658; }
+html[data-theme="light"] .arc-site .arc-tabs > button[style*="rgba(34,197,94,0.22)"] { color: #0f1522 !important; }
+html[data-theme="light"] .arc-nav__brand, html[data-theme="light"] .arc-link-tick { color: #0f1522; }
+html[data-theme="light"] .arc-site a.arc-mono[style*="var(--arc-up)"], html[data-theme="light"] .arc-site span[style*="color: var(--arc-up)"] { color: #15803d !important; }
+html[data-theme="light"] .arc-site [style*="color: #7c889e"] { color: #5c6880 !important; }
+html[data-theme="light"] .arc-chart-tools button { background: #ffffff !important; }
+html[data-theme="light"] .arc-ticker, html[data-theme="light"] .arc-ticker * { background-color: #ffffff !important; }
+html[data-theme="light"] .arc-ticker { border-bottom: 1px solid var(--arc-line) !important; }
+html[data-theme="light"] .arc-ticker a, html[data-theme="light"] .arc-ticker span { color: #0f1522; }
+html[data-theme="light"] .arc-link-tick { color: #3c4658 !important; }
+html[data-theme="light"] .arc-link-tick[data-active], html[data-theme="light"] .arc-link-tick[style*="underline"] { color: #0f1522 !important; }
+html[data-theme="light"] .arc-sysstatus, html[data-theme="light"] .arc-sysstatus * { color: #3c4658 !important; }
+html[data-theme="light"] .arc-site input, html[data-theme="light"] .arc-site .arc-mobile-bar { border-color: rgba(15, 21, 34, 0.22) !important; }
+@media (max-width: 1023px) { .arc-site main, .arc-site > section:last-of-type { padding-bottom: 72px; } }
