@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
 import { SocialCheck } from "@/components/social-check";
@@ -267,6 +267,17 @@ function TokenPage() {
     const id = setInterval(loadCandles, 15_000);
     return () => clearInterval(id);
   }, [loadCandles]);
+  // a pool we know but our swap index never saw (brand-new launchpad pool whose first swaps hit an RPC hiccup):
+  // ask the indexer to backfill it right away, then the chart fills in on the next candle poll
+  const indexAsked = useRef(false);
+  useEffect(() => {
+    if (indexAsked.current || !info?.pool || candles.length > 0 || !stats || (stats.txns_all ?? 0) > 0) return;
+    indexAsked.current = true;
+    const since = info.createdAt ? Math.floor(Date.parse(info.createdAt) / 1000) : "";
+    fetch(`${BOT_API}/api/index-pool?pool=${info.pool}&since=${since}`).catch(() => null);
+    const t = setTimeout(() => { void loadCandles(); void loadSide(); }, 12_000);
+    return () => clearTimeout(t);
+  }, [info?.pool, candles.length, stats]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     void loadSide();
     const id = setInterval(loadSide, 12_000);

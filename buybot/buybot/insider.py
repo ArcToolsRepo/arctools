@@ -678,6 +678,84 @@ async def repair_pools_once() -> list[str]:
     return fixed
 
 
+_site_pool_age: dict[str, int] = {}   # pool -> created_at epoch (bounds the backfill window)
+
+
+async def _learn_pools_from_site(limit: int = 400) -> int:
+    """Site token list → pools we have never resolved. Returns how many were newly registered."""
+    import aiohttp as _ah
+    async with _ah.ClientSession() as s_:
+        async with s_.get("https://arctools.fun/api/tokens?full=1", timeout=_ah.ClientTimeout(total=90),
+                          headers={"User-Agent": "ArcTools-buybot/1.0"}) as r:
+            j = await r.json()
+    toks = j.get("tokens") if isinstance(j, dict) else j
+    known = {r_["pool"] for r_ in await db.fetchall(text("SELECT pool FROM insider_pools"))}
+    knownq = {r_["pool"] for r_ in await db.fetchall(text("SELECT pool FROM quote_pools"))}
+    n = 0
+    for t in toks or []:
+        pool = (t.get("pool") or "").lower()
+        if not pool or not pool.startswith("0x") or len(pool) != 42 or pool in known or pool in knownq:
+            continue
+        if t.get("stock") or t.get("quote"):
+            continue   # stock-quoted pools come through quote_pools (long.supply / Ellipse), handled elsewhere
+        ca = t.get("createdAt")
+        if ca:
+            try:
+                from datetime import datetime, timezone
+                _site_pool_age[pool] = int(datetime.fromisoformat(str(ca).replace("Z", "+00:00")).timestamp())
+            except Exception:  # noqa
+                pass
+        info = await _resolve_pool(pool)
+        if info:
+            n += 1
+        if n >= limit:
+            break
+    if n:
+        log.info("learn pools: %d new USDC pools from the site list", n)
+    return n
+
+
+async def api_index_pool(req: web.Request):
+    """GET /api/index-pool?pool=0x… — resolve one pool and backfill its swaps now (token page found a pool we never indexed)."""
+    pool = (req.query.get("pool") or "").lower()
+    if not (pool.startswith("0x") and len(pool) == 42):
+        return web.json_response({"error": "pool"}, status=400, headers={"Access-Control-Allow-Origin": "*"})
+    row = await db.fetchone(text("SELECT 1 FROM swaps s JOIN insider_pools p ON p.token = s.token WHERE p.pool = :p LIMIT 1").bindparams(p=pool))
+    if row:
+        return web.json_response({"ok": True, "indexed": True}, headers={"Access-Control-Allow-Origin": "*"})
+    if pool in _index_inflight:
+        return web.json_response({"ok": True, "queued": True}, headers={"Access-Control-Allow-Origin": "*"})
+    _index_inflight.add(pool)
+
+    async def _go():
+        try:
+            _pool_cache.pop(pool, None)
+            await db.execute(text("DELETE FROM insider_pools WHERE pool = :p AND token IS NULL").bindparams(p=pool))
+            info = await _resolve_pool(pool)
+            if not info:
+                return
+            since = req.query.get("since")
+            blocks = BACKFILL_BLOCKS
+            try:
+                if since:
+                    age_s = max(0, int(time.time()) - int(since))
+                    blocks = max(2000, int(age_s / 0.63) + 500)
+            except Exception:  # noqa
+                pass
+            n = await backfill_pool(pool, min(blocks, BACKFILL_BLOCKS))
+            await db.execute(text("INSERT INTO pool_backfill (pool, done, swaps) VALUES (:p, 1, :n) "
+                                  "ON CONFLICT (pool) DO UPDATE SET done = 1, swaps = :n").bindparams(p=pool, n=n))
+        except Exception as e:  # noqa
+            log.warning("index-pool %s: %s", pool[:10], e)
+        finally:
+            _index_inflight.discard(pool)
+    asyncio.create_task(_go())
+    return web.json_response({"ok": True, "queued": True}, headers={"Access-Control-Allow-Origin": "*"})
+
+
+_index_inflight: set[str] = set()
+
+
 async def backfill_pool(pool: str, blocks: int = BACKFILL_BLOCKS) -> int:
     """Historia swapow JEDNEJ puli (filtr po adresie) — odzyskanie wolumenu pominietej puli."""
     head = await CHAIN._bn()
@@ -750,6 +828,12 @@ async def repair_loop():
     while True:
         try:
             await repair_pools_once()
+            # pools the site knows from launchpad APIs / factory registry (Lift, eve.fun, Ellipse, ArcPad …) but that never
+            # produced an indexed swap: resolve them so the query below queues their backfill
+            try:
+                await _learn_pools_from_site()
+            except Exception as e:  # noqa
+                log.warning("learn pools: %s", e)
             # kazda pula USDC, ktorej zaden swap nie trafil do indeksu = kandydat (ofiara 429 albo swieza)
             await db.execute(text("""
                 INSERT INTO pool_backfill (pool, done)
@@ -777,6 +861,9 @@ async def repair_loop():
                     if qb and qb["from_block"]:
                         head_now = await CHAIN._bn()
                         blocks = max(1000, head_now - int(qb["from_block"]) + 200)
+                    elif pool in _site_pool_age:
+                        # launchpad pools learned from the site list: history starts at the launch (≈0.63 s / block on Arc)
+                        blocks = min(BACKFILL_BLOCKS, max(2000, int((time.time() - _site_pool_age[pool]) / 0.63) + 500))
                     n = await backfill_pool(pool, blocks)
                     await db.execute(text("UPDATE pool_backfill SET done = 1, swaps = :n WHERE pool = :p")
                                      .bindparams(n=n, p=pool))
@@ -903,6 +990,16 @@ async def _scan_window(frm: int, to: int) -> list[dict] | None:
     pools = {lg["address"].lower() for topic, logs in results
              if topic in (V3_SWAP_TOPIC, V2_SWAP_TOPIC) for lg in logs}
     await asyncio.gather(*[_resolve_pool(p) for p in pools])
+    # a pool whose token0/token1 read failed (RPC 429/503) is not in the cache at all (a genuine non-USDC pool IS cached
+    # as None) → this window must be retried, otherwise the first swaps of a brand-new pool vanish for good
+    unresolved = [p for p in pools if p not in _pool_cache]
+    if unresolved:
+        if len(unresolved) <= 3:
+            await asyncio.gather(*[_resolve_pool(p) for p in unresolved])
+            unresolved = [p for p in unresolved if p not in _pool_cache]
+        if unresolved:
+            log.warning("insider window %s-%s: %d pools unresolved (RPC) → retry", frm, to, len(unresolved))
+            return None
     # ArcPad v3: poznaj quote token kazdego tokena z tego okna zanim zdekodujemy kwoty
     for topic, logs in results:
         if topic == ARCPAD_TRADE_TOPIC:
@@ -1278,6 +1375,7 @@ async def start_api():
     app.router.add_get("/api/trades", api_trades)
     app.router.add_get("/api/token-stats", api_token_stats)
     app.router.add_get("/api/v4pool", api_v4pool)
+    app.router.add_get("/api/index-pool", api_index_pool)
     app.router.add_get("/api/v4launches", api_v4launches)
     from .watchlist import api_whales, api_movers, api_insider_activity, api_wallet_watch_count, api_positions
     app.router.add_get("/api/positions", api_positions)

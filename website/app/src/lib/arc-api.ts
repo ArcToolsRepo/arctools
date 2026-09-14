@@ -572,6 +572,12 @@ export const tokenPage = createServerFn({ method: "POST" })
           }
         }
       }
+      // launchpad-API / factory-registry tokens (Lift, eve.fun, Ellipse, ArcPad, Sashimi …): the Terminal list already knows
+      // pool, pad, logo and socials — use them when the factory read failed (relay hiccup) or the pad is not in the screener
+      let listRow: PadToken | null = null;
+      try { const all = await memo("list:__all", 60_000, listAllTokensImpl, (v) => v.length > 50); listRow = all.find((t) => t.token.toLowerCase() === lc) ?? null; } catch { /* no list */ }
+      const LIST_V3_PADS = new Set(["Lift", "eve.fun", "ArcPad", "Archemist", "RadarDex", "UniswapV3", "Tolly", "Arguspad V3"]);
+      if (venue === "external" && listRow?.pool && !listRow.stock && !listRow.quote && LIST_V3_PADS.has(listRow.pad)) { venue = "v3"; pool = listRow.pool; poolFee = 10000; }
 
       // 2) screener metadata (logo, socials, holders, launchpad, external pool)
       let meta: Record<string, unknown> = {};
@@ -672,7 +678,11 @@ export const tokenPage = createServerFn({ method: "POST" })
       }
       // Kanoniczna pula V3 istnieje, ale jest martwa (np. $0.5 z placeholdera) — realny handel
       // toczy sie na V4 / curve innego pada. Nie wolno tam kierowac swapow uzytkownika.
-      if (venue === "v3" && !padAddress && (liquidityUsdc ?? 0) < 25) {
+      // A thin canonical pool used to be demoted to "external" outright — but Lift / eve.fun launches legitimately trade in
+      // $0.1–$20 pools (that IS their market). So: look for a V4 / curve alternative first; only then demote.
+      const thinV3 = venue === "v3" && !padAddress && (liquidityUsdc ?? 0) < 25;
+      const v3Keep = { pool, poolFee, liquidityUsdc };
+      if (thinV3) {
         venue = "external";
         poolFee = null;
         liquidityUsdc = null;
@@ -725,7 +735,13 @@ export const tokenPage = createServerFn({ method: "POST" })
           /* not a warp token */
         }
       }
+      if (thinV3 && venue === "external" && !v4Key) {
+        // no alternative market found → the thin V3 pool is the real (only) market; keep it tradeable
+        venue = "v3"; pool = v3Keep.pool; poolFee = v3Keep.poolFee; liquidityUsdc = v3Keep.liquidityUsdc;
+      }
       if (venue === "v3") price1m = await quoteToUsdc(token, BigInt(10) ** BigInt(decimals) * 1_000_000n);
+      // a 1M-token quote through a $0.1 pool is pure slippage, not a price: use the launchpad API's spot price instead
+      if (thinV3 && venue === "v3" && listRow?.priceUsd && listRow.priceUsd > 0) price1m = listRow.priceUsd * 1e6;
       if (price1m !== null && !(price1m > 0)) price1m = null;
       if (price1m === null && typeof meta.price === "number") price1m = Number(meta.price) * 1e6;
       let mcapUsd = price1m !== null && supply > 0 ? (price1m / 1e6) * supply : (typeof meta.mcap === "number" ? Number(meta.mcap) : null);
@@ -760,13 +776,15 @@ export const tokenPage = createServerFn({ method: "POST" })
           }
         }
       } catch { /* long.supply API down: page still works from our own data */ }
-      const venueUrl =
+      const venueUrl0 =
         longUrl && (lp === "long.supply") ? longUrl
           : venue === "pad" || padAddress ? `/pad/${lc}`
           : lp === "tolly" ? `https://tollylabs.com/token/${lc}`
           : lp === "warp" ? `https://circlewarp.fun/token/${lc}`
           : lp === "arcpad" || lp === "arcfun" ? `https://arcpad.meme/token/${lc}`
           : `https://radardex.pro/#${lc}`;
+      const listVenue = listRow?.venueUrl && /^https?:\/\//.test(listRow.venueUrl) && !["RadarDex", "UniswapV3", "UniswapV4"].includes(listRow.pad) ? listRow.venueUrl : null;
+      const venueUrl = (!lp && venue !== "pad" && !longUrl && listVenue) ? listVenue : venueUrl0;
 
       return {
         createdAt: typeof meta.deployTs === "number" ? new Date(Number(meta.deployTs) * 1000).toISOString() : null,
@@ -780,11 +798,11 @@ export const tokenPage = createServerFn({ method: "POST" })
         quoteUsd,
         targetQuote,
         holders: typeof meta.holderCount === "number" ? Number(meta.holderCount) : null,
-        launchpad: padAddress ? "ArcToolsPad" : lp === "long.supply" ? "long.supply" : (v4Key ? v4Key.venueName : curveAddress ? "Warp" : lp),
+        launchpad: padAddress ? "ArcToolsPad" : lp === "long.supply" ? "long.supply" : (v4Key ? v4Key.venueName : curveAddress ? "Warp" : (lp ?? listRow?.pad ?? null)),
         stock: stockInfo,
         longPool,
         liquidityUsdc,
-        logo: padLogo || ipfsToHttp(String(meta.icon ?? "")) || (await screenerIcons().then((m) => ipfsToHttp(m.get(lc) ?? "")).catch(() => "")) || xAvatar(padSocial.twitter || (meta.twitter as string) || null),
+        logo: padLogo || ipfsToHttp(String(meta.icon ?? "")) || listRow?.logo || (await screenerIcons().then((m) => ipfsToHttp(m.get(lc) ?? "")).catch(() => "")) || xAvatar(padSocial.twitter || (meta.twitter as string) || null),
         mcapUsd,
         name,
         pool,
@@ -792,14 +810,14 @@ export const tokenPage = createServerFn({ method: "POST" })
         price1m,
         supply,
         symbol,
-        telegram: normSocial("tg", padSocial.telegram || (meta.telegram as string) || null),
+        telegram: normSocial("tg", padSocial.telegram || (meta.telegram as string) || listRow?.telegram || null),
         token: lc,
-        twitter: normSocial("x", padSocial.twitter || (meta.twitter as string) || null),
+        twitter: normSocial("x", padSocial.twitter || (meta.twitter as string) || listRow?.twitter || null),
         curveAddress,
         v4Key,
         venue,
         venueUrl,
-        website: normSocial("web", padSocial.website || (meta.website as string) || null),
+        website: normSocial("web", padSocial.website || (meta.website as string) || listRow?.website || null),
       };
     // cache only complete results: a page computed while RadarDex / the RPC were rate-limiting comes back
     // without price, mcap or logo — serve it once, but let the next visitor recompute instead of freezing junk
