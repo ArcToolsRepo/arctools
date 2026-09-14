@@ -35,52 +35,67 @@ def _addr(word: str) -> str:
     return to_checksum_address("0x" + word[-40:])
 
 
-async def discover_venues(token: str) -> list[dict]:
-    """Returns [{address, kind: v3|v2, venue}] pools that exist for token/USDC."""
-    token = to_checksum_address(token)
+async def _v3_pool(token: str, fee: int) -> dict | None:
+    data = GET_POOL + _pad(token) + _pad(CFG.usdc) + hex(fee)[2:].rjust(64, "0")
+    res = await CHAIN.eth_call(CFG.univ3_factory, data)
+    pool = _addr(res.hex())
+    return {"address": pool, "kind": "v3", "venue": "UniswapV3"} if int(pool, 16) != 0 else None
+
+
+async def _v2_pair(token: str, factory: str, venue: str) -> dict | None:
+    res = await CHAIN.eth_call(factory, GET_PAIR + _pad(token) + _pad(CFG.usdc))
+    pair = _addr(res.hex())
+    return {"address": pair, "kind": "v2", "venue": venue} if int(pair, 16) != 0 else None
+
+
+async def _arcpad(token: str) -> dict | None:
+    res = await CHAIN.eth_call(ARCPAD, CURVE_SEL + _pad(token))
+    body = res.hex().replace("0x", "") if res else ""
+    if len(body) >= 128 and int(body[64:128], 16) > 0:  # tokenReserve > 0
+        return {"address": ARCPAD, "kind": "arcpad", "venue": "ArcToolsPad"}
+    res3 = await CHAIN.eth_call(ARCPAD_V3, CURVE_SEL + _pad(token))
+    if res3 and int.from_bytes(res3[32:64], "big") > 0:
+        return {"address": ARCPAD_V3, "kind": "arcpad", "venue": "ArcToolsPad"}
+    return None
+
+
+async def _db_venues(token: str) -> list[dict]:
+    """Fast path (ms): pools the Arc Insider index already knows for this token."""
     out = []
-    # canonical Uniswap V3, common fee tiers
-    for fee in (10000, 3000, 500):
-        try:
-            data = GET_POOL + _pad(token) + _pad(CFG.usdc) + hex(fee)[2:].rjust(64, "0")
-            res = await CHAIN.eth_call(CFG.univ3_factory, data)
-            pool = _addr(res.hex())
-            if int(pool, 16) != 0:
-                out.append({"address": pool, "kind": "v3", "venue": "UniswapV3"})
-        except Exception:  # noqa
-            pass
-    # V2-style factories (DYORSwap, WarpDex)
-    for factory, venue in ((CFG.dyor_v2_factory, "DYORSwap"), (CFG.warp_dex_factory, "WarpDex")):
-        try:
-            data = GET_PAIR + _pad(token) + _pad(CFG.usdc)
-            res = await CHAIN.eth_call(factory, data)
-            pair = _addr(res.hex())
-            if int(pair, 16) != 0:
-                out.append({"address": pair, "kind": "v2", "venue": venue})
-        except Exception:  # noqa
-            pass
-    # Uniswap V4 (act.fun, Arguspad, UBI.fun, ArcadeSwap...): pool ids from the Arc Insider index
+    t = token.lower()
+    try:
+        for r in await db.fetchall(text("SELECT pool FROM insider_pools WHERE token = :t").bindparams(t=t)):
+            out.append({"address": to_checksum_address(r["pool"]), "kind": "v3", "venue": "UniswapV3"})
+    except Exception:  # noqa
+        pass
     try:
         rows = await db.fetchall(text(
-            "SELECT id, is0, hooks, usdc_dec FROM v4_pools WHERE token = :t AND fee IS NOT NULL").bindparams(t=token.lower()))
+            "SELECT id, is0, hooks, usdc_dec FROM v4_pools WHERE token = :t AND fee IS NOT NULL").bindparams(t=t))
         for r in rows:
             out.append({"address": V4_POOL_MANAGER, "kind": "v4", "venue": v4_venue_name(r["hooks"]),
                         "pool_id": r["id"], "is0": bool(r["is0"]), "usdc_dec": int(r["usdc_dec"] or 18)})
     except Exception:  # noqa
         pass
-    # ArcPad (nasz launchpad): trading na kontrakcie launchpada
+    return out
+
+
+async def discover_venues(token: str, budget: float = 12.0) -> list[dict]:
+    """Returns [{address, kind: v3|v2|v4|arcpad, venue}] markets for token/USDC.
+    Index first (instant), then every RPC probe IN PARALLEL under one time budget —
+    a slow RPC day must not turn /add into a minutes-long wait."""
+    token = to_checksum_address(token)
+    out = await _db_venues(token)
+    probes = [_v3_pool(token, fee) for fee in (10000, 3000, 500)]
+    probes += [_v2_pair(token, CFG.dyor_v2_factory, "DYORSwap"), _v2_pair(token, CFG.warp_dex_factory, "WarpDex"),
+               _arcpad(token)]
     try:
-        res = await CHAIN.eth_call(ARCPAD, CURVE_SEL + _pad(token))
-        if not res or int.from_bytes(res[32:64], "big") == 0:
-            res3 = await CHAIN.eth_call(ARCPAD_V3, CURVE_SEL + _pad(token))
-            if res3 and int.from_bytes(res3[32:64], "big") > 0:
-                out.append({"address": ARCPAD_V3, "kind": "arcpad", "venue": "ArcToolsPad"})
-                return out
-        body = res.hex().replace("0x", "")
-        if len(body) >= 128 and int(body[64:128], 16) > 0:  # tokenReserve > 0
-            out.append({"address": ARCPAD, "kind": "arcpad", "venue": "ArcToolsPad"})
-    except Exception:  # noqa
-        pass
+        results = await asyncio.wait_for(asyncio.gather(*probes, return_exceptions=True), timeout=budget)
+    except asyncio.TimeoutError:
+        results = []
+    seen = {(v["address"].lower(), v.get("pool_id")) for v in out}
+    for r in results:
+        if isinstance(r, dict) and (r["address"].lower(), r.get("pool_id")) not in seen:
+            out.append(r); seen.add((r["address"].lower(), r.get("pool_id")))
     return out
 
 
@@ -201,10 +216,22 @@ def _decode_str(raw: bytes) -> str:
     return "".join(ch for ch in s if ch.isprintable()).strip()[:24]
 
 
-async def token_symbol(token: str) -> str:
-    """Symbol tokena z retry + fallbackami (bytes32, name(), skrocony adres).
-    Nigdy nie zwraca gołego '?' — dzięki temu alerty zawsze mają czytelną nazwę."""
+async def token_symbol(token: str, budget: float = 8.0) -> str:
+    """Symbol: index first (instant), then RPC under a time budget, then a short address."""
     addr = to_checksum_address(token)
+    try:
+        r = await db.fetchone(text("SELECT symbol FROM token_symbols WHERE token = :t").bindparams(t=addr.lower()))
+        if r and r["symbol"] and r["symbol"] not in ("?", ""):
+            return r["symbol"]
+    except Exception:  # noqa
+        pass
+    try:
+        return await asyncio.wait_for(_token_symbol_rpc(addr), timeout=budget)
+    except Exception:  # noqa
+        return addr[:6] + "…" + addr[-4:]
+
+
+async def _token_symbol_rpc(addr: str) -> str:
     for sel in (SEL_SYMBOL, SEL_NAME):
         for attempt in range(3):
             try:
