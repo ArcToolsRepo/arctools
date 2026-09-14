@@ -413,7 +413,7 @@ const ROWS: Row[] = [
   ["dev sold", "dev sprzedał", "dev vendió", "дев продал", "开发者卖出"],
   ["of buy vol", "wolumenu kupna", "del vol de compra", "от объёма покупок", "占买入量"],
   ["block", "blok", "bloque", "блок", "区块"],
-  ["buy", "kupno", "compra", "покупка", "买入"],
+  ["buy", "kup", "comprar", "купить", "买入"],
   ["insider", "insider", "insider", "инсайдер", "内幕"],
   ["pro", "pro", "pro", "про", "高手"],
   ["dev", "dev", "dev", "дев", "开发者"],
@@ -811,6 +811,17 @@ const ROWS: Row[] = [
   ["ArcTools: the trading terminal for Arc", "ArcTools: terminal handlowy dla Arc", "ArcTools: el terminal de trading para Arc", "ArcTools: торговый терминал для Arc", "ArcTools：Arc 的交易终端"],
   ["on Arc: chart, trades, swap", "na Arc: wykres, transakcje, swap", "en Arc: gráfico, trades, swap", "на Arc: график, сделки, своп", "于 Arc：图表、交易、兑换"],
   ["Token on Arc", "Token na Arc", "Token en Arc", "Токен на Arc", "Arc 上的代币"],
+  ["(a wrapped-stock IOU trading at $", "(IOU opakowanej akcji notowane po $", "(un IOU de acción envuelta cotizando a $", "(IOU обёрнутой акции по $", "（封装股票 IOU，价格 $"],
+  ["on Arc) on a Uniswap V3 pool", "na Arc) w puli Uniswap V3", "en Arc) en un pool Uniswap V3", "на Arc) в пуле Uniswap V3", "于 Arc）的 Uniswap V3 池"],
+  ["USD price = pool price × what the IOU actually trades for on Arc (its deepest USDC pool), not the NYSE quote. Our aggregator quotes both the USDC pool and the two-hop route through the stock and takes the better fill.", "Cena USD = cena w puli × realna cena IOU na Arc (jego najgłębsza pula USDC), nie kurs NYSE. Nasz agregator wycenia zarówno pulę USDC, jak i trasę dwuhopową przez akcję i bierze lepszy fill.", "Precio USD = precio del pool × lo que el IOU realmente cotiza en Arc (su pool USDC más profundo), no la cotización de NYSE. Nuestro agregador cotiza tanto el pool USDC como la ruta de dos saltos vía la acción y toma el mejor fill.", "Цена в USD = цена пула × реальная цена IOU на Arc (его самый глубокий пул USDC), а не котировка NYSE. Наш агрегатор считает и пул USDC, и двухшаговый маршрут через акцию и берёт лучший фил.", "美元价格 = 池内价格 × IOU 在 Arc 的实际成交价（其最深 USDC 池），而非纽交所报价。聚合器同时报价 USDC 池与经股票的两跳路径，取更优成交。"],
+  ["1% platform fee, 10% of it to ARCT stakers.", "1% opłaty platformy, 10% z niej dla stakerów ARCT.", "1% de comisión, el 10% para stakers de ARCT.", "Комиссия 1%, 10% из неё стейкерам ARCT.", "平台费 1%，其中 10% 给 ARCT 质押者。"],
+  ["Graduates to Uniswap at", "Graduacja na Uniswap przy", "Se gradúa a Uniswap en", "Градуация на Uniswap при", "达到以下储备后毕业至 Uniswap："],
+  ["real reserve.", "realnej rezerwy.", "de reserva real.", "реального резерва.", "真实储备。"],
+  ["Uniswap V3 pool", "pula Uniswap V3", "pool Uniswap V3", "пул Uniswap V3", "Uniswap V3 池"],
+  ["1% service fee.", "1% opłaty serwisowej.", "1% de comisión de servicio.", "Сервисная комиссия 1%.", "1% 服务费。"],
+  ["1.5% platform fee, best price across every venue (V3, V4, curves). Need TP/SL or limit orders? Use the", "1,5% opłaty platformy, najlepsza cena ze wszystkich venue (V3, V4, krzywe). Potrzebujesz TP/SL lub zleceń limit? Użyj", "1,5% de comisión, mejor precio entre todos los venues (V3, V4, curvas). ¿TP/SL u órdenes límite? Usa el", "Комиссия 1,5%, лучшая цена по всем площадкам (V3, V4, кривые). Нужны TP/SL или лимитные ордера? Используйте", "平台费 1.5%，全场所最优价（V3、V4、曲线）。需要止盈止损或限价单？请使用"],
+  ["sniper bot", "bota sniper", "bot sniper", "снайпер-бот", "狙击机器人"],
+  ["Need TP/SL or limit orders? Use the", "Potrzebujesz TP/SL lub zleceń limit? Użyj", "¿TP/SL u órdenes límite? Usa el", "Нужны TP/SL или лимитные ордера? Используйте", "需要止盈止损或限价单？请使用"],
 ];
 
 export function dictFor(lang: Lang): Record<string, string> {
