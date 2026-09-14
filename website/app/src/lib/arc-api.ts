@@ -506,16 +506,24 @@ export const tokenPage = createServerFn({ method: "POST" })
         { data: SEL_LAUNCH + pad32(token), target: ARCPAD_V3 },
       ];
       const res = await multicall(calls, 20);
-      const name = decodeString(res[0]);
-      const symbol = decodeString(res[1]);
+      // the whole multicall came back empty → the relay failed, not the token: never turn that into "Token not found"
+      if (res.slice(0, 4).every((r) => !r || r === "0x")) throw new Error("RPC unavailable — retry");
+      let name = decodeString(res[0]);
+      let symbol = decodeString(res[1]);
       if ((!name || name === "?") && (!symbol || symbol === "?")) {
-        const code = (await rpc("eth_getCode", [token, "latest"]).catch(() => null)) as string | null;
-        if (code === null) throw new Error("RPC unavailable — retry");          // transient: not cached, client retries
-        if (code === "0x" || code === "0x0") return { error: "No token contract at this address on Arc." };
-        return { error: "Contract does not expose an ERC-20 name/symbol." };
+        // a token we already list (any launchpad / screener source) is a token — take its identity from the list
+        let row: PadToken | null = null;
+        try { const all = await memo("list:__all", 60_000, listAllTokensImpl, (v) => v.length > 50); row = all.find((t) => t.token.toLowerCase() === lc) ?? null; } catch { /* no list */ }
+        if (row) { name = row.name || row.symbol; symbol = row.symbol; }
+        else {
+          const code = (await rpc("eth_getCode", [token, "latest"]).catch(() => null)) as string | null;
+          if (code === null) throw new Error("RPC unavailable — retry");          // transient: not cached, client retries
+          if (code === "0x" || code === "0x0") return { error: "No token contract at this address on Arc." };
+          return { error: "Contract does not expose an ERC-20 name/symbol." };
+        }
       }
-      const decimals = Number(toNum(res[2])) || 18;
-      const supply = Number(toNum(res[3]) / BigInt(10) ** BigInt(Math.max(0, decimals - 6))) / 1e6;
+      const decimals = res[2] ? Number(toNum(res[2])) || 18 : 18;
+      const supply = res[3] ? Number(toNum(res[3]) / BigInt(10) ** BigInt(Math.max(0, decimals - 6))) / 1e6 : 1e9;
 
       let venue: TokenPageInfo["venue"] = "external";
       let pool: string | null = null;

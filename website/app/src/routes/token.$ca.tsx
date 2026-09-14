@@ -63,11 +63,17 @@ export const Route = createFileRoute("/token/$ca")({
     // cache within 450 ms we ship the shell with that row and the client renders the whole page from it immediately
     const { listFullTokens } = await import("@/lib/arc-api");
     const litePromise = listFullTokens().then((l) => l.find((t) => t.token.toLowerCase() === params.ca.toLowerCase()) ?? null).catch(() => null);
-    const r = await Promise.race([p, new Promise<"__slow">((res) => setTimeout(() => res("__slow"), 450))]);
+    // a rejected compute (relay down) is treated exactly like a slow one: ship the shell, the client renders from the list row
+    const r = await Promise.race([p.catch(() => "__slow" as const), new Promise<"__slow">((res) => setTimeout(() => res("__slow"), 450))]);
     if (r === "__slow") {
       void p.catch(() => null);
       const lite = await Promise.race([litePromise, new Promise<null>((res) => setTimeout(() => res(null), 350))]);
       return { info: null, error: null, pending: true as const, lite };
+    }
+    if ("error" in r && !/No token contract/.test(r.error)) {
+      // "does not expose name/symbol" after a relay hiccup: fall back to the list row rather than a dead end
+      const lite = await Promise.race([litePromise, new Promise<null>((res) => setTimeout(() => res(null), 350))]);
+      if (lite) return { info: null, error: null, pending: true as const, lite };
     }
     return { info: "error" in r ? null : r, error: "error" in r ? r.error : null, pending: false as const, lite: null };
   },
@@ -160,6 +166,11 @@ function fromLite(t: PadToken): TokenPageInfo {
   };
 }
 
+function AutoRetry() {
+  useEffect(() => { const id = setTimeout(() => window.location.reload(), 7000); return () => clearTimeout(id); }, []);
+  return null;
+}
+
 function TokenPage() {
   const loaded = Route.useLoaderData();
   const params = Route.useParams();
@@ -174,7 +185,8 @@ function TokenPage() {
       const r = await tokenPage({ data: { token: params.ca } }).catch(() => null);
       if (!alive) return;
       if (r && !("error" in r)) setLate({ info: r, error: null });
-      else if (r && "error" in r && !lite) setLate({ info: null, error: r.error });
+      else if (r && "error" in r && !lite && /No token contract/.test(r.error)) setLate({ info: null, error: r.error });   // only a genuinely empty address is "not found"
+      else if (r && "error" in r && !lite) { if (attempt < 2) setTimeout(() => void go(attempt + 1), 2500); else setLate({ info: null, error: r.error }); }
       else if (attempt < 1 && !lite) setTimeout(() => void go(attempt + 1), 1500);
       else if (lite) { setLate({ info: fromLite(lite), error: null }); if (attempt < 2) setTimeout(() => void go(attempt + 1), 8000); }   // degraded now, upgrade when RPC answers
       else setLate({ info: null, error: "Could not load this token right now — try again in a moment." });
@@ -585,8 +597,20 @@ function TokenPage() {
       <main className="arc-site" style={{ minHeight: "100dvh" }}>
         <ArcNav active="/trade" />
         <section className="arc-section" style={{ paddingTop: 130 }}>
-          <h1 className="arc-h2">Token not found</h1>
-          <p className="arc-body">{error ?? "Unknown error."}</p>
+          {/No token contract/.test(error ?? "") ? (
+            <>
+              <h1 className="arc-h2">Token not found</h1>
+              <p className="arc-body">{error}</p>
+            </>
+          ) : (
+            <>
+              <h1 className="arc-h2">Arc RPC is busy right now</h1>
+              <p className="arc-body">We could not read this token from the chain in time. The page retries automatically every few seconds — or search it in the Terminal, where the cached data still shows.</p>
+              <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12 }}>{error ?? ""}</p>
+              <button className="arc-mono" onClick={() => window.location.reload()} style={{ background: "var(--arc-up)", border: "none", borderRadius: 6, color: "#06130b", cursor: "pointer", fontWeight: 700, marginTop: 8, padding: "8px 14px" }} type="button">Retry now</button>
+              <AutoRetry />
+            </>
+          )}
         </section>
       </main>
     );
