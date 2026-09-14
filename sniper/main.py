@@ -22,6 +22,8 @@ async def main():
     await db.init_db()
     bot = Bot(CFG.bot_token, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher()
+    from arctools import metrics
+    dp.update.outer_middleware(metrics.TimingMiddleware())
     dp.include_router(pro_router)
     dp.include_router(router)
 
@@ -46,6 +48,7 @@ async def main():
 
     tasks = [
         asyncio.create_task(sniper.watcher_loop(), name="watcher"),
+        asyncio.create_task(metrics.heartbeat_loop(bot), name="metrics"),
         asyncio.create_task(alerts.alerts_loop(), name="alerts"),
         asyncio.create_task(alerts.tp_loop(), name="tp"),
         asyncio.create_task(alerts.watch_tx_loop(), name="watch_tx"),

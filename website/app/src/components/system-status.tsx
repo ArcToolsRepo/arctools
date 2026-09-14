@@ -6,9 +6,10 @@ import { useEffect, useState } from "react";
  * Green = all checks passed, amber = something degraded (self-heal running), grey = watchdog not reporting.
  */
 const API = "https://bot-production-4200.up.railway.app/api/status";
-type Status = { state: "running" | "degraded" | "stale" | "starting"; ts: number; age_s: number | null; every_s: number; checks: Record<string, { ok: boolean; detail: string; streak: number }> };
+type Status = { state: "running" | "degraded" | "stale" | "starting"; ts: number; age_s: number | null; every_s: number; checks: Record<string, { ok: boolean; detail: string; streak: number }>; bots?: Record<string, BotBeat> };
+type BotBeat = { p50_ms?: number | null; p95_ms?: number | null; buys_1h?: number; buys_ok_1h?: number; buy_median_s?: number | null; tg_ping_ms?: number | null; heartbeat_age_s?: number; uptime_s?: number; updates_15m?: number };
 
-const LABEL: Record<string, string> = { pages: "site", tokens: "token feed", relay: "RPC relay", index: "swap index", api: "data API" };
+const LABEL: Record<string, string> = { bots: "bots", cells: "table cells", pages: "site", tokens: "token feed", relay: "RPC relay", index: "swap index", api: "data API", display: "display" };
 
 export function SystemStatus() {
   const [st, setSt] = useState<Status | null>(null);
@@ -35,6 +36,19 @@ export function SystemStatus() {
               <span style={{ color: "var(--arc-muted)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.detail}>{c.ok ? "ok" : c.detail}</span>
             </div>
           ))}
+          {st.bots && (
+            <div style={{ borderTop: "1px solid var(--arc-line)", color: "var(--arc-muted)", marginTop: 6, paddingTop: 6 }}>
+              {Object.entries(st.bots).map(([name, b]) => (
+                <div key={name} style={{ padding: "1px 0", whiteSpace: "nowrap" }}>
+                  <span style={{ color: "var(--arc-ink)" }}>{name === "sniper" ? "Sniper bot" : "Buy bot"}</span>
+                  {" · "}p50 {Math.round(b.p50_ms ?? 0)}ms · p95 {Math.round(b.p95_ms ?? 0)}ms
+                  {b.buys_1h != null && ` · fills ${b.buys_ok_1h ?? 0}/${b.buys_1h}${b.buy_median_s ? ` in ${b.buy_median_s.toFixed(1)}s` : ""}`}
+                  {b.tg_ping_ms != null && ` · tg ${Math.round(b.tg_ping_ms)}ms`}
+                  {b.uptime_s != null && ` · up ${Math.floor(b.uptime_s / 3600)}h${Math.floor((b.uptime_s % 3600) / 60)}m`}
+                </div>
+              ))}
+            </div>
+          )}
           <div style={{ color: "var(--arc-muted)", marginTop: 4 }}>checked every {Math.round((st.every_s || 180) / 60)} min · last {st.age_s != null ? `${st.age_s}s ago` : "—"}{failing.length ? " · self-heal active" : ""}</div>
         </div>
       )}

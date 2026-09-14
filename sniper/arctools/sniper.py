@@ -90,6 +90,13 @@ async def execute_buy(tg_id: int, token: str, pad: Pad, amount_usdc: float,
             return [{"ok": False, "err": "no Uniswap V4 pool found for this token"}]
 
     async def _one(wid: int):
+        from . import metrics
+        t0 = time.monotonic()
+        r = await _one_inner(wid)
+        metrics.record_buy(bool(r.get("ok")), time.monotonic() - t0)
+        return r
+
+    async def _one_inner(wid: int):
         w = await wallets.get_wallet(wid)
         if not w:
             return {"ok": False, "err": f"brak portfela {wid}"}

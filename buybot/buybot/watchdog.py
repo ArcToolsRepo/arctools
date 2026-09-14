@@ -231,7 +231,42 @@ async def chk_cells(s):
     return (rc >= 0.9 and lc >= 0.6), "cells: " + detail
 
 
-CHECKS = [("pages", chk_pages), ("cells", chk_cells), ("tokens", chk_tokens_api), ("relay", chk_relay), ("index", chk_index), ("api", chk_own_api), ("display", chk_display)]
+async def chk_bots(s):
+    """Speed & stability of the Telegram bots: sniper heartbeat freshness, handler latency p95, buy fill rate,
+    Telegram API ping, RPC quarantine; buybot's own handler latency."""
+    from .botmetrics import all_bots
+    bots = all_bots()
+    problems, notes = [], []
+    sn = bots.get("sniper")
+    if not sn:
+        problems.append("sniper: no heartbeat yet")
+    else:
+        age = sn.get("heartbeat_age_s", 9999)
+        if age > 150:
+            problems.append(f"sniper heartbeat {age}s old (bot down?)")
+        p95 = sn.get("p95_ms")
+        if p95 is not None and p95 > 4000:
+            problems.append(f"sniper p95 {p95:.0f}ms")
+        if sn.get("tg_ping_ms") is None:
+            problems.append("sniper: Telegram API unreachable")
+        elif sn["tg_ping_ms"] > 2500:
+            problems.append(f"sniper tg ping {sn['tg_ping_ms']:.0f}ms")
+        b, ok = sn.get("buys_1h") or 0, sn.get("buys_ok_1h") or 0
+        if b >= 3 and ok == 0:
+            problems.append(f"sniper: 0/{b} buys filled in 1h")
+        if len(sn.get("rpc_quarantined") or []) >= 3:
+            problems.append("sniper: all RPCs quarantined")
+        notes.append(f"sniper p50 {sn.get('p50_ms') or 0:.0f}ms · p95 {p95 or 0:.0f}ms · buys {ok}/{b} · fill {sn.get('buy_median_s') or 0:.1f}s · tg {sn.get('tg_ping_ms') or 0:.0f}ms · up {(sn.get('uptime_s') or 0)//60}m")
+    bb = bots["buybot"]
+    if bb.get("p95_ms") is not None and bb["p95_ms"] > 4000:
+        problems.append(f"buybot p95 {bb['p95_ms']:.0f}ms")
+    if (bb.get("errors_15m") or 0) >= 5:
+        problems.append(f"buybot {bb['errors_15m']} handler errors/15m")
+    notes.append(f"buybot p95 {bb.get('p95_ms') or 0:.0f}ms · {bb.get('updates_15m')} upd/15m · up {bb['uptime_s']//60}m")
+    return (not problems), ("; ".join(problems) + " | " if problems else "") + " · ".join(notes)
+
+
+CHECKS = [("bots", chk_bots), ("pages", chk_pages), ("cells", chk_cells), ("tokens", chk_tokens_api), ("relay", chk_relay), ("index", chk_index), ("api", chk_own_api), ("display", chk_display)]
 REPORT_EVERY = int(os.getenv("WATCHDOG_REPORT_EVERY", "3600"))   # hourly "all good" summary to the admin
 _last_report = 0.0
 
@@ -297,5 +332,6 @@ async def api_status(req):
     state = "starting" if LAST["ok"] is None else ("running" if LAST["ok"] else "degraded")
     if age is not None and age > EVERY * 4:
         state = "stale"
-    return web.json_response({"state": state, "ts": LAST["ts"], "age_s": age, "every_s": EVERY, "rounds": LAST["rounds"], "checks": LAST["checks"]},
+    from .botmetrics import all_bots
+    return web.json_response({"state": state, "ts": LAST["ts"], "age_s": age, "every_s": EVERY, "rounds": LAST["rounds"], "checks": LAST["checks"], "bots": all_bots()},
                              headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=30"})

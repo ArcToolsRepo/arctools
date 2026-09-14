@@ -17,6 +17,8 @@ async def main():
     await db.init_db()
     bot = Bot(CFG.bot_token, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher()
+    from buybot import botmetrics
+    dp.update.outer_middleware(botmetrics.TimingMiddleware())
     dp.include_router(router)
     dp.include_router(watchlist.router)
     dp.include_router(rules.router)

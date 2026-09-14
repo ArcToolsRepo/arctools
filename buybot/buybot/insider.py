@@ -1369,6 +1369,8 @@ async def api_token_stats(request: web.Request) -> web.Response:
 async def start_api():
     import os
     app = web.Application()
+    from .botmetrics import api_heartbeat
+    app.router.add_post("/api/bot-heartbeat", api_heartbeat)
     app.router.add_get("/api/insiders", api_board)
     app.router.add_get("/api/insider/{wallet}", api_wallet)
     app.router.add_get("/api/ohlc", api_ohlc)
