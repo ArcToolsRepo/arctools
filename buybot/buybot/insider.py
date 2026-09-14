@@ -205,6 +205,20 @@ async def _resolve_pool(pool: str) -> dict | None:
 
 # ---- stock-quoted pools (long.supply): quote token -> USD, refreshed by quote_pools_loop
 _quote_usd: dict[str, float] = {}
+LS_HOSTS = ["https://long.supply/api", "https://long-supply-keeper-production.up.railway.app"]  # public host, then their keeper (same JSON)
+
+
+async def _ls_get(s, path: str) -> dict:
+    last = None
+    for h in LS_HOSTS:
+        try:
+            async with s.get(f"{h}{path}", headers={"User-Agent": "ArcTools/1.0"}, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                if r.status != 200:
+                    last = Exception(f"{h}{path} {r.status}"); continue
+                return await r.json(content_type=None)
+        except Exception as e:  # noqa
+            last = e
+    raise last or Exception("long.supply unreachable")
 
 
 async def quote_pools_loop():
@@ -218,14 +232,12 @@ async def quote_pools_loop():
     while True:
         try:
             async with aiohttp.ClientSession() as s:
-                async with s.get("https://long.supply/api/pairs", headers={"User-Agent": "ArcTools/1.0"}, timeout=aiohttp.ClientTimeout(total=15)) as r:
-                    pairs = (await r.json()).get("pairs") or []
+                pairs = (await _ls_get(s, "/pairs")).get("pairs") or []
                 for p in pairs:
                     _quote_usd[p["arcStock"].lower()] = int(p["usdX18"]) / 1e18
                 launches = []
                 for off in range(0, 2000, 100):
-                    async with s.get(f"https://long.supply/api/launches?limit=100&offset={off}", headers={"User-Agent": "ArcTools/1.0"}, timeout=aiohttp.ClientTimeout(total=15)) as r:
-                        j = await r.json()
+                    j = await _ls_get(s, f"/launches?limit=100&offset={off}")
                     launches += j.get("launches") or []
                     for k, v in (j.get("usdByPairToken") or {}).items():
                         _quote_usd[k.lower()] = int(v) / 1e18

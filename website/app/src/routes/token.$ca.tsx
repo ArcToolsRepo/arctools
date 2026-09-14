@@ -202,6 +202,11 @@ function TokenPage() {
   const padAddr = info?.padAddress ?? PAD;
   const quoteTok = info?.quoteToken ?? null;         // null = native USDC
   const qSym = info?.quoteSymbol ?? "USDC";
+  // the pair the token actually trades in: pad quote token, or the long.supply stock pool (LONG/CRCL), else USDC
+  // main market pair: pad quote token, or the long.supply stock pool when it is the deeper market (LONG/CRCL $496K vs LONG/USDC $123K), else USDC
+  const stockIsMain = !!info?.longPool && !info.stock && (info.venue === "external" || (info.longPool.liquidityUsd ?? 0) > (info.liquidityUsdc ?? 0));
+  const pairSym = (info?.quoteSymbol && info.quoteSymbol !== "USDC") ? info.quoteSymbol : stockIsMain ? info!.longPool!.pairSymbol : "USDC";
+  const altPair = stockIsMain && info?.venue !== "external" ? "USDC" : (!stockIsMain && info?.longPool && !info.stock) ? info.longPool.pairSymbol : null;
   const qUsd = info?.quoteUsd ?? 1;
   // long.supply launches whose only market is a stock-quoted V3 pool: ArcAggregatorV2 routes USDC -> stock -> token in one tx
   const viaHop = !!info && ((info.venue === "external" && !!info.longPool && !info.stock) || (info.venue === "pad" && !!info.quoteToken && !info.graduated));
@@ -573,9 +578,10 @@ function TokenPage() {
               <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 8 }}>
                 <h1 className="arc-h3" style={{ margin: 0 }}>{info.name}</h1>
                 <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 13 }}>${info.symbol}</span>
-                <span className="arc-mono" title={info.stock ? "Custodial IOU of a stock (long.supply) — trades against USDC" : `Trading pair: ${info.symbol}/${qSym}${quoteTok ? " — quoted in a wrapped stock, routed USDC → " + qSym + " → " + info.symbol : ""}`} style={{ border: "1px solid var(--arc-line)", borderRadius: 4, color: quoteTok ? "#7cc4ff" : "var(--arc-muted)", fontSize: 10.5, padding: "2px 6px" }}>
-                  {info.symbol}/{info.stock ? "USDC · IOU" : qSym}
+                <span className="arc-mono" title={info.stock ? "Custodial IOU of a stock (long.supply) — trades against USDC" : `Trading pair: ${info.symbol}/${pairSym}${pairSym !== "USDC" ? " — quoted in a wrapped stock, routed USDC → " + pairSym + " → " + info.symbol : ""}`} style={{ border: "1px solid var(--arc-line)", borderRadius: 4, color: pairSym !== "USDC" ? "#7cc4ff" : "var(--arc-muted)", fontSize: 10.5, padding: "2px 6px" }}>
+                  {info.symbol}/{info.stock ? "USDC · IOU" : pairSym}
                 </span>
+                {altPair && <span className="arc-mono" title={`Secondary market: ${info.symbol}/${altPair}. The aggregator quotes both and takes the better fill.`} style={{ color: "var(--arc-muted)", fontSize: 10.5 }}>+ /{altPair}</span>}
                 {info.launchpad && (
                   <span className="arc-mono" style={{ background: info.venue === "pad" ? "var(--arc-cobalt)" : "transparent", border: "1px solid var(--arc-cobalt)", color: info.venue === "pad" ? "var(--arc-on-accent)" : "var(--arc-cobalt)", fontSize: 10, padding: "2px 7px", textTransform: "uppercase" }}>
                     {info.launchpad}
@@ -616,7 +622,7 @@ function TokenPage() {
               ))}
             </div>
             <div className="arc-mono" style={{ borderBottom: "1px solid var(--arc-line)", color: "var(--arc-muted)", fontSize: 11, padding: "6px 10px" }}>
-              {info.symbol}/USDC · {mode === "mcap" ? "Market Cap" : "Price"} · {tf} · {info.venue === "pad" ? `ArcToolsPad curve (${qSym} pair)` : info.venue === "v3" ? `Uniswap V3 ${((info.poolFee ?? 0) / 10000).toFixed(2)}%${info.graduated ? " · graduated from ArcToolsPad" : ""}` : info.venue === "v4" ? `Uniswap V4${info.launchpad && info.launchpad !== "Uniswap V4" ? ` · ${info.launchpad}` : " · hookless pool"}` : info.venue === "curve" ? "Warp bonding curve" : (info.launchpad ?? "external pool")}
+              {info.symbol}/{info.stock ? "USDC" : pairSym} · {mode === "mcap" ? "Market Cap" : "Price"} · {tf} · {info.venue === "pad" ? `ArcToolsPad curve (${qSym} pair)` : info.venue === "v3" ? `Uniswap V3 ${((info.poolFee ?? 0) / 10000).toFixed(2)}%${info.graduated ? " · graduated from ArcToolsPad" : ""}` : info.venue === "v4" ? `Uniswap V4${info.launchpad && info.launchpad !== "Uniswap V4" ? ` · ${info.launchpad}` : " · hookless pool"}` : info.venue === "curve" ? "Warp bonding curve" : (info.launchpad ?? "external pool")}
               {candles.length < 5 && effCandles.length > 0 && <span style={{ marginLeft: 10, opacity: 0.7 }}>· venue data (own index syncing)</span>}
             </div>
             <TvChart avatars={chartAvatars} candles={effCandles} markers={chartMarkers} mode={mode} onVisible={setMarkersVisible} scale={scale} />

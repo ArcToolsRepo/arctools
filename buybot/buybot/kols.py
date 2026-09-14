@@ -387,7 +387,7 @@ async def _alert_mention(a: dict, t: dict, ca: str, kind: str, txt: str):
 
 
 async def api_kol_import(req: web.Request):
-    """POST /api/kol-import {handles:[...], category:'gmgn'} (X-Ref-Auth) — bulk add; profiles are fetched and only 10k+ stay active."""
+    """POST /api/kol-import {handles:[...], category:'trader'} (X-Ref-Auth) — bulk add; profiles are fetched and only 10k+ stay active."""
     if not ADMIN_AUTH or req.headers.get("X-Ref-Auth") != ADMIN_AUTH:
         return web.json_response({"error": "auth"}, status=401, headers=CORS)
     body = await req.json()

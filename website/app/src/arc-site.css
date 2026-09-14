@@ -779,3 +779,8 @@ select option:disabled { color: #6b7385; }
 }
 /* desktop below 1750px: the Buy label drops " USDC" so the table fits without the sticky column covering Smart */
 @media (min-width: 1024px) and (max-width: 1750px) { .arc-buyunit { display: none; } .arc-tablewrap td:last-child button { padding-left: 10px !important; padding-right: 10px !important; } }
+/* desktop: tab labels never break into two lines; the timeframe group drops to its own row when the width runs out */
+@media (min-width: 761px) {
+  .arc-tabs { flex-wrap: wrap !important; row-gap: 4px; }
+  .arc-tabs > button { white-space: nowrap; flex: 0 0 auto; }
+}

@@ -31,7 +31,7 @@ export const Route = createFileRoute("/trade")({
   head: () => ({
     meta: [
       { title: "ArcTools Terminal: one-click buys on every Arc launchpad" },
-      { content: "GMGN-style terminal for Arc: new pairs, trending, insider picks, one-click buy and sell from an in-browser wallet, best price across every venue.", name: "description" },
+      { content: "Pro trading terminal for Arc: new pairs, trending, insider picks, one-click buy and sell from an in-browser wallet, best price across every venue.", name: "description" },
     ],
   }),
   component: Trade,

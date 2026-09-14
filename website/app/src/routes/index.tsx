@@ -69,7 +69,7 @@ type Feature = {
 };
 
 const FEATURES: Feature[] = [
-  { body: "GMGN-style table for Arc: new pairs, trending, insider picks, watchlist and holdings. One-click buy from any row, signed by an in-browser trading wallet or MetaMask.", icon: "/assets/icons/crosshair.png", span: 5, title: "Terminal" },
+  { body: "Pro trading table for Arc: new pairs, trending, insider picks, watchlist and holdings. One-click buy from any row, signed by an in-browser trading wallet or MetaMask.", icon: "/assets/icons/crosshair.png", span: 5, title: "Terminal" },
   { body: "Every Arc launchpad and DEX behind one swap. Quotes V3, V4, bonding curves and Warp, splits the order across venues when it pays.", icon: "/assets/icons/bolt.png", span: 4, title: "Aggregator" },
   { body: "", icon: "", pattern: true, span: 3, title: "" },
   { body: "Top-100 wallets by 30-day PnL, recomputed every 2 minutes from the chain-wide swap index. Their buys, sells and clusters stream to Telegram.", icon: "/assets/icons/copy.png", span: 4, title: "Insiders" },

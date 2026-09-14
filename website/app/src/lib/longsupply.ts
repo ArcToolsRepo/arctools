@@ -11,7 +11,30 @@
  */
 import { memo, multicall, type PadToken } from "@/lib/arc-api";
 
+/** Wrapped stocks have no on-chain logo; the issuer's company mark (Google favicon service by domain, 128 px) is the honest picture. */
+const STOCK_LOGO: Record<string, string> = {
+  CRCL: "https://www.google.com/s2/favicons?domain=circle.com&sz=128", NVDA: "https://www.google.com/s2/favicons?domain=nvidia.com&sz=128", TSLA: "https://www.google.com/s2/favicons?domain=tesla.com&sz=128",
+  SPY: "https://www.google.com/s2/favicons?domain=ssga.com&sz=128", AAPL: "https://www.google.com/s2/favicons?domain=apple.com&sz=128", GME: "https://www.google.com/s2/favicons?domain=gamestop.com&sz=128",
+  AMC: "https://www.google.com/s2/favicons?domain=amctheatres.com&sz=128", HIMS: "https://www.google.com/s2/favicons?domain=forhims.com&sz=128", SNAP: "https://www.google.com/s2/favicons?domain=snap.com&sz=128",
+  SPCX: "https://www.google.com/s2/favicons?domain=spacex.com&sz=128", OPENAI: "https://www.google.com/s2/favicons?domain=openai.com&sz=128", ANTHROPIC: "https://www.google.com/s2/favicons?domain=anthropic.com&sz=128",
+  WETH: "https://www.google.com/s2/favicons?domain=ethereum.org&sz=128",
+};
+
 const API = "https://long.supply/api";
+// long.supply's domain dropped out of DNS on 14.09 while their keeper backend on Railway kept serving the same JSON
+// (without the /api prefix). Try the public host first, then the keeper — same shapes, same data.
+const API_HOSTS = ["https://long.supply/api", "https://long-supply-keeper-production.up.railway.app"];
+async function lsFetch<T>(path: string): Promise<T> {
+  let last: unknown = null;
+  for (const h of API_HOSTS) {
+    try {
+      const r = await fetch(`${h}${path}`, { signal: AbortSignal.timeout(8000), headers: { Accept: "application/json" } });
+      if (!r.ok) { last = new Error(`${h}${path} ${r.status}`); continue; }
+      return (await r.json()) as T;
+    } catch (e) { last = e; }
+  }
+  throw last ?? new Error("long.supply unreachable");
+}
 const SEL_SUPPLY = "0x18160ddd";
 const SEL_NAME = "0x06fdde03";
 
@@ -52,11 +75,25 @@ async function chainMeta(tokens: string[]): Promise<Record<string, { supply: num
   return out;
 }
 
+/** long.supply's API goes away from time to time (DNS outage on 14.09 wiped every stock pair from the site until the
+ *  cache was rebuilt). Keep the last good answer in KV for 30 days, outside the purge-able memo keys, and serve it
+ *  whenever the live call fails or comes back empty. */
+async function lastGood<T>(key: string, live: () => Promise<T>, ok: (v: T) => boolean): Promise<T> {
+  const { memoKV, keepAlive } = await import("./memo-kv");
+  const kv = memoKV();
+  try {
+    const v = await live();
+    if (ok(v)) { if (kv) keepAlive(kv.put(`lastgood:${key}`, JSON.stringify(v), { expirationTtl: 30 * 86400 }).catch(() => null)); return v; }
+  } catch { /* fall through */ }
+  if (kv) { const raw = await kv.get(`lastgood:${key}`, "text").catch(() => null); if (raw) { try { return JSON.parse(raw) as T; } catch { /* ignore */ } } }
+  throw new Error(`${key}: live failed and no snapshot`);
+}
+
 /** Wrapped stocks (13 as of Sep 2026). Cached 5 min; supply/name from chain cached a day. */
-export const longStocks = (): Promise<Stock[]> => memo<Stock[]>("long:stocks", 300_000, async () => {
+export const longStocks = (): Promise<Stock[]> => memo<Stock[]>("long:stocks", 300_000, () => lastGood<Stock[]>("long:stocks", async () => {
   const [pairs, launches] = await Promise.all([
-    fetch(`${API}/pairs`, { signal: AbortSignal.timeout(8000) }).then((r) => r.json()) as Promise<{ pairs: { symbol: string; vault: string; arcStock: string; underlying: string; usdX18: string }[] }>,
-    fetch(`${API}/launches?limit=1`, { signal: AbortSignal.timeout(8000) }).then((r) => r.json()).catch(() => ({ countByPair: {} })) as Promise<{ countByPair?: Record<string, number> }>,
+    lsFetch(`/pairs`) as Promise<{ pairs: { symbol: string; vault: string; arcStock: string; underlying: string; usdX18: string }[] }>,
+    lsFetch(`/launches?limit=1`).catch(() => ({ countByPair: {} })) as Promise<{ countByPair?: Record<string, number> }>,
   ]);
   const toks = (pairs.pairs ?? []).map((p) => p.arcStock.toLowerCase());
   const meta = await memo<Record<string, { supply: number; name: string }>>("long:stockmeta:" + toks.join(","), 86_400_000, () => chainMeta(toks), (v) => Object.values(v).some((m) => m.supply > 0));
@@ -85,13 +122,13 @@ export const longStocks = (): Promise<Stock[]> => memo<Stock[]>("long:stocks", 3
     return { token: t, symbol: p.symbol, name: m.name || `${p.symbol} • Arc Token`, usd, vault: p.vault, underlying: p.underlying, supply: m.supply, mcapUsd: usd * m.supply, launches: launches.countByPair?.[t] ?? 0,
       usdcPool: pl.pool, poolFee: pl.fee, usdcLiq: pl.liq };
   });
-}, (v) => v.length > 0);
+}, (v) => v.length > 0), (v) => v.length > 0);
 
 /** Every token launched on long.supply, priced in USD through the wrapped-stock quote. Cached 60 s. */
-export const longLaunches = (): Promise<Launch[]> => memo<Launch[]>("long:launches", 60_000, async () => {
+export const longLaunches = (): Promise<Launch[]> => memo<Launch[]>("long:launches", 60_000, () => lastGood<Launch[]>("long:launches", async () => {
   const pages: { launches: Record<string, unknown>[]; usdByPairToken: Record<string, string>; total: number }[] = [];
   for (let off = 0; off < 1000; off += 100) {
-    const j = await fetch(`${API}/launches?limit=100&offset=${off}`, { signal: AbortSignal.timeout(8000) }).then((r) => r.json()) as typeof pages[number];
+    const j = await lsFetch(`/launches?limit=100&offset=${off}`) as typeof pages[number];
     pages.push(j);
     if (off + 100 >= (j.total ?? 0)) break;
   }
@@ -141,7 +178,7 @@ export const longLaunches = (): Promise<Launch[]> => memo<Launch[]>("long:launch
       createdAt: clock && Number(r.block) > 0 ? new Date((clock.ts - (clock.head - Number(r.block)) * clock.slope) * 1000).toISOString() : null,
     };
   });
-}, (v) => v.length > 0);
+}, (v) => v.length > 0), (v) => v.length > 0);
 
 /** Terminal rows: launches (pad "long.supply") + the wrapped stocks themselves (flagged `stock`). */
 export async function longSupplyTokens(): Promise<PadToken[]> {
@@ -152,7 +189,7 @@ export async function longSupplyTokens(): Promise<PadToken[]> {
     volUsd: null, website: l.website, og: false, dexes: [], quote: l.pairToken, quoteSymbol: l.pairSymbol, liqUsd: l.liqUsd,
   }));
   const b: PadToken[] = stocks.map((s) => ({
-    createdAt: null, logo: null, mcapUsd: s.mcapUsd || null, name: s.name, pad: "long.supply", pool: null, priceUsd: s.usd, stage: "wrapped stock · custodial IOU",
+    createdAt: null, logo: STOCK_LOGO[s.symbol.toUpperCase()] ?? null, mcapUsd: s.mcapUsd || null, name: s.name, pad: "long.supply", pool: null, priceUsd: s.usd, stage: "wrapped stock · custodial IOU",
     symbol: s.symbol, telegram: null, token: s.token, twitter: "https://x.com/Longdotsupply", venueUrl: "https://long.supply/bridge", volUsd: null, website: "https://long.supply",
     og: false, dexes: [], stock: true,
   }));
