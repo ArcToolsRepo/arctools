@@ -267,14 +267,18 @@ async def draft_text(s: dict) -> str:
         info = s.get("info") or {}
         sym = info.get("symbol", "?")
         p1m = info.get("price_1m")
-        price_s = f"{p1m:,.2f} USDC" if p1m is not None else "no V3 pool quote (curve token?)"
-        est = None
-        if p1m is not None:
-            est = await quote_usdc_to_token(s["token"], s["amount_usdc"])
+        if info.get("loading"):
+            price_s = "loading…"
+        else:
+            price_s = f"{p1m:,.2f} USDC" if p1m is not None else "no V3 pool quote (curve token?)"
+        # estimate comes from the cache filled by the background task — rendering never waits on RPC
+        est = (s.get("est") or {}).get(s["amount_usdc"])
         est_s = ""
         if est is not None:
             dec = info.get("decimals", 18)
             est_s = f"\n📦 Est. for {s['amount_usdc']:g} USDC: <b>{est / 10 ** dec:,.0f} {sym}</b>"
+        elif p1m is not None:
+            est_s = f"\n📦 Est. for {s['amount_usdc']:g} USDC: …"
         head += (f"Token: <b>{sym}</b>\n<code>{t}</code>\n"
                  f"💧 1M {sym} ≈ {price_s}{est_s}\n")
     else:
@@ -284,35 +288,80 @@ async def draft_text(s: dict) -> str:
 
 
 async def open_ca_panel(m: Message, token: str):
+    """Maestro-style: the panel appears INSTANTLY (no RPC on the critical path); symbol / price / contract check are
+    filled in by a background task that edits the message when the chain answers (hard budget 8 s)."""
     u = await db.get_user(m.from_user.id)
     w = await wallets.active_wallet(m.from_user.id)
     if not w:
         await m.answer("❌ Add a wallet first.", reply_markup=kb([[("👛 Wallets", "wallets")]]))
         return
-    # walidacja: adres musi byc kontraktem (EOA/portfel to nie token)
-    try:
-        from ..chain import CHAIN
-        code = await CHAIN.call_any(lambda w3: w3.eth.get_code(to_checksum_address(token)))
-        if not code or len(code) <= 2:
-            await m.answer(
-                "❌ That address is a wallet, not a token contract.\n"
-                f"<code>{token}</code>\n\n"
-                "Paste a token CA to open the buy panel.",
-                parse_mode="HTML")
-            return
-    except Exception:  # noqa - RPC hiccup: nie blokuj panelu
-        pass
-    info = await token_overview(token)
     DRAFTS[m.from_user.id] = {
         "token": to_checksum_address(token), "pad": "auto",
         "amount_usdc": u["buy_usdc"], "slippage": u["slippage"],
         "gas_mode": u["gas_mode"], "mode": "instant",
-        "wallet_ids": [w["id"]], "info": info,
+        "wallet_ids": [w["id"]], "info": {"symbol": "…", "decimals": 18, "price_1m": None, "loading": True},
     }
     s = DRAFTS[m.from_user.id]
-    await m.answer(await draft_text(s), parse_mode="HTML",
-                   reply_markup=snipe_card(s, [p.name for p in PADS]),
-                   disable_web_page_preview=True)
+    msg = await m.answer(await draft_text(s), parse_mode="HTML",
+                         reply_markup=snipe_card(s, [p.name for p in PADS]),
+                         disable_web_page_preview=True)
+    asyncio.create_task(_enrich_panel(m.from_user.id, token, msg))
+
+
+async def _enrich_panel(tg_id: int, token: str, msg: Message):
+    from ..chain import CHAIN
+
+    async def _code():
+        try:
+            return await CHAIN.call_any(lambda w3: w3.eth.get_code(to_checksum_address(token)))
+        except Exception:  # noqa - RPC hiccup: nie blokuj panelu
+            return None
+
+    try:
+        code, info = await asyncio.wait_for(asyncio.gather(_code(), token_overview(token)), timeout=8)
+    except Exception:  # noqa
+        code, info = None, {"symbol": "?", "decimals": 18, "price_1m": None}
+    if code is not None and len(code) <= 2:
+        try:
+            await msg.edit_text("❌ That address is a wallet, not a token contract.\n"
+                                f"<code>{token}</code>\n\nPaste a token CA to open the buy panel.", parse_mode="HTML")
+        except Exception:  # noqa
+            pass
+        DRAFTS.pop(tg_id, None)
+        return
+    s = DRAFTS.get(tg_id)
+    if not s or s.get("token") != to_checksum_address(token):
+        return  # user moved on
+    s["info"] = info
+    try:
+        await msg.edit_text(await draft_text(s), parse_mode="HTML",
+                            reply_markup=snipe_card(s, [p.name for p in PADS]),
+                            disable_web_page_preview=True)
+    except Exception:  # noqa - "message is not modified" etc.
+        pass
+    await _fill_estimate(tg_id, msg)
+
+
+async def _fill_estimate(tg_id: int, msg: Message):
+    """Background: quote tokens-out for the current amount, then re-render once (budget 6 s)."""
+    s = DRAFTS.get(tg_id)
+    if not s or not s.get("token") or (s.get("info") or {}).get("price_1m") is None:
+        return
+    amt = s["amount_usdc"]
+    if amt in (s.get("est") or {}):
+        return
+    try:
+        est = await asyncio.wait_for(quote_usdc_to_token(s["token"], amt), timeout=6)
+    except Exception:  # noqa
+        est = None
+    s.setdefault("est", {})[amt] = est
+    if DRAFTS.get(tg_id) is not s or s["amount_usdc"] != amt:
+        return
+    try:
+        await msg.edit_text(await draft_text(s), parse_mode="HTML",
+                            reply_markup=snipe_card(s, [p.name for p in PADS]), disable_web_page_preview=True)
+    except Exception:  # noqa
+        pass
 
 
 async def refresh_draft(cb: CallbackQuery):
@@ -320,13 +369,14 @@ async def refresh_draft(cb: CallbackQuery):
     if not s:
         await cb.answer("Panel expired, paste the CA again", show_alert=True)
         return
+    await cb.answer()
     try:
         await cb.message.edit_text(await draft_text(s), parse_mode="HTML",
                                    reply_markup=snipe_card(s, [p.name for p in PADS]),
                                    disable_web_page_preview=True)
     except Exception:  # noqa
         pass
-    await cb.answer()
+    asyncio.create_task(_fill_estimate(cb.from_user.id, cb.message))
 
 
 # ============ SNIPER MENU ============
@@ -457,7 +507,11 @@ async def sn_quote(cb: CallbackQuery):
     if not s:
         return await cb.answer("Panel expired", show_alert=True)
     if s["token"]:
-        s["info"] = await token_overview(s["token"])
+        s["info"] = {**(s.get("info") or {}), "loading": True}
+        s["est"] = {}
+        await refresh_draft(cb)
+        asyncio.create_task(_enrich_panel(cb.from_user.id, s["token"], cb.message))
+        return
     await refresh_draft(cb)
 
 
@@ -467,14 +521,25 @@ async def sn_arm(cb: CallbackQuery):
     if not s:
         return await cb.answer("Panel expired", show_alert=True)
     if s["mode"] == "instant" and s["token"]:
+        try:
+            await cb.answer("⚡ Buying…")            # instant ack, before any RPC
+        except Exception:  # noqa
+            pass
+        await edit(cb, "⚡ Buying… (routing)")
         key = None
         if s["pad"] != "auto":
             pad = pad_by_name(s["pad"])
         else:
             pad, key = await auto_pad(s["token"])   # canonical V3 -> V3; else Uniswap V4 PoolKey
-        await edit(cb, "⚡ Buying…")
+
+        async def _sent(h: str):
+            try:
+                await cb.message.edit_text(f"📡 Sent — <a href='{CFG.explorer}/tx/{h}'>tx</a>, waiting for the block…",
+                                           parse_mode="HTML", disable_web_page_preview=True)
+            except Exception:  # noqa
+                pass
         res = await sniper.execute_buy(cb.from_user.id, s["token"], pad, s["amount_usdc"],
-                                       s["slippage"], s["gas_mode"], s["wallet_ids"], curve=key)
+                                       s["slippage"], s["gas_mode"], s["wallet_ids"], curve=key, on_sent=_sent)
         lines = []
         for r in res:
             if r.get("ok"):

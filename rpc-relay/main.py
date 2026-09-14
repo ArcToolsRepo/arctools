@@ -79,6 +79,10 @@ async def relay(request: web.Request) -> web.Response:
                 return web.Response(text=_reid(txt, body.get("id")), content_type="application/json", headers={**CORS, "X-Relay-Cache": "join"})
         loop = asyncio.get_event_loop(); fut = loop.create_future(); _inflight[ckey] = fut
     try:
+        # broadcast: a signed tx goes to EVERY upstream at once (no token wait, no cooldown check) — the sniper's
+        # buy must land in the next block even when the primary is having a bad minute
+        if can_send and isinstance(body, dict) and body.get("method") == "eth_sendRawTransaction":
+            return await _broadcast(payload)
         # priority lane: interactive calls (swap routing / quotes behind the Buy button) skip the batch queue and the
         # token wait — a user waiting on a quote must not queue behind list recomputes
         if request.headers.get("X-Priority") == "high" and isinstance(body, dict):
@@ -263,6 +267,31 @@ async def _send_batch_inner(items: list[tuple[dict, asyncio.Future]], tokened: b
             r = {**r, "id": body.get("id")}
         if not fut.done():
             fut.set_result((json.dumps(r, separators=(",", ":")), 200))
+
+
+async def _broadcast(payload: str) -> web.Response:
+    async def one(up):
+        async with session.post(up, data=payload, headers={"Content-Type": "application/json"}, timeout=ClientTimeout(total=8)) as r:
+            return await r.text(), r.status
+    tasks = [asyncio.create_task(one(u)) for u in UPSTREAMS]
+    last = ("broadcast failed", 502)
+    for fut in asyncio.as_completed(tasks):
+        try:
+            text, status = await fut
+        except Exception as e:  # noqa
+            last = (str(e)[:200], 502); continue
+        low = text[:300].lower()
+        if status == 200 and '"result"' in text[:200].replace(" ", ""):
+            for t in tasks: t.cancel()
+            _stats["ok"] += 1
+            return web.Response(text=text, content_type="application/json", headers=CORS)
+        # deterministic rejections (nonce too low / already known / insufficient funds) are the real answer — return them
+        if status == 200 and any(k in low for k in ("nonce too low", "already known", "insufficient funds", "replacement", "exceeds")):
+            for t in tasks: t.cancel()
+            return web.Response(text=text, content_type="application/json", headers=CORS)
+        last = (text[:300], status)
+    _stats["fail"] += 1
+    return web.Response(text=last[0], content_type="application/json", status=last[1] if last[1] >= 400 else 502, headers=CORS)
 
 
 async def _post_raw(payload: str, tokened: bool = False) -> tuple[str, int]:

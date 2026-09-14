@@ -72,7 +72,7 @@ async def send_fee(acct, usdc_amount: float, label: str = "trade"):
 
 async def execute_buy(tg_id: int, token: str, pad: Pad, amount_usdc: float,
                       slippage: int, gas_mode: str, wallet_ids: list[int],
-                      curve: str | None = None) -> list[dict]:
+                      curve: str | None = None, on_sent=None) -> list[dict]:
     fee = amount_usdc * CFG.trade_fee_bps / 10_000
     net_amount = amount_usdc - fee
 
@@ -102,6 +102,8 @@ async def execute_buy(tg_id: int, token: str, pad: Pad, amount_usdc: float,
             tx = await CHAIN.build_tx(acct, to, data, value_wei=value, gas_mode=gas_mode,
                                       gas_limit=800_000)
             h = await CHAIN.send(acct, tx)
+            if on_sent:
+                asyncio.create_task(on_sent(h))
             rcpt = await CHAIN.wait_receipt(h)
             ok = rcpt["status"] == 1
             got, sym = 0, "?"
