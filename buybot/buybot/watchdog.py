@@ -262,7 +262,7 @@ async def chk_bots(s):
             problems.append("sniper: all RPCs quarantined")
         notes.append(f"sniper p50 {sn.get('p50_ms') or 0:.0f}ms · p95 {p95 or 0:.0f}ms · buys {ok}/{b} · fill {sn.get('buy_median_s') or 0:.1f}s · tg {sn.get('tg_ping_ms') or 0:.0f}ms · up {(sn.get('uptime_s') or 0)//60}m")
     bb = bots["buybot"]
-    if bb.get("p95_ms") is not None and bb["p95_ms"] > 4000:
+    if bb.get("p95_ms") is not None and bb["p95_ms"] > 12000:   # /add probes pools under a 12 s budget
         problems.append(f"buybot p95 {bb['p95_ms']:.0f}ms")
     if (bb.get("errors_15m") or 0) >= 5:
         problems.append(f"buybot {bb['errors_15m']} handler errors/15m")

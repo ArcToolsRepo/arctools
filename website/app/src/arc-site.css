@@ -854,7 +854,7 @@ html[data-theme="light"] .arc-site .arc-mono[style*="color: var(--arc-muted)"] {
 html[data-theme="light"] .arc-tablewrap td:last-child, html[data-theme="light"] .arc-tablewrap th:last-child { background: #ffffff !important; box-shadow: -10px 0 12px -6px rgba(15, 21, 34, 0.18) !important; }
 html[data-theme="light"] .arc-token__table thead th { background: #eef1f6 !important; }
 html[data-theme="light"] select, html[data-theme="light"] select option, html[data-theme="light"] select optgroup { background: #ffffff !important; color: #0f1522 !important; }
-html[data-theme="light"] .arc-sysstatus > span, html[data-theme="light"] .arc-sysstatus [style*="rgba(10,14,22"] { background: #ffffff !important; color: #3c4658 !important; }
+html[data-theme="light"] .arc-sysstatus > span, html[data-theme="light"] .arc-sysstatus [style*="rgb(11, 15, 23)"] { background: #ffffff !important; color: #3c4658 !important; }
 html[data-theme="light"] .arc-toasts > * { background: #ffffff !important; color: #0f1522 !important; border: 1px solid var(--arc-line) !important; box-shadow: 0 8px 24px rgba(15, 21, 34, 0.18) !important; }
 html[data-theme="light"] .arc-pager button, html[data-theme="light"] .arc-site button[disabled] { color: #5c6880 !important; }
 html[data-theme="light"] .arc-site .arc-tabs > button { color: #3c4658; }

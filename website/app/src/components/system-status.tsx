@@ -26,21 +26,21 @@ export function SystemStatus() {
   const text = state === "running" ? "System: Running" : state === "degraded" ? "System: Degraded" : state === "stale" ? "System: status unavailable" : "System: checking…";
   const failing = Object.entries(st?.checks ?? {}).filter(([, c]) => !c.ok);
   return (
-    <div className="arc-sysstatus" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)} onClick={() => setOpen((o) => !o)} style={{ bottom: 10, position: "fixed", zIndex: 50 }}>
+    <div className="arc-sysstatus" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)} onClick={() => setOpen((o) => !o)} style={{ bottom: 10, position: "fixed", zIndex: 500 }}>
       {open && st && (
-        <div className="arc-mono" style={{ background: "rgba(10,14,22,0.96)", border: "1px solid var(--arc-line)", borderRadius: 8, bottom: 30, fontSize: 11, left: 0, minWidth: 230, padding: "8px 10px", position: "absolute" }}>
+        <div className="arc-mono" style={{ background: "#0b0f17", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 8, bottom: 30, boxShadow: "0 12px 40px rgba(0,0,0,0.6)", color: "#e6ebf3", fontSize: 11.5, left: 0, minWidth: 260, padding: "10px 12px", position: "absolute" }}>
           {Object.entries(st.checks).map(([k, c]) => (
             <div key={k} style={{ alignItems: "center", display: "flex", gap: 8, padding: "2px 0" }}>
               <span style={{ background: c.ok ? "var(--arc-up)" : "#f5c542", borderRadius: "50%", display: "inline-block", height: 7, width: 7 }} />
-              <span style={{ color: "var(--arc-ink)", minWidth: 80 }}>{LABEL[k] ?? k}</span>
-              <span style={{ color: "var(--arc-muted)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.detail}>{c.ok ? "ok" : c.detail}</span>
+              <span style={{ color: "#ffffff", minWidth: 84 }}>{LABEL[k] ?? k}</span>
+              <span style={{ color: c.ok ? "#9fb0c8" : "#ffd166", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.detail}>{c.ok ? "ok" : c.detail}</span>
             </div>
           ))}
           {st.bots && (
-            <div style={{ borderTop: "1px solid var(--arc-line)", color: "var(--arc-muted)", marginTop: 6, paddingTop: 6 }}>
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.12)", color: "#c3cddc", marginTop: 6, paddingTop: 6 }}>
               {Object.entries(st.bots).map(([name, b]) => (
                 <div key={name} style={{ padding: "1px 0", whiteSpace: "nowrap" }}>
-                  <span style={{ color: "var(--arc-ink)" }}>{name === "sniper" ? "Sniper bot" : "Buy bot"}</span>
+                  <span style={{ color: "#ffffff" }}>{name === "sniper" ? "Sniper bot" : "Buy bot"}</span>
                   {" · "}p50 {Math.round(b.p50_ms ?? 0)}ms · p95 {Math.round(b.p95_ms ?? 0)}ms
                   {b.buys_1h != null && ` · fills ${b.buys_ok_1h ?? 0}/${b.buys_1h}${b.buy_median_s ? ` in ${b.buy_median_s.toFixed(1)}s` : ""}`}
                   {b.tg_ping_ms != null && ` · tg ${Math.round(b.tg_ping_ms)}ms`}
@@ -49,7 +49,7 @@ export function SystemStatus() {
               ))}
             </div>
           )}
-          <div style={{ color: "var(--arc-muted)", marginTop: 4 }}>checked every {Math.round((st.every_s || 180) / 60)} min · last {st.age_s != null ? `${st.age_s}s ago` : "—"}{failing.length ? " · self-heal active" : ""}</div>
+          <div style={{ color: "#9fb0c8", marginTop: 4 }}>checked every {Math.round((st.every_s || 180) / 60)} min · last {st.age_s != null ? `${st.age_s}s ago` : "—"}{failing.length ? " · self-heal active" : ""}</div>
         </div>
       )}
       <span className="arc-mono" style={{ alignItems: "center", background: "rgba(10,14,22,0.9)", border: "1px solid var(--arc-line)", borderRadius: 999, color: "var(--arc-muted)", cursor: "default", display: "inline-flex", fontSize: 10.5, gap: 6, padding: "3px 9px" }}>
