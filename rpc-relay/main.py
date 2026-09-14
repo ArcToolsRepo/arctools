@@ -18,6 +18,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 
 UPSTREAMS = [
     "https://rpc.arc-scan.org",
+    "https://sharc.fun/rpc",               # community proxy behind Cloudflare/Caddy: no per-IP burst limit seen, but 502s in waves
     "https://5042.rpc.thirdweb.com",
     "https://arc-mainnet.infura.io/v3/b6bf7d3508c941499b10025c0776eaf8",   # shared key, often over quota
 ]
