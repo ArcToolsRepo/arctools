@@ -93,7 +93,8 @@ async def execute_buy(tg_id: int, token: str, pad: Pad, amount_usdc: float,
         from . import metrics
         t0 = time.monotonic()
         r = await _one_inner(wid)
-        metrics.record_buy(bool(r.get("ok")), time.monotonic() - t0)
+        if not r.get("user_error"):   # an empty wallet is the user's state, not the bot's health
+            metrics.record_buy(bool(r.get("ok")), time.monotonic() - t0)
         return r
 
     async def _one_inner(wid: int):
@@ -177,7 +178,7 @@ async def execute_buy(tg_id: int, token: str, pad: Pad, amount_usdc: float,
             msg = str(e)
             if "insufficient funds" in msg.lower():
                 log.warning("buy: wallet %s has no USDC for %s", acct.address, token)
-                return {"ok": False, "err": f"wallet has no USDC for the buy + gas — top it up (needs ≈{amount_usdc + 0.05:.2f} USDC)", "wallet": acct.address}
+                return {"ok": False, "user_error": True, "err": f"wallet has no USDC for the buy + gas — top it up (needs ≈{amount_usdc + 0.05:.2f} USDC)", "wallet": acct.address}
             log.exception("buy fail")
             return {"ok": False, "err": msg[:200], "wallet": acct.address}
 

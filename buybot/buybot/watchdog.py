@@ -245,8 +245,12 @@ async def chk_bots(s):
         if age > 150:
             problems.append(f"sniper heartbeat {age}s old (bot down?)")
         p95 = sn.get("p95_ms")
-        if p95 is not None and p95 > 4000:
+        if p95 is not None and p95 > 12000:      # buy handlers legitimately wait for a block (~5 s); 12 s = something is stuck
             problems.append(f"sniper p95 {p95:.0f}ms")
+        if (sn.get("buy_median_s") or 0) > 15:
+            problems.append(f"sniper fills take {sn['buy_median_s']:.0f}s (target <6s)")
+        if (sn.get("errors_15m") or 0) >= 3:
+            problems.append(f"sniper {sn['errors_15m']} handler errors/15m")
         if sn.get("tg_ping_ms") is None:
             problems.append("sniper: Telegram API unreachable")
         elif sn["tg_ping_ms"] > 2500:
