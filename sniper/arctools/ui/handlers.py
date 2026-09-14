@@ -15,7 +15,8 @@ from eth_utils import is_address, to_checksum_address
 from ..config import CFG
 from ..chain import CHAIN
 from ..pads import PADS, pad_by_name, default_pad, auto_pad, token_overview, quote_usdc_to_token
-from .. import db, wallets, sniper, portfolio, feed, bridge, referral
+from .. import db, wallets, sniper, portfolio, feed, bridge, referral, market
+from . import cards
 from .keyboards import (kb, main_menu, back, snipe_card, position_card,
                         AMOUNTS, SLIPPAGES, GAS_MODES, MODES)
 
@@ -85,19 +86,29 @@ async def start(m: Message, state: FSMContext, command: CommandObject = None):
             "Make sure your wallet is funded: menu → 👛 Wallets.",
             reply_markup=main_menu(), parse_mode="HTML")
         return
-    await m.answer(
-        "🛠 <b>ArcTools</b> — the sniper terminal for Arc\n"
-        f"Chain ID: <code>{CFG.chain_id}</code> | gas: native USDC | venues: "
-        + (", ".join(p.name for p in PADS) or "none")
-        + "\n\n💡 Paste any <b>contract address</b> to open the buy panel.",
-        reply_markup=main_menu(), parse_mode="HTML")
+    await m.answer(await home_text(m.from_user.id), reply_markup=main_menu(), parse_mode="HTML")
+
+
+async def home_text(tg_id: int) -> str:
+    w = await wallets.active_wallet(tg_id)
+    bal = None
+    if w:
+        try:
+            bal = await asyncio.wait_for(CHAIN.native_balance(w["address"]), timeout=4)
+        except Exception:  # noqa
+            bal = None
+    try:
+        poss = await portfolio.open_positions(tg_id)
+    except Exception:  # noqa
+        poss = []
+    return cards.menu_text(w["address"] if w else None, bal, len(poss), None)
 
 
 @router.callback_query(F.data == "menu")
 async def menu(cb: CallbackQuery, state: FSMContext):
     await state.clear()
-    await edit(cb, "🛠 <b>ArcTools</b> — main menu\n\n💡 Paste any contract address to open the buy panel.",
-               main_menu())
+    await cb.answer()
+    await edit(cb, await home_text(cb.from_user.id), main_menu())
 
 
 # ============ WALLETS ============
@@ -261,30 +272,18 @@ async def w_go(cb: CallbackQuery):
 # ============ CA PANEL (Maestro-style) ============
 
 async def draft_text(s: dict) -> str:
-    t = s["token"] or "❇️ first new token from the venue"
-    head = "🔫 <b>Buy panel</b>\n"
-    if s["token"]:
-        info = s.get("info") or {}
-        sym = info.get("symbol", "?")
-        p1m = info.get("price_1m")
-        if info.get("loading"):
-            price_s = "loading…"
-        else:
-            price_s = f"{p1m:,.2f} USDC" if p1m is not None else "no V3 pool quote (curve token?)"
-        # estimate comes from the cache filled by the background task — rendering never waits on RPC
-        est = (s.get("est") or {}).get(s["amount_usdc"])
-        est_s = ""
-        if est is not None:
-            dec = info.get("decimals", 18)
-            est_s = f"\n📦 Est. for {s['amount_usdc']:g} USDC: <b>{est / 10 ** dec:,.0f} {sym}</b>"
-        elif p1m is not None:
-            est_s = f"\n📦 Est. for {s['amount_usdc']:g} USDC: …"
-        head += (f"Token: <b>{sym}</b>\n<code>{t}</code>\n"
-                 f"💧 1M {sym} ≈ {price_s}{est_s}\n")
-    else:
-        head += f"Token: {t}\n"
-    head += "<i>Sell tax ignored: we buy at any cost. 1% service fee per trade.</i>"
-    return head
+    if not s.get("token"):
+        return ("🔫 <b>Snipe the next launch</b>\n"
+                f"├ 💵 {s['amount_usdc']:g} USDC · ⛽ {s['gas_mode']} · 📉 {s['slippage']}%\n"
+                f"└ {cards.MODE_LABEL[s['mode']]} — first new token on the chosen venue\n\n"
+                "<i>Sell tax ignored: we buy at any cost. 1% service fee per trade.</i>")
+    m = s.get("m") or {"loading": True}
+    est = (s.get("est") or {}).get(s["amount_usdc"])
+    return cards.buy_text(s, m, est, s.get("bal"))
+
+
+def draft_kb(s: dict):
+    return cards.buy_kb(s, AMOUNTS) if s.get("token") else snipe_card(s, [p.name for p in PADS])
 
 
 async def open_ca_panel(m: Message, token: str):
@@ -300,10 +299,11 @@ async def open_ca_panel(m: Message, token: str):
         "amount_usdc": u["buy_usdc"], "slippage": u["slippage"],
         "gas_mode": u["gas_mode"], "mode": "instant",
         "wallet_ids": [w["id"]], "info": {"symbol": "…", "decimals": 18, "price_1m": None, "loading": True},
+        "m": {"loading": True}, "wallet_addr": w["address"],
     }
     s = DRAFTS[m.from_user.id]
     msg = await m.answer(await draft_text(s), parse_mode="HTML",
-                         reply_markup=snipe_card(s, [p.name for p in PADS]),
+                         reply_markup=draft_kb(s),
                          disable_web_page_preview=True)
     asyncio.create_task(_enrich_panel(m.from_user.id, token, msg))
 
@@ -316,22 +316,28 @@ async def _prefetch_route(token: str, amount: float):
 
 
 async def _enrich_panel(tg_id: int, token: str, msg: Message):
-    from ..chain import CHAIN
-
     async def _code():
         try:
             return await CHAIN.call_any(lambda w3: w3.eth.get_code(to_checksum_address(token)))
         except Exception:  # noqa - RPC hiccup: nie blokuj panelu
             return None
 
+    async def _bal(addr):
+        try:
+            return await asyncio.wait_for(CHAIN.native_balance(addr), timeout=5)
+        except Exception:  # noqa
+            return None
+
     s0 = DRAFTS.get(tg_id)
     # pre-route while the user reads the panel: Buy then skips the 3-5 s venue lookup (auto_pad caches 90 s)
     asyncio.create_task(_prefetch_route(token, s0["amount_usdc"] if s0 else 1.0))
     try:
-        code, info = await asyncio.wait_for(asyncio.gather(_code(), token_overview(token)), timeout=8)
+        code, m, bal = await asyncio.wait_for(asyncio.gather(
+            _code(), market.snapshot(token), _bal(s0["wallet_addr"]) if s0 and s0.get("wallet_addr") else asyncio.sleep(0),
+            return_exceptions=True), timeout=8)
     except Exception:  # noqa
-        code, info = None, {"symbol": "?", "decimals": 18, "price_1m": None}
-    if code is not None and len(code) <= 2:
+        code, m, bal = None, {}, None
+    if isinstance(code, (bytes, bytearray)) and len(code) <= 2:
         try:
             await msg.edit_text("❌ That address is a wallet, not a token contract.\n"
                                 f"<code>{token}</code>\n\nPaste a token CA to open the buy panel.", parse_mode="HTML")
@@ -342,11 +348,14 @@ async def _enrich_panel(tg_id: int, token: str, msg: Message):
     s = DRAFTS.get(tg_id)
     if not s or s.get("token") != to_checksum_address(token):
         return  # user moved on
-    s["info"] = info
+    if not isinstance(m, dict):
+        m = {}
+    s["m"] = m
+    s["info"] = {"symbol": m.get("symbol") or "?", "decimals": m.get("decimals", 18), "price_1m": m.get("price1m")}
+    if isinstance(bal, (int, float)):
+        s["bal"] = float(bal)
     try:
-        await msg.edit_text(await draft_text(s), parse_mode="HTML",
-                            reply_markup=snipe_card(s, [p.name for p in PADS]),
-                            disable_web_page_preview=True)
+        await msg.edit_text(await draft_text(s), parse_mode="HTML", reply_markup=draft_kb(s), disable_web_page_preview=True)
     except Exception:  # noqa - "message is not modified" etc.
         pass
     await _fill_estimate(tg_id, msg)
@@ -355,7 +364,7 @@ async def _enrich_panel(tg_id: int, token: str, msg: Message):
 async def _fill_estimate(tg_id: int, msg: Message):
     """Background: quote tokens-out for the current amount, then re-render once (budget 6 s)."""
     s = DRAFTS.get(tg_id)
-    if not s or not s.get("token") or (s.get("info") or {}).get("price_1m") is None:
+    if not s or not s.get("token") or (s.get("m") or {}).get("price") is None:
         return
     amt = s["amount_usdc"]
     if amt in (s.get("est") or {}):
@@ -369,7 +378,7 @@ async def _fill_estimate(tg_id: int, msg: Message):
         return
     try:
         await msg.edit_text(await draft_text(s), parse_mode="HTML",
-                            reply_markup=snipe_card(s, [p.name for p in PADS]), disable_web_page_preview=True)
+                            reply_markup=draft_kb(s), disable_web_page_preview=True)
     except Exception:  # noqa
         pass
 
@@ -382,7 +391,7 @@ async def refresh_draft(cb: CallbackQuery):
     await cb.answer()
     try:
         await cb.message.edit_text(await draft_text(s), parse_mode="HTML",
-                                   reply_markup=snipe_card(s, [p.name for p in PADS]),
+                                   reply_markup=draft_kb(s),
                                    disable_web_page_preview=True)
     except Exception:  # noqa
         pass
@@ -418,7 +427,7 @@ async def sn_any(cb: CallbackQuery):
         "wallet_ids": [w["id"]], "info": {},
     }
     s = DRAFTS[cb.from_user.id]
-    await edit(cb, await draft_text(s), snipe_card(s, [p.name for p in PADS]))
+    await edit(cb, await draft_text(s), draft_kb(s))
 
 
 # ---- panel toggles ----
@@ -431,6 +440,56 @@ async def sn_amt(cb: CallbackQuery):
     cur = s["amount_usdc"]
     s["amount_usdc"] = AMOUNTS[(AMOUNTS.index(cur) + 1) % len(AMOUNTS)] if cur in AMOUNTS else AMOUNTS[0]
     await refresh_draft(cb)
+
+
+@router.callback_query(F.data.startswith("sn_amt_set:"))
+async def sn_amt_set(cb: CallbackQuery):
+    s = DRAFTS.get(cb.from_user.id)
+    if not s:
+        return await cb.answer("Panel expired", show_alert=True)
+    try:
+        s["amount_usdc"] = float(cb.data.split(":")[1])
+    except ValueError:
+        return await cb.answer()
+    await refresh_draft(cb)
+
+
+@router.callback_query(F.data == "sn_close")
+async def sn_close(cb: CallbackQuery):
+    DRAFTS.pop(cb.from_user.id, None)
+    await cb.answer()
+    try:
+        await cb.message.delete()
+    except Exception:  # noqa
+        await edit(cb, "Closed.", main_menu())
+
+
+@router.callback_query(F.data.startswith("posbuy:"))
+async def pos_buy(cb: CallbackQuery, state: FSMContext):
+    _, pid, amt = cb.data.split(":")
+    p = await portfolio.position(int(pid))
+    if not p or p["tg_id"] != cb.from_user.id:
+        return await cb.answer("Position not found", show_alert=True)
+    await cb.answer()
+    await open_ca_panel(cb.message, p["token"])
+    s = DRAFTS.get(cb.from_user.id)
+    if s and amt != "x":
+        s["amount_usdc"] = float(amt)
+    elif amt == "x":
+        await state.set_state(St.snipe_amt)
+        await cb.message.answer("✏️ Send the amount in USDC (e.g. <code>73.5</code>).", parse_mode="HTML")
+
+
+@router.callback_query(F.data == "help")
+async def help_cb(cb: CallbackQuery):
+    await edit(cb, (
+        "❓ <b>How it works</b>\n\n"
+        "├ Paste a CA → buy panel with live price, MC, liquidity and your estimate\n"
+        "├ Tap an amount, then <b>⚡ BUY</b> — routed to the best venue (V3 / V4 / launchpad curve)\n"
+        "├ Position card opens: sell 25/50/100%, TP, SL, trailing, dump guard\n"
+        "├ 📡 New pairs = live launches · ⚡ Auto-snipe = rules that fire without you\n"
+        "└ 🤖 Copy-trade mirrors Insider wallets · 🌉 Bridge USDC in from ETH/Base/ARB\n\n"
+        "Fee 1% per trade. Sell tax ignored — speed first. Web terminal: arctools.fun"), kb([back()]))
 
 
 @router.callback_query(F.data == "sn_amt_custom")
@@ -455,7 +514,7 @@ async def sn_amt_msg(m: Message, state: FSMContext):
         return await m.answer("Panel expired, paste the CA again.")
     s["amount_usdc"] = amt
     await m.answer(await draft_text(s), parse_mode="HTML",
-                   reply_markup=snipe_card(s, [p.name for p in PADS]),
+                   reply_markup=draft_kb(s),
                    disable_web_page_preview=True)
 
 
@@ -517,7 +576,8 @@ async def sn_quote(cb: CallbackQuery):
     if not s:
         return await cb.answer("Panel expired", show_alert=True)
     if s["token"]:
-        s["info"] = {**(s.get("info") or {}), "loading": True}
+        market.invalidate(s["token"])
+        s["m"] = {**(s.get("m") or {}), "loading": True}
         s["est"] = {}
         await refresh_draft(cb)
         asyncio.create_task(_enrich_panel(cb.from_user.id, s["token"], cb.message))
@@ -616,44 +676,30 @@ async def feed_snipe(cb: CallbackQuery):
 # ============ PORTFOLIO ============
 
 async def render_position(p: dict) -> tuple[str, object]:
-    from ..pads import quote_token_usdc
     from ..sniper import token_balance
-    # samonaprawa: pozycja zapisana przy padnietym RPC ma 0 tokenow / symbol "?"
+    # self-heal: a position saved during an RPC outage has 0 tokens / symbol "?"
     if not p["amount_tokens"] or p["symbol"] == "?":
         try:
-            live = await token_balance(p["token"], p["wallet"])
+            live = await asyncio.wait_for(token_balance(p["token"], p["wallet"]), timeout=5)
             if live > 0:
                 p["amount_tokens"] = float(live)
-            if p["symbol"] == "?":
-                from ..pads import token_overview
-                p["symbol"] = (await token_overview(p["token"]))["symbol"]
-            from sqlalchemy import update as _upd
-            from .. import db as _db
-            await _db.execute(_upd(_db.positions).where(_db.positions.c.id == p["id"]).values(
+            sym, _ = await market.meta(p["token"])
+            if p["symbol"] == "?" and sym:
+                p["symbol"] = sym
+            await db.execute(update(db.positions).where(db.positions.c.id == p["id"]).values(
                 amount_tokens=p["amount_tokens"], symbol=p["symbol"]))
         except Exception:  # noqa
             pass
-    cur = await quote_token_usdc(p["token"], int(p["amount_tokens"])) if p["amount_tokens"] else 0
-    cur_v = cur or 0.0
-    pnl = (p["realized_usdc"] + cur_v) - p["cost_usdc"]
-    pct_pnl = (pnl / p["cost_usdc"] * 100) if p["cost_usdc"] else 0
-    emoji = "🟢" if pnl >= 0 else "🔴"
-    tp = f"{p['tp_mult']:g}x" if p["tp_mult"] else "off"
-    cur_s = f"{cur_v:.2f} USDC" if cur is not None else "?"
-    txt = (f"{emoji} <b>{p['symbol']}</b> [{p['pad']}]\n"
-           f"CA: <code>{p['token']}</code>\n"
-           f"Wallet: <code>{p['wallet']}</code>\n\n"
-           f"💵 Entry: {p['cost_usdc']:.2f} USDC\n"
-           f"💰 Value now: {cur_s}\n"
-           f"♻️ Realized: {p['realized_usdc']:.2f} USDC\n"
-           f"📈 PnL: <b>{pnl:+.2f} USDC ({pct_pnl:+.1f}%)</b>")
+    try:
+        m = await asyncio.wait_for(market.snapshot(p["token"]), timeout=7)
+    except Exception:  # noqa
+        m = {}
     from .. import orders as _orders
     ords = await _orders.position_orders(p["id"])
-    if p["tp_mult"]:
-        txt += f"\n🎯 TP (legacy): {tp}"
-    txt += "\n\n<b>Active orders</b>\n" + ("\n".join(_orders.describe(o) for o in ords) if ords else "none — set TP / SL / trailing / dump guard below")
+    orders_txt = ("\n" + "\n".join("• " + _orders.describe(o) for o in ords)) if ords else "none — set TP / SL / trailing / guard below"
     guard_on = any(o["kind"] == "guard" for o in ords)
-    return txt, position_card(p["id"], guard_on)
+    u = await db.get_user(p["tg_id"])
+    return cards.position_text(p, m, orders_txt), cards.position_kb(p["id"], guard_on, [1, 5, 20], u["buy_usdc"])
 
 
 @router.callback_query(F.data == "portfolio")

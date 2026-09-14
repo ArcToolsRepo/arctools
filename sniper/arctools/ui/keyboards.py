@@ -10,21 +10,15 @@ def kb(rows: list[list[tuple[str, str]]]) -> InlineKeyboardMarkup:
 
 
 def main_menu() -> InlineKeyboardMarkup:
-    return kb([
-        [("🔫 Sniper", "sniper"), ("👛 Wallets", "wallets")],
-        [("📡 New pairs", "feed"), ("📊 Portfolio", "portfolio")],
-        [("🤖 Copy-trade", "copy"), ("🔔 Alerts", "alerts")],
-        [("🛡 Protection", "prot"), ("⚡ Auto-snipe", "auto")],
-        [("🌉 Bridge", "bridge"), ("⚙️ Settings", "settings")],
-        [("🤝 Referrals · earn 25% of fees", "ref")],
-    ])
+    from .cards import menu_kb
+    return menu_kb()
 
 
 def back(to: str = "menu") -> list[tuple[str, str]]:
     return [("⬅️ Back", to)]
 
 
-AMOUNTS = [10, 25, 50, 100, 250, 500]
+AMOUNTS = [1, 5, 20, 100, 250, 500]
 SLIPPAGES = [10, 25, 50, 100]
 GAS_MODES = ["normal", "fast", "turbo"]
 MODES = ["instant", "event", "migration"]
