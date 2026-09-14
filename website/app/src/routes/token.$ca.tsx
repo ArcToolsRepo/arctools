@@ -59,18 +59,20 @@ export const Route = createFileRoute("/token/$ca")({
     // HTML for that — after 900 ms ship the shell and let the client finish (the server keeps computing
     // in the background, so the client's call lands on the same in-flight result).
     const p = tokenPage({ data: { token: params.ca } });
-    const r = await Promise.race([p, new Promise<"__slow">((res) => setTimeout(() => res("__slow"), 900))]);
+    // the cached Terminal row (name, symbol, logo, MC, pool, socials) is fetched in PARALLEL: if the full page is not in
+    // cache within 450 ms we ship the shell with that row and the client renders the whole page from it immediately
+    const { listFullTokens } = await import("@/lib/arc-api");
+    const litePromise = listFullTokens().then((l) => l.find((t) => t.token.toLowerCase() === params.ca.toLowerCase()) ?? null).catch(() => null);
+    const r = await Promise.race([p, new Promise<"__slow">((res) => setTimeout(() => res("__slow"), 450))]);
     if (r === "__slow") {
       void p.catch(() => null);
-      // instant header from the cached Terminal list (name, symbol, logo, MC, socials) while the full page computes
-      const { listFullTokens } = await import("@/lib/arc-api");
-      const lite = await Promise.race([listFullTokens().then((l) => l.find((t) => t.token.toLowerCase() === params.ca.toLowerCase()) ?? null), new Promise<null>((res) => setTimeout(() => res(null), 400))]).catch(() => null);
+      const lite = await Promise.race([litePromise, new Promise<null>((res) => setTimeout(() => res(null), 350))]);
       return { info: null, error: null, pending: true as const, lite };
     }
     return { info: "error" in r ? null : r, error: "error" in r ? r.error : null, pending: false as const, lite: null };
   },
   head: ({ loaderData }) => {
-    const i = loaderData?.info;
+    const i = loaderData?.info ?? ((loaderData as { lite?: PadToken | null } | undefined)?.lite ? { symbol: (loaderData as { lite: PadToken }).lite.symbol, name: (loaderData as { lite: PadToken }).lite.name } : null);
     return {
       meta: [
         { title: i ? `${i.symbol} · ${i.name} on Arc: chart, trades, swap` : "Token on Arc" },
@@ -145,6 +147,19 @@ function Cell({ k, v, tone }: { k: string; v: string; tone?: "up" | "down" }) {
   );
 }
 
+/** Degraded page info built from the cached Terminal row — enough for header, chart, trades and the swap panel while the
+ *  full on-chain page computes (or when the public RPCs are down). */
+function fromLite(t: PadToken): TokenPageInfo {
+  const V3_PADS = new Set(["Lift", "eve.fun", "ArcPad", "Archemist", "RadarDex", "UniswapV3", "Arguspad V3", "Tolly", "Ellipse", "long.supply"]);
+  const isPad = t.pad === "ArcToolsPad";
+  return {
+    token: t.token, name: t.name || t.symbol, symbol: t.symbol, decimals: 18, supply: 1e9, venue: isPad ? "pad" : t.pad === "UniswapV4" || t.pad === "Arguspad" || t.pad === "act.fun" || t.pad === "UBI.fun" ? "v4" : V3_PADS.has(t.pad) ? "v3" : "external",
+    v4Key: null, curveAddress: null, pool: t.pool ?? null, poolFee: 10000, liquidityUsdc: t.liqUsd ?? null, price1m: t.priceUsd != null ? t.priceUsd * 1e6 : null, mcapUsd: t.mcapUsd ?? null,
+    logo: t.logo ?? null, website: t.website ?? null, twitter: t.twitter ?? null, telegram: t.telegram ?? null, launchpad: t.pad, venueUrl: t.venueUrl ?? null, holders: null, createdAt: t.createdAt ?? null, deployer: null,
+    padAddress: null, quoteToken: t.quote ?? null, quoteSymbol: t.quoteSymbol ?? "USDC", quoteUsd: 1, graduated: false, padMode: null, targetQuote: null, stock: null, longPool: null,
+  };
+}
+
 function TokenPage() {
   const loaded = Route.useLoaderData();
   const params = Route.useParams();
@@ -155,16 +170,6 @@ function TokenPage() {
     const lite = (loaded as { lite?: PadToken | null }).lite ?? null;
     // the full page needs ~10 RPC round-trips; when the public RPCs are down we still have everything the chart, trades and
     // swap panel need from the cached Terminal row + our own index → render a degraded page instead of a skeleton forever
-    const fromLite = (t: PadToken): TokenPageInfo => {
-      const V3_PADS = new Set(["Lift", "eve.fun", "ArcPad", "Archemist", "RadarDex", "UniswapV3", "Arguspad V3", "Tolly", "Ellipse", "long.supply"]);
-      const isPad = t.pad === "ArcToolsPad";
-      return {
-        token: t.token, name: t.name || t.symbol, symbol: t.symbol, decimals: 18, supply: 1e9, venue: isPad ? "pad" : t.pad === "UniswapV4" || t.pad === "Arguspad" || t.pad === "act.fun" || t.pad === "UBI.fun" ? "v4" : V3_PADS.has(t.pad) ? "v3" : "external",
-        v4Key: null, curveAddress: null, pool: t.pool ?? null, poolFee: 10000, liquidityUsdc: t.liqUsd ?? null, price1m: t.priceUsd != null ? t.priceUsd * 1e6 : null, mcapUsd: t.mcapUsd ?? null,
-        logo: t.logo ?? null, website: t.website ?? null, twitter: t.twitter ?? null, telegram: t.telegram ?? null, launchpad: t.pad, venueUrl: t.venueUrl ?? null, holders: null, createdAt: t.createdAt ?? null, deployer: null,
-        padAddress: null, quoteToken: t.quote ?? null, quoteSymbol: t.quoteSymbol ?? "USDC", quoteUsd: 1, graduated: false, padMode: null, targetQuote: null, stock: null, longPool: null,
-      };
-    };
     const go = async (attempt: number) => {
       const r = await tokenPage({ data: { token: params.ca } }).catch(() => null);
       if (!alive) return;
@@ -177,9 +182,11 @@ function TokenPage() {
     void go(0);
     return () => { alive = false; };
   }, [loaded.pending, params.ca]);
-  const info = loaded.pending ? late?.info ?? null : loaded.info;
+  const liteRow = (loaded as { lite?: PadToken | null }).lite ?? null;
+  // render NOW from the cached Terminal row (header, chart, trades, swap); the full on-chain info replaces it when it lands
+  const info = loaded.pending ? (late?.info ?? (liteRow ? fromLite(liteRow) : null)) : loaded.info;
   const error = loaded.pending ? late?.error ?? null : loaded.error;
-  const stillLoading = loaded.pending && !late;
+  const stillLoading = loaded.pending && !late && !liteRow;
   const [tf, setTf] = useState<TF>("5m");
   const [mode, setMode] = useState<"price" | "mcap">("mcap");
   const [candles, setCandles] = useState<Candle[]>([]);
