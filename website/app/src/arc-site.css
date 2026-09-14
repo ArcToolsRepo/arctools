@@ -841,3 +841,14 @@ html[data-theme="light"] .arc-link-tick[data-active], html[data-theme="light"] .
 html[data-theme="light"] .arc-sysstatus, html[data-theme="light"] .arc-sysstatus * { color: #3c4658 !important; }
 html[data-theme="light"] .arc-site input, html[data-theme="light"] .arc-site .arc-mobile-bar { border-color: rgba(15, 21, 34, 0.22) !important; }
 @media (max-width: 1023px) { .arc-site main, .arc-site > section:last-of-type { padding-bottom: 72px; } }
+/* React writes inline styles through CSSOM, so the style attribute holds rgb()/rgba() with spaces — match those too */
+html[data-theme="light"] .arc-site, html[data-theme="light"] body { --arc-panel: #ffffff; --arc-bg: #ffffff; }
+html[data-theme="light"] [style*="rgb(14, 17, 24)"], html[data-theme="light"] [style*="rgb(11, 13, 19)"], html[data-theme="light"] [style*="rgb(10, 12, 16)"], html[data-theme="light"] [style*="rgba(10, 14, 22"] { background-color: #ffffff !important; }
+html[data-theme="light"] [style*="rgba(255, 255, 255, 0.02"], html[data-theme="light"] [style*="rgba(255, 255, 255, 0.03"], html[data-theme="light"] [style*="rgba(255, 255, 255, 0.04"], html[data-theme="light"] [style*="rgba(255, 255, 255, 0.05"], html[data-theme="light"] [style*="rgba(255, 255, 255, 0.06"], html[data-theme="light"] [style*="rgba(255, 255, 255, 0.08"] { background-color: rgba(15, 21, 34, 0.04) !important; }
+html[data-theme="light"] [style*="rgba(20, 24, 32, 0.75)"] { background-color: rgba(255, 255, 255, 0.92) !important; }
+html[data-theme="light"] [style*="rgba(0, 0, 0, 0.1"], html[data-theme="light"] [style*="rgba(0, 0, 0, 0.2"], html[data-theme="light"] [style*="rgba(0, 0, 0, 0.3"], html[data-theme="light"] [style*="rgba(0, 0, 0, 0.4"] { background-color: rgba(15, 21, 34, 0.05) !important; }
+html[data-theme="light"] [style*="color: rgb(6, 19, 11)"] { color: #ffffff !important; }
+html[data-theme="light"] [style*="color: rgb(124, 136, 158)"] { color: #5c6880 !important; }
+html[data-theme="light"] [style*="color: rgb(245, 197, 66)"] { color: #a16207 !important; }
+html[data-theme="light"] [style*="color: rgb(124, 196, 255)"], html[data-theme="light"] [style*="border: 1px solid rgb(124, 196, 255)"] { color: #1f6fe0 !important; border-color: #1f6fe0 !important; }
+html[data-theme="light"] .arc-toasts > *, html[data-theme="light"] .arc-sysstatus > * { background-color: #ffffff !important; }

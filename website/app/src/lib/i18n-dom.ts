@@ -19,13 +19,37 @@ const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "CODE", "PRE", "TEXTAREA", "NOSCRI
 
 function lookup(en: string): string | null {
   if (!dict) return null;
-  const key = en.trim();
+  const key = en.trim().replace(/\s+/g, " ");   // multi-line JSX paragraphs arrive with newlines + indentation
   if (!key) return null;
   const hit = dict[key];
-  if (hit) return en.replace(key, hit);
-  // "Foo:" / "Foo →" / "Foo ↗" — translate the word, keep the decoration
-  const m = key.match(/^(.*?)(\s*[:→↗·…]+\s*)$/);
-  if (m && dict[m[1].trim()]) return en.replace(m[1].trim(), dict[m[1].trim()]);
+  if (hit) return en.replace(en.trim(), hit);
+  const tr = translateKey(key);
+  return tr ? en.replace(en.trim(), tr) : null;
+}
+
+/** Composite strings: "2 red flags", "(3 older than …)", "dev holds 20% · top-10 hold 49%", "Foo:" → translate the parts. */
+function translateKey(key: string, depth = 0): string | null {
+  if (!dict || depth > 3) return null;
+  const direct = dict[key];
+  if (direct) return direct;
+  // wrapping punctuation
+  let m = key.match(/^([(\[]\s*)(.*?)(\s*[)\]])$/);
+  if (m) { const inner = translateKey(m[2], depth + 1); if (inner) return m[1] + inner + m[3]; }
+  // trailing decoration ":" "→" "↗" "·" "…"
+  m = key.match(/^(.*?)(\s*[:→↗·…]+)$/);
+  if (m && m[1] !== key) { const inner = translateKey(m[1].trim(), depth + 1); if (inner) return inner + m[2]; }
+  // leading number / amount: "2 red flags", "14 on chart", "$1.5M vol"
+  m = key.match(/^([-+]?[$€]?[\d.,]+[KMB%]?\s+)(.+)$/);
+  if (m) { const inner = translateKey(m[2].trim(), depth + 1); if (inner) return m[1] + inner; }
+  // trailing number: "dev holds 20%"
+  m = key.match(/^(.+?)(\s+[-+]?[$]?[\d.,]+[KMB%]?)$/);
+  if (m) { const inner = translateKey(m[1].trim(), depth + 1); if (inner) return inner + m[2]; }
+  // segments joined by " · "
+  if (key.includes(" · ")) {
+    const parts = key.split(" · ");
+    const out = parts.map((p) => translateKey(p.trim(), depth + 1) ?? p);
+    if (out.some((o, i) => o !== parts[i])) return out.join(" · ");
+  }
   return null;
 }
 
