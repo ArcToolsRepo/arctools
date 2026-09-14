@@ -204,6 +204,15 @@ function TokenPage() {
   const stillLoading = loaded.pending && !late && !liteRow;
   const [tf, setTf] = useState<TF>("5m");
   const [adv, setAdv] = useState(false);
+  // horizontal layout: swap-panel width (drag the splitter) or full-width chart (double-click / ⤢ button)
+  const [sideW, setSideW] = useState<number>(() => { try { const v = Number(localStorage.getItem("arc_side_w")); return v >= 280 && v <= 560 ? v : 360; } catch { return 360; } });
+  const [wide, setWide] = useState<boolean>(() => { try { return localStorage.getItem("arc_chart_wide") === "1"; } catch { return false; } });
+  const gridRef = useRef<HTMLDivElement>(null);
+  const splitRef = useRef<{ x0: number; w0: number } | null>(null);
+  const onSplitDown = (e: React.PointerEvent) => { splitRef.current = { x0: e.clientX, w0: sideW }; (e.target as HTMLElement).setPointerCapture(e.pointerId); };
+  const onSplitMove = (e: React.PointerEvent) => { const d = splitRef.current; if (!d) return; setSideW(Math.max(280, Math.min(560, d.w0 - (e.clientX - d.x0)))); };
+  const onSplitUp = () => { splitRef.current = null; };
+  useEffect(() => { try { localStorage.setItem("arc_side_w", String(sideW)); localStorage.setItem("arc_chart_wide", wide ? "1" : "0"); } catch { /* ignore */ } }, [sideW, wide]);
   useEffect(() => { void advancedAvailable().then((ok) => setAdv(ok)); }, []);
   const [mode, setMode] = useState<"price" | "mcap">("mcap");
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -674,13 +683,18 @@ function TokenPage() {
         </div>
 
         {/* ---------- main grid ---------- */}
-        <div className="arc-token__grid">
+        <div className={"arc-token__grid" + (wide ? " arc-token__grid--wide" : "")} ref={gridRef} style={{ ["--arc-side-w" as string]: `${sideW}px` }}>
+          {!wide && (
+            <div className="arc-col-splitter" onDoubleClick={() => setWide(true)} onPointerDown={onSplitDown} onPointerMove={onSplitMove} onPointerUp={onSplitUp} onPointerCancel={onSplitUp}
+              style={{ left: `calc(100% - ${sideW}px - 6px)` }} title="drag to widen the chart · double-click for full width"><span /></div>
+          )}
           <div style={{ border: "1px solid var(--arc-line)", minWidth: 0 }}>
             <div className="arc-mono" style={{ alignItems: "center", borderBottom: "1px solid var(--arc-line)", display: "flex", flexWrap: "wrap", fontSize: 12, gap: 4, padding: "8px 10px" }}>
               {TFS.map((t) => (
                 <button className="arc-mono" key={t} onClick={() => setTf(t)} style={{ background: tf === t ? "rgba(46,124,255,0.18)" : "transparent", border: "none", borderBottom: tf === t ? "2px solid var(--arc-cobalt)" : "2px solid transparent", color: tf === t ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "5px 9px" }} type="button">{t}</button>
               ))}
               <span style={{ flex: 1 }} />
+              <button className="arc-mono" onClick={() => setWide((v) => !v)} style={{ background: wide ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid var(--arc-line)", borderRadius: 6, color: wide ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, marginRight: 6, padding: "4px 9px" }} title={wide ? "restore the side panel" : "full-width chart (swap panel moves below)"} type="button">{wide ? "⤡ split" : "⤢ wide"}</button>
               {(["price", "mcap"] as const).map((m) => (
                 <button className="arc-mono" key={m} onClick={() => setMode(m)} style={{ background: "transparent", border: "none", borderBottom: mode === m ? "2px solid var(--arc-cobalt)" : "2px solid transparent", color: mode === m ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "5px 9px", textTransform: "capitalize" }} type="button">{m === "mcap" ? "MCap" : "Price"}</button>
               ))}

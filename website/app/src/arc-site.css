@@ -635,9 +635,17 @@
 .arc-token__grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) var(--arc-side-w, 360px);
   align-items: start;
+  position: relative;
 }
+.arc-token__grid--wide { grid-template-columns: minmax(0, 1fr); }
+.arc-token__grid--wide .arc-swap-panel { max-width: 760px; }
+/* vertical splitter between the chart column and the swap panel: drag left/right to widen the chart */
+.arc-col-splitter { position: absolute; top: 0; bottom: 0; width: 12px; margin-left: -12px; cursor: ew-resize; z-index: 5; display: flex; align-items: center; justify-content: center; touch-action: none; user-select: none; }
+.arc-col-splitter span { display: block; width: 4px; height: 56px; border-radius: 2px; background: rgba(120,135,160,0.45); transition: background .12s, height .12s; }
+.arc-col-splitter:hover span, .arc-col-splitter:active span { background: var(--arc-cobalt); height: 90px; }
+@media (max-width: 1023px) { .arc-col-splitter { display: none; } }
 .arc-token__stats { display: grid; gap: 6px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .arc-token__table { border-collapse: collapse; font-size: 12px; width: 100%; }
 .arc-token__table th { color: var(--arc-muted); font-weight: 400; padding: 8px 10px; text-align: left; }
