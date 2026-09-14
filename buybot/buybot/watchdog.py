@@ -270,7 +270,52 @@ async def chk_bots(s):
     return (not problems), ("; ".join(problems) + " | " if problems else "") + " · ".join(notes)
 
 
-CHECKS = [("bots", chk_bots), ("pages", chk_pages), ("cells", chk_cells), ("tokens", chk_tokens_api), ("relay", chk_relay), ("index", chk_index), ("api", chk_own_api), ("display", chk_display)]
+async def chk_terminal(s):
+    """What the Terminal's top rows actually show: MC, liquidity, Score and dev/bundle coverage on the 60 tokens
+    with the most all-time volume (the rows a user sees first). Below threshold → repair right away
+    (supply refetch for missing MCs, risk recompute for missing scores) and report."""
+    from . import insider as _ins
+    j = await _json(s, f"{BOT}/api/trending?minutes=0&limit=400", timeout=40)
+    rows = (j or {}).get("rows") or []
+    if len(rows) < 50:
+        return False, f"trending rows={len(rows)}"
+    top = sorted(rows, key=lambda r: -(r.get("vol") or 0))[:60]
+    toks = [r["token"].lower() for r in top]
+    mc_ok = sum(1 for r in top if r.get("mcap"))
+    liq = await _json(s, f"{BOT}/api/liq?tokens={','.join(toks)}", timeout=40)
+    liq_map = (liq or {}).get("liq") or {}
+    liq_ok = sum(1 for t in toks if liq_map.get(t) is not None)
+    risk = await _json(s, f"{BOT}/api/holder-risk?tokens={','.join(toks)}", timeout=40)
+    risk_map = (risk or {}).get("risk") or {}
+    score_ok = sum(1 for t in toks if isinstance(risk_map.get(t), dict) and risk_map[t].get("score") is not None)
+    dev_ok = sum(1 for t in toks if isinstance(risk_map.get(t), dict) and risk_map[t].get("dev_pct") is not None)
+    n = len(toks)
+    problems, healed = [], []
+    if mc_ok / n < 0.85:
+        problems.append(f"MC {mc_ok}/{n}")
+        try:
+            miss, fixed = await _ins.repair_supply_once(limit=80)
+            healed.append(f"supply refetch {fixed}/{miss}")
+            _healed["supply"] = _healed.get("supply", 0) + fixed
+        except Exception as e:  # noqa
+            healed.append(f"supply repair failed: {str(e)[:60]}")
+    if score_ok / n < 0.9:
+        problems.append(f"score {score_ok}/{n}")
+        try:
+            await _json(s, f"{BOT}/api/holder-risk?tokens={','.join(t for t in toks if not (isinstance(risk_map.get(t), dict) and risk_map[t].get('score') is not None))}&wait=1", timeout=60)
+            healed.append("risk recompute")
+            _healed["risk"] = _healed.get("risk", 0) + 1
+        except Exception:  # noqa
+            pass
+    if liq_ok / n < 0.6:
+        problems.append(f"liq {liq_ok}/{n}")
+    note = f"top-60: MC {mc_ok} · liq {liq_ok} · score {score_ok} · dev {dev_ok}"
+    if problems:
+        return False, "; ".join(problems) + (f" → {', '.join(healed)}" if healed else "") + " | " + note
+    return True, note
+
+
+CHECKS = [("bots", chk_bots), ("terminal", chk_terminal), ("pages", chk_pages), ("cells", chk_cells), ("tokens", chk_tokens_api), ("relay", chk_relay), ("index", chk_index), ("api", chk_own_api), ("display", chk_display)]
 REPORT_EVERY = int(os.getenv("WATCHDOG_REPORT_EVERY", "3600"))   # hourly "all good" summary to the admin
 _last_report = 0.0
 

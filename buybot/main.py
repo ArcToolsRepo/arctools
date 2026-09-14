@@ -60,6 +60,7 @@ async def main():
         asyncio.create_task(insider.ingest_loop(), name="insider-ingest"),
         asyncio.create_task(insider.stats_loop(), name="insider-stats"),
         asyncio.create_task(insider.repair_loop(), name="insider-repair"),
+        asyncio.create_task(insider.supply_repair_loop(), name="supply-repair"),
         asyncio.create_task(social.registry_loop(), name="social-registry"),
         asyncio.create_task(insider_alerts.alerts_loop(), name="insider-alerts"),
         asyncio.create_task(bridge_watch.watch_loop(), name="bridge-watch"),

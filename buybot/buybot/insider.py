@@ -633,18 +633,70 @@ async def warm_supply_cache():
         log.warning("warm_supply_cache: %s", e)
 
 
+SUPPLY_RPCS = [RELAY_RPC, "https://sharc.fun/rpc", "https://rpc.arc-scan.org"]
+
+
 async def _total_supply_fetch(token: str) -> float | None:
-    try:
-        async with _aiohttp.ClientSession() as s:
-            async with s.post(RELAY_RPC, json={"id": 1, "jsonrpc": "2.0", "method": "eth_call",
-                                              "params": [{"data": "0x18160ddd", "to": token}, "latest"]},
-                              timeout=_aiohttp.ClientTimeout(total=8)) as r:
-                res = (await r.json()).get("result")
-        sup = int(res, 16) / 1e18 if res and res != "0x" else None
-        _supply_cache[token] = (sup, time.time())
-        return sup
-    except Exception:  # noqa
-        return None
+    """totalSupply + decimals in one batch call; relay → sharc → arc-scan until one answers."""
+    body = [{"id": 1, "jsonrpc": "2.0", "method": "eth_call", "params": [{"data": "0x18160ddd", "to": token}, "latest"]},
+            {"id": 2, "jsonrpc": "2.0", "method": "eth_call", "params": [{"data": "0x313ce567", "to": token}, "latest"]}]
+    for url in SUPPLY_RPCS:
+        try:
+            async with _aiohttp.ClientSession() as s:
+                async with s.post(url, json=body, headers={"X-Priority": "high"}, timeout=_aiohttp.ClientTimeout(total=6)) as r:
+                    j = await r.json()
+            if not isinstance(j, list):
+                continue
+            res = {x.get("id"): x.get("result") for x in j if isinstance(x, dict)}
+            raw = res.get(1)
+            if not raw or raw == "0x":
+                continue
+            dec_raw = res.get(2)
+            dec = int(dec_raw, 16) if dec_raw and dec_raw != "0x" and int(dec_raw, 16) <= 36 else 18
+            sup = int(raw, 16) / 10 ** dec
+            if sup <= 0:
+                continue
+            _supply_cache[token] = (sup, time.time())
+            return sup
+        except Exception:  # noqa - next RPC
+            continue
+    _supply_cache[token] = (None, time.time())
+    return None
+
+
+async def repair_supply_once(limit: int = 40) -> tuple[int, int]:
+    """Tokens that traded in the last 24 h but have no supply (→ no market cap anywhere on the site): fetch it.
+    Returns (missing_before, fixed)."""
+    now = int(time.time())
+    rows = await db.fetchall(text("""
+        SELECT s.token, SUM(s.usdc) AS vol FROM swaps s
+        LEFT JOIN token_supply ts ON ts.token = s.token
+        WHERE s.ts > :since AND (ts.supply IS NULL OR ts.supply <= 0)
+        GROUP BY s.token ORDER BY vol DESC LIMIT :lim
+    """).bindparams(since=now - 86400, lim=limit))
+    fixed = 0
+    for r in rows:
+        tok = r["token"]
+        c = _supply_cache.get(tok)
+        if c and c[0]:
+            continue
+        _supply_cache.pop(tok, None)          # bypass the 120 s negative cache: this is the repair path
+        v = await _total_supply(tok)
+        if v:
+            fixed += 1
+    if rows:
+        log.info("supply repair: %d missing, %d fixed", len(rows), fixed)
+    return len(rows), fixed
+
+
+async def supply_repair_loop():
+    await asyncio.sleep(60)
+    while True:
+        try:
+            await repair_supply_once()
+        except Exception as e:  # noqa
+            log.warning("supply repair: %s", e)
+        await asyncio.sleep(120)
 
 
 async def repair_pools_once() -> list[str]:

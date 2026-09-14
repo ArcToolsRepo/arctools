@@ -393,11 +393,24 @@ function Trade() {
     let alive = true;
     // the index answers with what it has cached and computes the rest in the background → keep polling every 4 s
     // (up to ~60 s) until every visible row has its Score; only then mark the leftovers as "no data"
+    // straight to the index (CORS open, ~300 ms); the Worker round-trip is only the fallback — one slow edge hop
+    // used to leave whole pages of rows on "…"
+    const riskDirect = async (tokens: string[]): Promise<Record<string, Risk>> => {
+      try {
+        const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 9000);
+        const j = (await (await fetch(`${API}/api/holder-risk?tokens=${tokens.join(",")}`, { signal: ctl.signal })).json()) as { risk?: Record<string, Risk | null> };
+        clearTimeout(tm);
+        const out: Record<string, Risk> = {};
+        for (const [k, v] of Object.entries(j.risk ?? {})) if (v && (v as Risk).score != null) out[k.toLowerCase()] = v as Risk;
+        return out;
+      } catch {
+        try { return (await holderRisk({ data: { tokens } })) as Record<string, Risk>; } catch { return {}; }
+      }
+    };
     const pull = async (tokens: string[], attempt = 0) => {
       const need = tokens.filter((t) => !riskRef.current[t] && !riskMiss.current.has(t));
       if (!need.length || !alive) return;
-      let got: Record<string, Risk> = {};
-      try { got = (await holderRisk({ data: { tokens: need } })) as Record<string, Risk>; } catch { got = {}; }
+      const got = await riskDirect(need);
       if (!alive) return;
       const have = Object.keys(got).filter((k) => got[k]);
       if (have.length) setRisk((o) => { const n = { ...o, ...got }; riskRef.current = n; return n; });
@@ -407,7 +420,7 @@ function Trade() {
     };
     for (let i = 0; i < vis.length; i += 12) void pull(vis.slice(i, i + 12));
     // dev / bundle sells must show up while you watch: refresh the visible rows' risk every 60 s
-    const id = setInterval(() => { if (document.hidden) return; for (let i = 0; i < vis.length; i += 20) void holderRisk({ data: { tokens: vis.slice(i, i + 20) } }).then((m) => setRisk((o) => ({ ...o, ...(m as Record<string, Risk>) }))).catch(() => null); }, 60_000);
+    const id = setInterval(() => { if (document.hidden) return; for (let i = 0; i < vis.length; i += 20) void riskDirect(vis.slice(i, i + 20)).then((m) => { if (Object.keys(m).length) setRisk((o) => { const n = { ...o, ...m }; riskRef.current = n; return n; }); }); }, 60_000);
     return () => { alive = false; clearInterval(id); clearInterval(liqId); };
   }, [pageRows]); // eslint-disable-line react-hooks/exhaustive-deps
 
