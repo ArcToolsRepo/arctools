@@ -6,7 +6,7 @@ import {
   createRootRouteWithContext,
   useRouter,
   HeadContent,
-  Scripts,, useRouterState } from "@tanstack/react-router";
+  Scripts, useRouterState } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 import { button } from "@higgsfield/quanta/button";
 import { NotFound } from "@higgsfield/quanta/not-found";
