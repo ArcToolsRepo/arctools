@@ -884,3 +884,10 @@ html[data-theme="light"] [style*="color: rgb(124, 196, 255)"], html[data-theme="
 html[data-theme="light"] .arc-toasts > *, html[data-theme="light"] .arc-sysstatus > * { background-color: #ffffff !important; }
 /* no flash of English: the head script marks the page pending until the first dictionary pass (max 700 ms) */
 html[data-i18n-pending] body { visibility: hidden; }
+
+/* ---- pro chart ---- */
+.arc-tvchart--fs { position: fixed !important; inset: 0; z-index: 1000; padding: 8px; }
+.arc-chart-draw button:hover, .arc-chart-tools button:hover { filter: brightness(1.25); }
+html[data-theme="light"] .arc-chart-draw button, html[data-theme="light"] .arc-chart-tools button { background: #ffffff !important; color: #3c4658 !important; border-color: rgba(15,21,34,0.18) !important; }
+html[data-theme="light"] .arc-chart-draw { border-right-color: rgba(15,21,34,0.12) !important; }
+@media (max-width: 720px) { .arc-chart-draw { width: 28px !important; } .arc-chart-legend { font-size: 10px !important; } }

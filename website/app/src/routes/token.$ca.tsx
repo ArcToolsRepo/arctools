@@ -686,7 +686,7 @@ function TokenPage() {
               {info.symbol}/{info.stock ? "USDC" : pairSym} · {mode === "mcap" ? "Market Cap" : "Price"} · {tf} · {info.venue === "pad" ? `ArcToolsPad curve (${qSym} pair)` : info.venue === "v3" ? `Uniswap V3 ${((info.poolFee ?? 0) / 10000).toFixed(2)}%${info.graduated ? " · graduated from ArcToolsPad" : ""}` : info.venue === "v4" ? `Uniswap V4${info.launchpad && info.launchpad !== "Uniswap V4" ? ` · ${info.launchpad}` : " · hookless pool"}` : info.venue === "curve" ? "Warp bonding curve" : (info.launchpad ?? "external pool")}
               {candles.length < 5 && effCandles.length > 0 && <span style={{ marginLeft: 10, opacity: 0.7 }}>· venue data (own index syncing)</span>}
             </div>
-            <TvChart avatars={chartAvatars} candles={effCandles} markers={chartMarkers} mode={mode} onVisible={setMarkersVisible} scale={scale} />
+            <TvChart avatars={chartAvatars} candles={effCandles} interval={tf} markers={chartMarkers} mode={mode} onVisible={setMarkersVisible} scale={scale} storageKey={params.ca} symbol={info ? `${info.symbol}/${pairSym}` : undefined} />
             <MarkerLegend data={eventsData} visible={markersVisible} />
           </div>
 
