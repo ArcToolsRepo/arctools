@@ -113,6 +113,9 @@ function Trade() {
   const [liq, setLiq] = useState<Map<string, number>>(new Map());
   const [logos, setLogos] = useState<Record<string, string>>({});
   const [risk, setRisk] = useState<Record<string, Risk>>({});
+  const riskMiss = useRef<Set<string>>(new Set());   // tokens the risk index has no data for (render "—", not "…")
+  const [, setRiskTick] = useState(0);
+  useEffect(() => { const id = setInterval(() => { riskMiss.current.clear(); }, 300_000); return () => clearInterval(id); }, []);
   const [sortKey, setSortKey] = useState<"age" | "mcap" | "vol" | "txs" | "chg" | "smart">("vol");
   useEffect(() => { setFavs(loadFavs()); }, []);
   const toggleFav = (t: string) => setFavs((f) => { const n = new Set(f); if (n.has(t)) n.delete(t); else n.add(t); try { localStorage.setItem(FAV_KEY, JSON.stringify([...n])); } catch { /* ignore */ } return n; });
@@ -126,13 +129,16 @@ function Trade() {
   }, [tf]);
   // on-chain USDC-side liquidity for the visible rows (own index API: V3/pad pool balances + V4 slot0/liquidity)
   const liqReq = useRef<Set<string>>(new Set());
-  const fetchLiq = useCallback((tokens: string[]) => {
+  const fetchLiq = useCallback((tokens: string[], attempt = 0) => {
     const need = tokens.map((t) => t.toLowerCase()).filter((t) => !liqReq.current.has(t)).slice(0, 120);
     if (!need.length) return;
     need.forEach((t) => liqReq.current.add(t));
-    fetch(`${API}/api/liq?tokens=${need.join(",")}`).then((r) => r.json()).then((j: { liq?: Record<string, number> }) => {
+    fetch(`${API}/api/liq?tokens=${need.join(",")}`, { signal: AbortSignal.timeout(20_000) }).then((r) => r.json()).then((j: { liq?: Record<string, number> }) => {
       setLiq((m) => { const n = new Map(m); for (const [k, v] of Object.entries(j.liq ?? {})) n.set(k, v); return n; });
-    }).catch(() => { need.forEach((t) => liqReq.current.delete(t)); });
+      // tokens the index could not price right now (relay hiccup) are retried on the next pass
+      const got = new Set(Object.keys(j.liq ?? {}));
+      need.filter((t) => !got.has(t)).forEach((t) => liqReq.current.delete(t));
+    }).catch(() => { need.forEach((t) => liqReq.current.delete(t)); if (attempt < 2) setTimeout(() => fetchLiq(need, attempt + 1), 4000 * (attempt + 1)); });
   }, []);
   useEffect(() => { const id = setInterval(() => { liqReq.current.clear(); }, 60_000); return () => clearInterval(id); }, []);
   const [clusters, setClusters] = useState<Cluster[]>([]);
@@ -357,10 +363,11 @@ function Trade() {
     const load = () => {
       const want = vis.filter((t) => !trend.some((x) => x.token.toLowerCase() === t));
       if (!want.length) return;
-      fetch(`${API}/api/stats?tokens=${want.join(",")}&minutes=${tf}`).then((r) => r.json()).then((j: { rows?: Trend[] }) => {
+      const stats = (attempt: number) => fetch(`${API}/api/stats?tokens=${want.join(",")}&minutes=${tf}`, { signal: AbortSignal.timeout(12_000) }).then((r) => r.json()).then((j: { rows?: Trend[] }) => {
         if (!alive || !j.rows) return;
         setExtraStats((o) => { const n = { ...o }; for (const r of j.rows!) n[r.token.toLowerCase()] = r; return n; });
-      }).catch(() => null);
+      }).catch(() => { if (alive && attempt < 2) setTimeout(() => stats(attempt + 1), 3000); });
+      stats(0);
       // smart-money flow for exactly the visible rows (incl. negative net — insiders selling)
       fetch(`${API}/api/smart-flow?tokens=${vis.join(",")}&minutes=${tf}&limit=${vis.length}`).then((r) => r.json()).then((j: { rows?: Smart[] }) => {
         if (!alive || !Array.isArray(j.rows)) return;
@@ -377,11 +384,26 @@ function Trade() {
     const needLogo = vis.filter((t) => !logos[t] && !byToken.get(t)?.logo);
     if (needLogo.length) void tokenLogos({ data: { tokens: needLogo } }).then((m) => setLogos((o) => ({ ...o, ...m }))).catch(() => null);
     fetchLiq(vis);
-    const needRisk = vis.filter((t) => !risk[t]).slice(0, 40);
-    if (needRisk.length) void holderRisk({ data: { tokens: needRisk } }).then((m) => setRisk((o) => ({ ...o, ...(m as Record<string, Risk>) }))).catch(() => null);
+    const liqId = setInterval(() => { if (!document.hidden) fetchLiq(vis); }, 30_000);   // refill anything still missing / refresh
+    // risk for EVERY visible row, in chunks of 12 so the first rows render fast; retried 3× (relay/arc-scan hiccups),
+    // and tokens the index does not know get an explicit "no data" marker instead of an endless "…"
+    let alive = true;
+    const pull = async (tokens: string[], attempt = 0) => {
+      const need = tokens.filter((t) => !risk[t] && !riskMiss.current.has(t));
+      if (!need.length || !alive) return;
+      let got: Record<string, Risk> = {};
+      try { got = (await holderRisk({ data: { tokens: need } })) as Record<string, Risk>; } catch { got = {}; }
+      if (!alive) return;
+      const have = Object.keys(got).filter((k) => got[k]);
+      if (have.length) setRisk((o) => ({ ...o, ...got }));
+      const missing = need.filter((t) => !got[t]);
+      if (missing.length && attempt < 2) { setTimeout(() => void pull(missing, attempt + 1), 3000 * (attempt + 1)); }
+      else if (missing.length) { missing.forEach((t) => riskMiss.current.add(t)); setRiskTick((n) => n + 1); }
+    };
+    for (let i = 0; i < vis.length; i += 12) void pull(vis.slice(i, i + 12));
     // dev / bundle sells must show up while you watch: refresh the visible rows' risk every 60 s
-    const id = setInterval(() => { if (document.hidden) return; void holderRisk({ data: { tokens: vis.slice(0, 40) } }).then((m) => setRisk((o) => ({ ...o, ...(m as Record<string, Risk>) }))).catch(() => null); }, 60_000);
-    return () => clearInterval(id);
+    const id = setInterval(() => { if (document.hidden) return; for (let i = 0; i < vis.length; i += 20) void holderRisk({ data: { tokens: vis.slice(i, i + 20) } }).then((m) => setRisk((o) => ({ ...o, ...(m as Record<string, Risk>) }))).catch(() => null); }, 60_000);
+    return () => { alive = false; clearInterval(id); clearInterval(liqId); };
   }, [pageRows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -500,8 +522,8 @@ function Trade() {
                         <td className="arc-mono arc-col-liq" style={cell}>{r.liq != null && r.liq > 0 ? usd(r.liq) : "—"}</td>
                         <td className="arc-mono arc-col-vol" style={{ ...cell, color: "#f5c542" }}>{r.vol > 0 ? usd(r.vol) : "—"}</td>
                         <td className="arc-mono arc-col-txs" style={cell}><div>{r.txs > 0 ? r.txs.toLocaleString() : "—"}</div>{r.txs > 0 && <div style={{ fontSize: 11 }}><span style={{ color: UP }}>{r.buys}</span> / <span style={{ color: DOWN }}>{r.sells}</span></div>}</td>
-                        <td className="arc-mono" style={cell}>{(() => { if (r.stock) return <span className="arc-mono" style={{ border: "1px solid #7cc4ff", borderRadius: 5, color: "#7cc4ff", fontSize: 11, padding: "3px 6px" }} title="Custodial IOU — score not applicable; risk = trust in long.supply's vault and Robinhood's token">IOU</span>; const k = risk[r.token]; if (!k) return <span style={{ color: "var(--arc-muted)" }}>…</span>; const t10 = k.top10; return <><ScoreBadge risk={k} /><div style={{ color: "var(--arc-muted)", fontSize: 10.5, marginTop: 3 }} title={`${k.holders ?? "?"} holders · top-10 hold ${t10 != null ? t10.toFixed(0) : "?"}%`}>{k.holders ? `${k.holders >= 1000 ? (k.holders / 1000).toFixed(1) + "k" : k.holders}h` : ""}{t10 != null && r.token.toLowerCase() !== OFFICIAL_TOKEN ? ` · t10 ${t10.toFixed(0)}%` : ""}</div></>; })()}</td>
-                        <td className="arc-mono arc-col-dev" style={cell}>{(() => { if (r.stock) return <span style={{ color: "var(--arc-muted)", fontSize: 11 }} title="Wrapped stock: supply is minted/burned by the long.supply custodian, so deployer and bundle metrics do not apply">custodian-minted</span>; const k = risk[r.token]; if (!k) return <span style={{ color: "var(--arc-muted)" }}>…</span>; const dv = k.dev_pct, bd = k.bundle_pct; const c = (v: number | null | undefined, warn: number, bad: number) => v == null ? "var(--arc-muted)" : v >= bad ? DOWN : v >= warn ? "#f5c542" : UP; const ds = k.dev_sold_usd ?? 0, bs = k.bundle_sold_usd ?? 0; return <><div style={{ color: c(dv, 5, 15), fontWeight: 700 }} title="Deployer wallet's share of supply (top-50 holders)">{dv == null ? "—" : `${dv.toFixed(dv < 1 ? 1 : 0)}%`}{ds > 0 && <span style={{ background: "rgba(240,83,79,0.16)", border: "1px solid #f0534f", borderRadius: 4, color: "#f0534f", display: "inline-block", fontSize: 9, lineHeight: "13px", marginLeft: 5, padding: "0 4px", verticalAlign: "middle" }} title={`Deployer sold ${usd(ds)} in the last 24 h (${k.dev_sells} sell${k.dev_sells === 1 ? "" : "s"}, last ${ago(k.dev_last_sell ?? null)} ago)`}>DEV −{usd(ds)}</span>}</div><div style={{ color: c(bd, 10, 25), fontSize: 11 }} title={`Bundled: supply held by wallets that bought within 2 s of the first trade (${k.bundlers ?? 0} wallets)`}>{bd == null ? "" : `bundle ${bd.toFixed(bd < 1 ? 1 : 0)}%`}{bs > 0 && <span style={{ color: "#f0534f", fontSize: 10, marginLeft: 4 }} title={`${k.bundle_sellers} launch-block wallet${k.bundle_sellers === 1 ? "" : "s"} sold ${usd(bs)} in the last 24 h (last ${ago(k.bundle_last_sell ?? null)} ago)`}>−{usd(bs)}</span>}</div></>; })()}</td>
+                        <td className="arc-mono" style={cell}>{(() => { if (r.stock) return <span className="arc-mono" style={{ border: "1px solid #7cc4ff", borderRadius: 5, color: "#7cc4ff", fontSize: 11, padding: "3px 6px" }} title="Custodial IOU — score not applicable; risk = trust in long.supply's vault and Robinhood's token">IOU</span>; const k = risk[r.token]; if (!k) return <span style={{ color: "var(--arc-muted)" }} title={riskMiss.current.has(r.token) ? "no holder data yet (token has not traded on an indexed venue)" : "loading"}>{riskMiss.current.has(r.token) ? "—" : "…"}</span>; const t10 = k.top10; return <><ScoreBadge risk={k} /><div style={{ color: "var(--arc-muted)", fontSize: 10.5, marginTop: 3 }} title={`${k.holders ?? "?"} holders · top-10 hold ${t10 != null ? t10.toFixed(0) : "?"}%`}>{k.holders ? `${k.holders >= 1000 ? (k.holders / 1000).toFixed(1) + "k" : k.holders}h` : ""}{t10 != null && r.token.toLowerCase() !== OFFICIAL_TOKEN ? ` · t10 ${t10.toFixed(0)}%` : ""}</div></>; })()}</td>
+                        <td className="arc-mono arc-col-dev" style={cell}>{(() => { if (r.stock) return <span style={{ color: "var(--arc-muted)", fontSize: 11 }} title="Wrapped stock: supply is minted/burned by the long.supply custodian, so deployer and bundle metrics do not apply">custodian-minted</span>; const k = risk[r.token]; if (!k) return <span style={{ color: "var(--arc-muted)" }}>{riskMiss.current.has(r.token) ? "—" : "…"}</span>; const dv = k.dev_pct, bd = k.bundle_pct; const c = (v: number | null | undefined, warn: number, bad: number) => v == null ? "var(--arc-muted)" : v >= bad ? DOWN : v >= warn ? "#f5c542" : UP; const ds = k.dev_sold_usd ?? 0, bs = k.bundle_sold_usd ?? 0; return <><div style={{ color: c(dv, 5, 15), fontWeight: 700 }} title="Deployer wallet's share of supply (top-50 holders)">{dv == null ? "—" : `${dv.toFixed(dv < 1 ? 1 : 0)}%`}{ds > 0 && <span style={{ background: "rgba(240,83,79,0.16)", border: "1px solid #f0534f", borderRadius: 4, color: "#f0534f", display: "inline-block", fontSize: 9, lineHeight: "13px", marginLeft: 5, padding: "0 4px", verticalAlign: "middle" }} title={`Deployer sold ${usd(ds)} in the last 24 h (${k.dev_sells} sell${k.dev_sells === 1 ? "" : "s"}, last ${ago(k.dev_last_sell ?? null)} ago)`}>DEV −{usd(ds)}</span>}</div><div style={{ color: c(bd, 10, 25), fontSize: 11 }} title={`Bundled: supply held by wallets that bought within 2 s of the first trade (${k.bundlers ?? 0} wallets)`}>{bd == null ? "" : `bundle ${bd.toFixed(bd < 1 ? 1 : 0)}%`}{bs > 0 && <span style={{ color: "#f0534f", fontSize: 10, marginLeft: 4 }} title={`${k.bundle_sellers} launch-block wallet${k.bundle_sellers === 1 ? "" : "s"} sold ${usd(bs)} in the last 24 h (last ${ago(k.bundle_last_sell ?? null)} ago)`}>−{usd(bs)}</span>}</div></>; })()}</td>
                         <td className="arc-mono arc-col-ins" style={{ ...cell, minWidth: 72, paddingRight: 8 }}>{r.smart ? (r.smart.buyers + r.smart.sellers === 0 ? <span style={{ color: "var(--arc-muted)" }} title={`no top-100 insider trades in the ${tfLabel(tf)} window`}>0</span> : <div title={`top-100 insiders (${tfLabel(tf)}): bought ${usd(r.smart.bought)} · sold ${usd(r.smart.sold)} · ${r.smart.buyers} buying / ${r.smart.sellers} selling${r.smart.best_rank ? ` · best rank #${r.smart.best_rank}` : ""}`}><div style={{ color: r.smart.net >= 0 ? UP : DOWN, fontWeight: 700 }}>{r.smart.net >= 0 ? "+" : "−"}{usd(Math.abs(r.smart.net))}</div><div style={{ color: "var(--arc-muted)", fontSize: 10.5 }}>{r.smart.buyers}↑ {r.smart.sellers}↓</div></div>) : <span style={{ color: "var(--arc-muted)" }}>…</span>}</td>
                         <td style={{ ...cell, textAlign: "right" }}><BuyBtn symbol={r.symbol} token={r.token} /></td>
                       </tr>

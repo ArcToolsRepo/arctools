@@ -67,24 +67,30 @@ async def liquidity_for(tokens: list[str]) -> dict[str, float]:
         for off in (0, 3):
             calls.append((V4_PM, bytes.fromhex("1e2eaeaf") + (base + off).to_bytes(32, "big")))
         meta.append((r["token"].lower(), "v4", (int(r["is0"] or 0), int(r["usdc_dec"] or 18))))
+    # tokens with no indexed pool are NOT reported (the site falls back to the launchpad API's own liquidity figure)
+    stale = {t: _cache[t][1] for t in todo if t in _cache}
     if not calls:
         return out
     try:
         res = await _mc(calls)
     except Exception as e:  # noqa
         log.warning("liq multicall: %s", e)
+        out.update(stale)   # RPC down: last known values beat a blank column
         return out
     acc: dict[str, float] = {}
+    good: set[str] = set()   # tokens with at least one successful sub-call — only those get a fresh (cached) value
     i = 0
     for token, kind, extra in meta:
         if kind == "v3":
             ok, ret = res[i]; i += 1
             if ok and len(ret) >= 32:
+                good.add(token)
                 acc[token] = acc.get(token, 0.0) + int.from_bytes(ret[:32], "big") / 1e18 * 2
         else:
             (ok0, s0), (ok1, s1) = res[i], res[i + 1]; i += 2
             if not (ok0 and ok1 and len(s0) >= 32 and len(s1) >= 32):
                 continue
+            good.add(token)
             sqrt_p = int.from_bytes(s0[-20:], "big")            # low 160 bits of slot0
             liq = int.from_bytes(s1[-16:], "big")               # uint128 liquidity
             if sqrt_p == 0 or liq == 0:
@@ -93,9 +99,12 @@ async def liquidity_for(tokens: list[str]) -> dict[str, float]:
             reserve = liq * Q96 // sqrt_p if is0 else liq * sqrt_p // Q96   # usdc side, in usdc base units
             acc[token] = acc.get(token, 0.0) + reserve / (10 ** dec) * 2
     for t in todo:
-        v = acc.get(t, 0.0)
-        _cache[t] = (now, v)
-        out[t] = v
+        if t in good:
+            v = acc.get(t, 0.0)
+            _cache[t] = (now, v)
+            out[t] = v
+        elif t in stale:
+            out[t] = stale[t]   # sub-call failed (relay hiccup): keep the last good number, retry next time
     return out
 
 
