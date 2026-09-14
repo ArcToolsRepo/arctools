@@ -113,8 +113,23 @@ def _reid(txt: str, rid):
 # So: cap concurrency towards each upstream, back off and retry the primary instead of failing over instantly,
 # and put an upstream on a short cooldown after a quota/rate-limit answer so we stop wasting time on it.
 UP_CONC = int(os.getenv("UPSTREAM_CONCURRENCY", "6"))
+UP_TIMEOUT = float(os.getenv("UPSTREAM_TIMEOUT", "8"))
+QUOTA_MARKERS = ("quota", "exceeded", "-32600")          # provider key exhausted → long cooldown
+RATE_ONLY = ("rate limit", "too many", "-32005", "429")   # transient → short cooldown, try the next upstream right away
 _sems = {up: asyncio.Semaphore(UP_CONC) for up in UPSTREAMS}
 _cooldown: dict[str, float] = {}
+_last_call: dict[str, float] = {}
+MIN_GAP = {"https://5042.rpc.thirdweb.com": 1.1}   # thirdweb public endpoint: ~1 request / s before it 429s
+
+
+async def _gap(up: str):
+    g = MIN_GAP.get(up)
+    if not g:
+        return
+    wait = _last_call.get(up, 0) + g - time.time()
+    if wait > 0:
+        await asyncio.sleep(wait)
+    _last_call[up] = time.time()
 _stats = {"ok": 0, "fail": 0, "retry": 0, "last_fail": ""}
 _RATE_MARKERS = ("quota", "rate limit", "-32005", "-32600", "too many", "exceeded")
 
@@ -217,15 +232,17 @@ async def _send_batch_inner(items: list[tuple[dict, asyncio.Future]], tokened: b
 async def _post_raw(payload: str, tokened: bool = False) -> tuple[str, int]:
     """One HTTP request to the upstreams with backoff on 429/503; returns (text, http_status). status 200 may still be an rpc error."""
     last_status, last_text = 502, "no upstream"
-    for attempt in range(5):
+    for attempt in range(4):
+        all_cool = all(_cooldown.get(u, 0) > time.time() for u in UPSTREAMS)
         for up in UPSTREAMS:
-            if _cooldown.get(up, 0) > time.time():
+            if _cooldown.get(up, 0) > time.time() and not all_cool:
                 continue
             try:
                 if up == UPSTREAMS[0] and not (tokened and attempt == 0):
                     await _take_token()
+                await _gap(up)
                 async with _sems[up]:
-                    async with session.post(up, data=payload, headers={"Content-Type": "application/json"}) as r:
+                    async with session.post(up, data=payload, headers={"Content-Type": "application/json"}, timeout=ClientTimeout(total=UP_TIMEOUT)) as r:
                         text = await r.text()
                 low = text[:300].lower()
                 rate = r.status in (429, 503) or (r.status == 200 and '"error"' in text[:200].replace(" ", "") and any(m in low for m in _RATE_MARKERS))
@@ -233,14 +250,20 @@ async def _post_raw(payload: str, tokened: bool = False) -> tuple[str, int]:
                     _stats["ok"] += 1
                     return text, 200
                 last_status, last_text = r.status, text[:300]
-                if rate and up != UPSTREAMS[0]:
-                    _cooldown[up] = time.time() + 600
-                elif rate:
-                    break
+                if rate:
+                    # 503 from the primary = their edge hiccup → no cooldown, just try the others and come back;
+                    # 429 → 5 s (primary) / 60 s (fallbacks); provider quota exhausted → 10 min
+                    quota = any(m in low for m in QUOTA_MARKERS)
+                    if quota:
+                        _cooldown[up] = time.time() + 600
+                    elif r.status != 503 or up != UPSTREAMS[0]:
+                        _cooldown[up] = time.time() + (5 if up == UPSTREAMS[0] else 60)
+                # any failure (rate limit, 5xx, "could not complete") → next upstream immediately
             except Exception as e:  # noqa
                 last_status, last_text = 502, str(e)[:200]
-        _stats["retry"] += 1
-        await asyncio.sleep((1.0 if last_status in (429, 503) else 0.35) * (attempt + 1) * 0.6 + random.random() * 0.25)
+        if attempt < 3:
+            _stats["retry"] += 1
+            await asyncio.sleep(0.4 * (attempt + 1) + random.random() * 0.2)
     _stats["fail"] += 1
     _stats["last_fail"] = f"{last_status} {last_text[:120]}"
     if _stats["fail"] % 20 == 1:
@@ -254,15 +277,16 @@ async def _upstream(payload: str, ckey, fut, rid) -> web.Response:
         now = time.time()
         for k in [k for k, v in _rcache.items() if now - v[0] > 600][:10000]:
             _rcache.pop(k, None)
-    for attempt in range(5):
+    for attempt in range(4):
         for up in UPSTREAMS:
             if _cooldown.get(up, 0) > time.time():
                 continue
             try:
                 if up == UPSTREAMS[0]:
                     await _take_token()
+                await _gap(up)
                 async with _sems[up]:
-                    async with session.post(up, data=payload, headers={"Content-Type": "application/json"}) as r:
+                    async with session.post(up, data=payload, headers={"Content-Type": "application/json"}, timeout=ClientTimeout(total=UP_TIMEOUT)) as r:
                         text = await r.text()
                 if r.status == 200 and '"error"' not in text[:200].replace(" ", ""):
                     _stats["ok"] += 1
@@ -277,14 +301,19 @@ async def _upstream(payload: str, ckey, fut, rid) -> web.Response:
                     _stats["ok"] += 1
                     return web.Response(text=text, content_type="application/json", headers=CORS)   # genuine rpc error (revert etc.)
                 last_status, last_text = r.status, text[:300]
-                if rate and up != UPSTREAMS[0]:
-                    _cooldown[up] = time.time() + 600      # fallback over quota → ignore it for 10 min
-                elif rate:
-                    break                                   # primary throttled → back off, retry primary first
+                if rate:
+                    # 503 from the primary = their edge hiccup → no cooldown, just try the others and come back;
+                    # 429 → 5 s (primary) / 60 s (fallbacks); provider quota exhausted → 10 min
+                    quota = any(m in low for m in QUOTA_MARKERS)
+                    if quota:
+                        _cooldown[up] = time.time() + 600
+                    elif r.status != 503 or up != UPSTREAMS[0]:
+                        _cooldown[up] = time.time() + (5 if up == UPSTREAMS[0] else 60)
             except Exception as e:  # noqa
                 last_status, last_text = 502, str(e)[:200]
-        _stats["retry"] += 1
-        await asyncio.sleep(0.35 * (attempt + 1) + random.random() * 0.25)
+        if attempt < 3:
+            _stats["retry"] += 1
+            await asyncio.sleep(0.4 * (attempt + 1) + random.random() * 0.2)
     _stats["fail"] += 1
     _stats["last_fail"] = f"{last_status} {last_text[:120]}"
     if _stats["fail"] % 20 == 1:
