@@ -573,6 +573,9 @@ function TokenPage() {
               <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 8 }}>
                 <h1 className="arc-h3" style={{ margin: 0 }}>{info.name}</h1>
                 <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 13 }}>${info.symbol}</span>
+                <span className="arc-mono" title={info.stock ? "Custodial IOU of a stock (long.supply) — trades against USDC" : `Trading pair: ${info.symbol}/${qSym}${quoteTok ? " — quoted in a wrapped stock, routed USDC → " + qSym + " → " + info.symbol : ""}`} style={{ border: "1px solid var(--arc-line)", borderRadius: 4, color: quoteTok ? "#7cc4ff" : "var(--arc-muted)", fontSize: 10.5, padding: "2px 6px" }}>
+                  {info.symbol}/{info.stock ? "USDC · IOU" : qSym}
+                </span>
                 {info.launchpad && (
                   <span className="arc-mono" style={{ background: info.venue === "pad" ? "var(--arc-cobalt)" : "transparent", border: "1px solid var(--arc-cobalt)", color: info.venue === "pad" ? "var(--arc-on-accent)" : "var(--arc-cobalt)", fontSize: 10, padding: "2px 7px", textTransform: "uppercase" }}>
                     {info.launchpad}

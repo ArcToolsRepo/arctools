@@ -23,7 +23,7 @@ export const Route = createFileRoute("/trade")({
   loader: async () => {
     const [rows, trend] = await Promise.all([
       listAllTokens().catch(() => [] as PadToken[]),
-      fetch(`${API}/api/trending?minutes=0&limit=120`).then((r) => r.json()).then((j) => (j.rows ?? []) as Trend[]).catch(() => [] as Trend[]),
+      fetch(`${API}/api/trending?minutes=0&limit=400`).then((r) => r.json()).then((j) => (j.rows ?? []) as Trend[]).catch(() => [] as Trend[]),
     ]);
     return { rows, trend };
   },
@@ -119,7 +119,7 @@ function Trade() {
   useEffect(() => {
     let alive = true;
     // never replace a good trending set with an empty/failed fetch (that is what made vol/txs/ATH blink to "—")
-    const load = () => fetch(`${API}/api/trending?minutes=${tf}&limit=120`).then((r) => r.json()).then((j) => { if (alive && Array.isArray(j.rows) && j.rows.length) setTrend(j.rows); }).catch(() => null);
+    const load = () => fetch(`${API}/api/trending?minutes=${tf}&limit=400`).then((r) => r.json()).then((j) => { if (alive && Array.isArray(j.rows) && j.rows.length) setTrend(j.rows); }).catch(() => null);
     void load();
     const id = setInterval(load, 15_000);
     return () => { alive = false; clearInterval(id); };

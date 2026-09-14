@@ -369,7 +369,7 @@ async def api_trending(request: web.Request) -> web.Response:
     from .insider import total_supply_nowait
     mins = int(request.query.get("minutes", "60"))
     mins = 0 if mins <= 0 else min(1440, max(1, mins))     # 0 = all-time window
-    limit = min(150, int(request.query.get("limit", "80")))
+    limit = min(400, int(request.query.get("limit", "80")))
     sort = request.query.get("sort", "vol")
     now = int(time.time())
     rows = await db.fetchall(text("""
