@@ -38,6 +38,7 @@ async def main():
     ], scope=BotCommandScopeAllPrivateChats())
     await bot.set_my_commands([
         BotCommand(command="add", description="Track a token: /add 0x..."),
+        BotCommand(command="help", description="Setup guide"),
         BotCommand(command="settings", description="Min buy + emoji"),
         BotCommand(command="boost", description="Trending boost"),
         BotCommand(command="paid", description="Confirm payment: /paid 0xTX"),
@@ -67,7 +68,7 @@ async def main():
     log.info("ArcBuyBot start as @%s | rpc x%s | trend channel %s",
              me.username, len(CFG.rpc_urls), CFG.trend_channel_id or "-")
     try:
-        await dp.start_polling(bot)
+        await dp.start_polling(bot, allowed_updates=["message", "callback_query", "my_chat_member"])
     finally:
         for t in tasks:
             t.cancel()

@@ -6,7 +6,7 @@ from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ChatMemberUpdated
 from sqlalchemy import select, insert, update, delete
 from eth_utils import is_address, to_checksum_address
 
@@ -36,10 +36,48 @@ async def is_admin(m_or_cb, chat_id: int, user_id: int) -> bool:
         return False
 
 
+def group_guide(is_admin_now: bool) -> str:
+    step2 = ("✅ I am admin here — good." if is_admin_now
+             else "⚠️ Make me <b>admin</b> first (Telegram only lets admins read the chat and post alerts).")
+    return (
+        "📟 <b>ArcToolsBuyBot</b> — buy alerts for this group\n\n"
+        f"1. {step2}\n"
+        "2. A group admin sends <code>/add 0xTOKEN</code> (your token's contract).\n"
+        "3. Done — every buy on Uniswap V3/V4, ArcToolsPad, DYORSwap, WarpDex and the launchpads lands here live, "
+        "and the token appears on <a href='https://t.me/ARCTrends'>Arc Trending</a>.\n\n"
+        "/settings — min buy, emoji, media, socials · /boost — top trending slots · /remove — stop"
+    )
+
+
+async def bot_is_admin(bot, chat_id: int) -> bool:
+    try:
+        me = await bot.get_chat_member(chat_id, (await bot.me()).id)
+        return me.status in ("administrator", "creator")
+    except Exception:  # noqa
+        return False
+
+
+@router.my_chat_member()
+async def on_my_status(ev: ChatMemberUpdated):
+    """Bot was added to / promoted in a group → post the setup guide right away."""
+    if ev.chat.type == "private":
+        return
+    new, old = ev.new_chat_member.status, ev.old_chat_member.status
+    if new in ("member", "administrator") and old in ("left", "kicked", "member"):
+        if new == old:
+            return
+        try:
+            await ev.bot.send_message(ev.chat.id, group_guide(new == "administrator"),
+                                      parse_mode="HTML", disable_web_page_preview=True)
+        except Exception as e:  # noqa - np. brak prawa pisania
+            log.warning("welcome failed in %s: %s", ev.chat.id, e)
+
+
 @router.message(CommandStart())
 async def start(m: Message):
     if m.chat.type != "private":
-        return
+        return await m.reply(group_guide(await bot_is_admin(m.bot, m.chat.id)),
+                             parse_mode="HTML", disable_web_page_preview=True)
     # deep-link: /start boost_n<abs_chat_id> -> private boost/payment flow
     parts = (m.text or "").split(maxsplit=1)
     payload = parts[1].strip() if len(parts) > 1 else ""
@@ -108,23 +146,41 @@ async def help_sniper(cb: CallbackQuery):
     await cb.answer()
 
 
+@router.message(Command("help"))
+async def help_cmd(m: Message):
+    if m.chat.type == "private":
+        return await start(m)
+    await m.reply(group_guide(await bot_is_admin(m.bot, m.chat.id)), parse_mode="HTML", disable_web_page_preview=True)
+
+
 @router.message(Command("add"))
 async def add_token(m: Message):
     if m.chat.type == "private":
         return await m.answer("Use /add inside your token's group.")
     if not await is_admin(m, m.chat.id, m.from_user.id):
-        return await m.reply("Admins only.")
+        return await m.reply("Admins only — a group admin has to send /add 0xTOKEN.")
     parts = (m.text or "").split()
     if len(parts) < 2 or not is_address(parts[1]):
-        return await m.reply("Usage: /add 0xTOKEN")
+        return await m.reply("Usage: <code>/add 0xTOKEN</code> — paste your token's contract address after /add.",
+                             parse_mode="HTML")
     token = to_checksum_address(parts[1])
     status = await m.reply("🔎 Looking for pools on Uniswap V3, DYORSwap and WarpDex…")
-    venues = await discover_venues(token)
-    sym = await token_symbol(token)
+    try:
+        venues = await discover_venues(token)
+        sym = await token_symbol(token)
+    except Exception as e:  # noqa - RPC down: powiedz, nie milcz
+        log.warning("/add %s failed: %s", token, e)
+        return await status.edit_text("⚠️ Arc RPC is busy right now — could not read the pools. Send /add again in a minute.")
+    if not sym or not isinstance(sym, str):
+        sym = token[:6] + "…" + token[-4:]
     if not venues:
+        try:
+            await CHAIN.eth_call(CFG.usdc, "0x95d89b41")  # RPC alive? (USDC.symbol())
+        except Exception:  # noqa
+            return await status.edit_text("⚠️ Arc RPC is busy right now — could not read the pools. Send /add again in a minute.")
         return await status.edit_text(
-            "❌ No USDC pool found for this token yet (still on a bonding curve?). "
-            "Add it again after it has a pool.")
+            "❌ No USDC market found for this token yet (still on a bonding curve, or quoted in a non-USDC pair?). "
+            "Add it again once it has a USDC pool — buys on Uniswap V3/V4, ArcToolsPad, DYORSwap and WarpDex are supported.")
     old = await db.fetchone(select(db.tracks).where(
         (db.tracks.c.chat_id == m.chat.id) & (db.tracks.c.token == token)))
     if old:
@@ -155,8 +211,10 @@ async def add_token(m: Message):
 
 @router.message(Command("remove"))
 async def remove_token(m: Message):
-    if m.chat.type == "private" or not await is_admin(m, m.chat.id, m.from_user.id):
-        return
+    if m.chat.type == "private":
+        return await m.answer("Use /remove inside your token's group.")
+    if not await is_admin(m, m.chat.id, m.from_user.id):
+        return await m.reply("Admins only.")
     await db.execute(delete(db.tracks).where(db.tracks.c.chat_id == m.chat.id))
     await m.reply("🗑 Tracking stopped for this group.")
 
