@@ -217,6 +217,18 @@ export async function hotSend(tx: HotTx): Promise<string> {
   throw lastErr ?? new Error("broadcast failed");
 }
 
+/** EIP-191 personal_sign with the trading wallet (used to prove ownership for referral claims). */
+export async function hotSignMessage(message: string): Promise<string> {
+  if (!_key || !_addr) throw new Error("Wallet locked.");
+  armLock();
+  const body = new TextEncoder().encode(message);
+  const prefix = new TextEncoder().encode(`\u0019Ethereum Signed Message:\n${body.length}`);
+  const data = new Uint8Array(prefix.length + body.length); data.set(prefix); data.set(body, prefix.length);
+  const sig = await secp.signAsync(keccak_256(data), _key, { lowS: true });
+  const r = sig.r.toString(16).padStart(64, "0"), sv = sig.s.toString(16).padStart(64, "0"), v = (27 + sig.recovery).toString(16).padStart(2, "0");
+  return "0x" + r + sv + v;
+}
+
 export async function hotWait(hash: string, timeoutMs = 90_000): Promise<{ status: number }> {
   const t0 = Date.now();
   while (Date.now() - t0 < timeoutMs) {

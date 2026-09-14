@@ -33,3 +33,11 @@ export function creditRef(wallet: string, tx: string, feeUsd: number) {
   // the Worker forwards it with the shared secret; the browser never sees the key
   void fetch("/api/ref-credit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet: wallet.toLowerCase(), tx, fee_usd: feeUsd }), keepalive: true }).catch(() => null);
 }
+
+/** Claim pending referral USDC: proves wallet ownership with an EIP-191 signature (browser wallet or trading wallet). */
+export async function claimRef(wallet: string, sign: (msg: string) => Promise<string>): Promise<{ ok?: boolean; usd?: number; tx?: string; error?: string; pending_usd?: number }> {
+  const codeRes = (await fetch(`${API}/api/ref/code?wallet=${wallet.toLowerCase()}`).then((r) => r.json())) as { code: string };
+  const ts = Math.floor(Date.now() / 1000);
+  const sig = await sign(`ArcTools referral claim\ncode: ${codeRes.code}\nts: ${ts}`);
+  return (await fetch(`${API}/api/ref/claim`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet: wallet.toLowerCase(), ts, sig }) }).then((r) => r.json())) as { ok?: boolean; usd?: number; tx?: string; error?: string; pending_usd?: number };
+}

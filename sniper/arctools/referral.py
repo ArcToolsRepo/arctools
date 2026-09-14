@@ -50,3 +50,11 @@ async def set_payout_wallet(tg_id: int, wallet: str) -> None:
         await _post("/api/ref/payout-wallet", {"tg": str(tg_id), "payout_wallet": wallet})
     except Exception as e:  # noqa
         log.warning("ref payout wallet: %s", e)
+
+
+async def claim(tg_id: int) -> dict:
+    """Pay out this user's pending referral USDC to their payout wallet (buybot ledger does the transfer)."""
+    try:
+        return await _post("/api/ref/claim", {"tg": str(tg_id)}, auth=True)
+    except Exception as e:  # noqa
+        return {"error": str(e)[:100]}

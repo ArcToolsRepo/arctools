@@ -8,7 +8,7 @@ from aiogram import Router, F
 from aiogram.filters import Command, CommandStart, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from sqlalchemy import select, insert, update, delete
 from eth_utils import is_address, to_checksum_address
 
@@ -923,8 +923,20 @@ async def cmd_ref(m: Message, tg_id: int | None = None):
         f"Referred: <b>{st.get('referred', 0)}</b> · trades: <b>{st.get('trades', 0)}</b>\n"
         f"Earned: <b>${st.get('earned_usd', 0):.2f}</b> · paid: ${st.get('paid_usd', 0):.2f} · pending: <b>${st.get('pending_usd', 0):.2f}</b>\n"
         f"Payout wallet: <code>{st.get('payout_wallet') or 'set by trading once / use the site'}</code>\n\n"
-        f"Payouts go out in native USDC every week to your active wallet.",
-        parse_mode="HTML", disable_web_page_preview=True)
+        f"Claim any time — native USDC lands in your wallet on the spot (min 1 USDC).",
+        parse_mode="HTML", disable_web_page_preview=True,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=f"💸 Claim ${st.get('pending_usd', 0):.2f} USDC", callback_data="ref_claim")]]))
+
+
+@router.callback_query(F.data == "ref_claim")
+async def cb_ref_claim(cb: CallbackQuery):
+    await cb.answer("Claiming…")
+    r = await referral.claim(cb.from_user.id)
+    if r.get("ok"):
+        await cb.message.answer(f"🟢 Sent <b>${float(r['usd']):.4f} USDC</b> to <code>{r['to']}</code>\n"
+                                f"<a href=\"https://arc-scan.org/tx/{r['tx']}\">tx</a>", parse_mode="HTML", disable_web_page_preview=True)
+    else:
+        await cb.message.answer(f"🔴 Claim failed: {r.get('error', 'unknown')}")
 
 
 @router.callback_query(F.data == "ref")
