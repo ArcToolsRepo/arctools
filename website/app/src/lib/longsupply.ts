@@ -38,7 +38,7 @@ async function lsFetch<T>(path: string): Promise<T> {
 const SEL_SUPPLY = "0x18160ddd";
 const SEL_NAME = "0x06fdde03";
 
-export type Stock = { token: string; symbol: string; name: string; usd: number; vault: string; underlying: string; supply: number; mcapUsd: number; launches: number; usdcPool: string | null; poolFee: number | null; usdcLiq: number | null };
+export type Stock = { token: string; symbol: string; name: string; usd: number; refUsd?: number; vault: string; underlying: string; supply: number; mcapUsd: number; launches: number; usdcPool: string | null; poolFee: number | null; usdcLiq: number | null };
 export type Launch = {
   token: string; deployer: string; pool: string; pairToken: string; pairSymbol: string; pairUsd: number; name: string; symbol: string;
   image: string | null; description: string | null; website: string | null; twitter: string | null; telegram: string | null;
@@ -99,27 +99,40 @@ export const longStocks = (): Promise<Stock[]> => memo<Stock[]>("long:stocks", 3
   const meta = await memo<Record<string, { supply: number; name: string }>>("long:stockmeta:" + toks.join(","), 86_400_000, () => chainMeta(toks), (v) => Object.values(v).some((m) => m.supply > 0));
   // USDC pool per stock (factory.getPool on 4 tiers) + how much USDC sits in it — this is what decides whether the
   // stock is a usable pair on ArcToolsPad and how badly USDC buyers get slipped
-  const pools = await memo<Record<string, { pool: string | null; fee: number | null; liq: number | null }>>("long:stockpools:" + toks.join(","), 120_000, async () => {
+  const pools = await memo<Record<string, { pool: string | null; fee: number | null; liq: number | null; poolUsd?: number | null }>>("long:stockpools:" + toks.join(","), 120_000, async () => {
     const FACTORY = "0xf0db7b58379503491d857db50ac9ece64c653918"; const USDC = "0x3600000000000000000000000000000000000000";
     const p32 = (h: string) => h.replace(/^0x/, "").toLowerCase().padStart(64, "0");
     const tiers = [10000, 3000, 500, 100];
     const calls = toks.flatMap((t) => tiers.map((f) => ({ target: FACTORY, data: "0x1698ee82" + p32(USDC) + p32(t) + f.toString(16).padStart(64, "0") })));
     const res = await multicall(calls).catch(() => calls.map(() => null));
-    const out: Record<string, { pool: string | null; fee: number | null; liq: number | null }> = {};
-    const poolCalls: { target: string; data: string }[] = []; const poolIdx: string[] = [];
+    const out: Record<string, { pool: string | null; fee: number | null; liq: number | null; poolUsd?: number | null }> = {};
+    // every tier's pool: USDC balance (depth) + slot0 (market price of the IOU on Arc — NOT the reference stock price)
+    const cands: { t: string; pool: string; fee: number }[] = [];
     toks.forEach((t, i) => {
-      let pool: string | null = null, fee: number | null = null;
-      tiers.forEach((f, j) => { const r = res[i * tiers.length + j]; if (!pool && r && !/^0x0+$/.test(r)) { pool = "0x" + r.slice(-40); fee = f; } });
-      out[t] = { pool, fee, liq: null };
-      if (pool) { poolCalls.push({ target: USDC, data: "0x70a08231" + p32(pool) }); poolIdx.push(t); }
+      out[t] = { pool: null, fee: null, liq: null, poolUsd: null };
+      tiers.forEach((f, j) => { const r = res[i * tiers.length + j]; if (r && !/^0x0+$/.test(r)) cands.push({ t, pool: "0x" + r.slice(-40), fee: f }); });
     });
-    const bal = await multicall(poolCalls).catch(() => poolCalls.map(() => null));
-    poolIdx.forEach((t, i) => { const b = bal[i]; out[t].liq = b && b !== "0x" ? Number(BigInt(b)) / 1e6 : null; });
+    const calls2 = cands.flatMap((c) => [{ target: USDC, data: "0x70a08231" + p32(c.pool) }, { target: c.pool, data: "0x3850c7bd" }, { target: c.pool, data: "0x0dfe1681" }]);
+    const r2 = await multicall(calls2).catch(() => calls2.map(() => null));
+    cands.forEach((c, i) => {
+      const b = r2[i * 3], s0 = r2[i * 3 + 1], t0 = r2[i * 3 + 2];
+      const liq = b && b !== "0x" ? Number(BigInt(b)) / 1e6 : 0;
+      let usd: number | null = null;
+      if (s0 && s0.length >= 66 && t0) {
+        const sqrt = Number(BigInt("0x" + s0.slice(2, 66))) / 2 ** 96; const P = sqrt * sqrt;   // token1 raw / token0 raw
+        const usdcIs0 = ("0x" + t0.slice(-40)).toLowerCase() === USDC;
+        usd = P > 0 ? (usdcIs0 ? 1e12 / P : P * 1e12) : null;   // stock 18 dec, USDC facade 6 dec
+      }
+      const cur = out[c.t];
+      if (!cur.pool || liq > (cur.liq ?? 0)) Object.assign(cur, { pool: c.pool, fee: c.fee, liq, poolUsd: usd });   // deepest pool wins
+    });
     return out;
   }, (v) => Object.values(v).some((x) => x.pool));
   return (pairs.pairs ?? []).map((p) => {
-    const t = p.arcStock.toLowerCase(); const usd = Number(p.usdX18) / 1e18; const m = meta[t] ?? { supply: 0, name: "" }; const pl = pools[t] ?? { pool: null, fee: null, liq: null };
-    return { token: t, symbol: p.symbol, name: m.name || `${p.symbol} • Arc Token`, usd, vault: p.vault, underlying: p.underlying, supply: m.supply, mcapUsd: usd * m.supply, launches: launches.countByPair?.[t] ?? 0,
+    const t = p.arcStock.toLowerCase(); const usd = Number(p.usdX18) / 1e18; const m = meta[t] ?? { supply: 0, name: "" }; const pl = pools[t] ?? { pool: null, fee: null, liq: null, poolUsd: null };
+    // `usd` = what the IOU actually trades for on Arc (deepest USDC pool); `refUsd` = long.supply's reference (real stock) price
+    const mkt = pl.poolUsd && pl.poolUsd > 0 && (pl.liq ?? 0) >= 50 ? pl.poolUsd : usd;
+    return { token: t, symbol: p.symbol, name: m.name || `${p.symbol} • Arc Token`, usd: mkt, refUsd: usd, vault: p.vault, underlying: p.underlying, supply: m.supply, mcapUsd: mkt * m.supply, launches: launches.countByPair?.[t] ?? 0,
       usdcPool: pl.pool, poolFee: pl.fee, usdcLiq: pl.liq };
   });
 }, (v) => v.length > 0), (v) => v.length > 0);
@@ -134,6 +147,9 @@ export const longLaunches = (): Promise<Launch[]> => memo<Launch[]>("long:launch
   }
   const usdBy: Record<string, number> = {};
   for (const p of pages) for (const [k, v] of Object.entries(p.usdByPairToken ?? {})) usdBy[k.toLowerCase()] = Number(v) / 1e18;
+  // market, not reference: a launch quoted in CRCL is worth what CRCL-IOU trades for on Arc (deepest USDC pool), not what
+  // Circle stock trades for on NYSE — the two have been 3× apart
+  try { for (const st of await longStocks()) if (st.usd > 0) usdBy[st.token] = st.usd; } catch { /* keep reference */ }
   const stocks = await longStocks().catch(() => [] as Stock[]);
   const symOf = new Map(stocks.map((s) => [s.token, s.symbol]));
   const rows = pages.flatMap((p) => p.launches ?? []);

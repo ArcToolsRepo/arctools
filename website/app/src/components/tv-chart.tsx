@@ -54,6 +54,19 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
   const [pins, setPins] = useState<{ x: number; y: number; a: ChartAvatar }[]>([]);
   const [rangeTick, setRangeTick] = useState(0);
   const [ready, setReady] = useState(false);
+  // ---- simple technical analysis: overlays, RSI pane, horizontal levels, log/linear
+  type Ind = "ma20" | "ma50" | "ema20" | "bb" | "vwap" | "rsi";
+  const [ind, setInd] = useState<Record<Ind, boolean>>(() => {
+    try { return { ma20: false, ma50: false, ema20: false, bb: false, vwap: false, rsi: false, ...(JSON.parse(localStorage.getItem("arc_chart_ind") || "{}") as Partial<Record<Ind, boolean>>) }; }
+    catch { return { ma20: false, ma50: false, ema20: false, bb: false, vwap: false, rsi: false }; }
+  });
+  const [logScale, setLogScale] = useState(true);
+  const [lineTool, setLineTool] = useState(false);
+  const lineToolRef = useRef(false);
+  const levelsRef = useRef<import("lightweight-charts").IPriceLine[]>([]);
+  const [levelCount, setLevelCount] = useState(0);
+  const indSeries = useRef<Record<string, import("lightweight-charts").ISeriesApi<"Line">>>({});
+  const toggleInd = (k: Ind) => setInd((o) => { const n = { ...o, [k]: !o[k] }; try { localStorage.setItem("arc_chart_ind", JSON.stringify(n)); } catch { /* ignore */ } return n; });
 
   // create once
   useEffect(() => {
@@ -101,6 +114,21 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
         if (d) setHover({ c: d.close, h: d.high, l: d.low, n: 0, o: d.open, t: Number(p.time), v: v?.value ?? 0, vb: 0 });
       });
       chart.timeScale().subscribeVisibleLogicalRangeChange(() => setRangeTick((n) => n + 1));
+      // ArcTools watermark: logo mark + wordmark, very faint, centred behind the candles
+      try {
+        const pane = chart.panes()[0];
+        lw.createImageWatermark(pane, "/assets/brand/logo-mark.png", { alpha: 0.055, maxHeight: Math.min(220, height * 0.5), maxWidth: 220, padding: 0 });
+        lw.createTextWatermark(pane, { horzAlign: "center", vertAlign: "bottom", lines: [{ text: "ArcTools", color: "rgba(150,170,200,0.07)", fontSize: 44, fontStyle: "bold", fontFamily: "Inter, system-ui, sans-serif" }] });
+      } catch { /* watermark is cosmetic */ }
+      // horizontal level tool: click on the chart → price line at that price (removable via the toolbar)
+      chart.subscribeClick((p) => {
+        if (!lineToolRef.current || !p.point) return;
+        const price = cs.coordinateToPrice(p.point.y);
+        if (price == null) return;
+        const line = cs.createPriceLine({ price: Number(price), color: "#f5c542", lineWidth: 1, lineStyle: lw.LineStyle.Dashed, axisLabelVisible: true, title: "" });
+        levelsRef.current.push(line);
+        setLevelCount(levelsRef.current.length);
+      });
       chartRef.current = chart;
       lwRef.current = lw;
       candleRef.current = cs;
@@ -185,6 +213,43 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [markers, candles, ready]);
 
+  useEffect(() => { lineToolRef.current = lineTool; }, [lineTool]);
+  useEffect(() => {
+    const lw = lwRef.current; if (!chartRef.current || !lw) return;
+    chartRef.current.priceScale("right").applyOptions({ mode: logScale ? lw.PriceScaleMode.Logarithmic : lw.PriceScaleMode.Normal });
+  }, [logScale, ready]);
+  // indicators: computed from the (scaled) closes; each toggle adds/removes its line series
+  useEffect(() => {
+    const chart = chartRef.current; const lw = lwRef.current; const cs = candleRef.current;
+    if (!chart || !lw || !cs) return;
+    const T = (t: number) => t as import("lightweight-charts").UTCTimestamp;
+    const closes = candles.map((k) => k.c * scale);
+    const sma = (n: number) => candles.map((k, i) => { if (i < n - 1) return null; let s = 0; for (let j = i - n + 1; j <= i; j++) s += closes[j]; return { time: T(k.t), value: s / n }; }).filter(Boolean) as { time: import("lightweight-charts").UTCTimestamp; value: number }[];
+    const ema = (n: number) => { const k2 = 2 / (n + 1); let e: number | null = null; return candles.map((k, i) => { e = e == null ? closes[i] : closes[i] * k2 + e * (1 - k2); return i < n - 1 ? null : { time: T(k.t), value: e }; }).filter(Boolean) as { time: import("lightweight-charts").UTCTimestamp; value: number }[]; };
+    const bb = () => { const n = 20; const up: { time: import("lightweight-charts").UTCTimestamp; value: number }[] = [], lo: typeof up = []; candles.forEach((k, i) => { if (i < n - 1) return; let s = 0, s2 = 0; for (let j = i - n + 1; j <= i; j++) { s += closes[j]; s2 += closes[j] * closes[j]; } const m = s / n; const sd = Math.sqrt(Math.max(0, s2 / n - m * m)); up.push({ time: T(k.t), value: m + 2 * sd }); lo.push({ time: T(k.t), value: Math.max(1e-12, m - 2 * sd) }); }); return { up, lo }; };
+    const vwap = () => { let pv = 0, vv = 0; return candles.map((k) => { const tp = ((k.h + k.l + k.c) / 3) * scale; pv += tp * k.v; vv += k.v; return { time: T(k.t), value: vv > 0 ? pv / vv : tp }; }); };
+    const rsi = () => { const n = 14; let g = 0, l = 0; const out: { time: import("lightweight-charts").UTCTimestamp; value: number }[] = []; for (let i = 1; i < closes.length; i++) { const d = closes[i] - closes[i - 1]; const gain = Math.max(d, 0), loss = Math.max(-d, 0); if (i <= n) { g += gain / n; l += loss / n; if (i < n) continue; } else { g = (g * (n - 1) + gain) / n; l = (l * (n - 1) + loss) / n; } out.push({ time: T(candles[i].t), value: l === 0 ? 100 : 100 - 100 / (1 + g / l) }); } return out; };
+    const want: Record<string, { data: { time: import("lightweight-charts").UTCTimestamp; value: number }[]; color: string; pane?: number; title: string }> = {};
+    if (ind.ma20) want.ma20 = { data: sma(20), color: "#f5c542", title: "MA20" };
+    if (ind.ma50) want.ma50 = { data: sma(50), color: "#ff8a3d", title: "MA50" };
+    if (ind.ema20) want.ema20 = { data: ema(20), color: "#2e7cff", title: "EMA20" };
+    if (ind.bb) { const b = bb(); want.bbu = { data: b.up, color: "rgba(155,123,255,0.8)", title: "BB+" }; want.bbl = { data: b.lo, color: "rgba(155,123,255,0.8)", title: "BB−" }; }
+    if (ind.vwap) want.vwap = { data: vwap(), color: "#ff5fd2", title: "VWAP" };
+    if (ind.rsi) want.rsi = { data: rsi(), color: "#9b7bff", pane: 1, title: "RSI 14" };
+    // remove what is no longer wanted
+    for (const k of Object.keys(indSeries.current)) if (!want[k]) { try { chart.removeSeries(indSeries.current[k]); } catch { /* gone */ } delete indSeries.current[k]; }
+    for (const [k, w] of Object.entries(want)) {
+      let sr = indSeries.current[k];
+      if (!sr) {
+        sr = chart.addSeries(lw.LineSeries, { color: w.color, lineWidth: k === "rsi" ? 2 : 1, priceLineVisible: false, lastValueVisible: k === "rsi", crosshairMarkerVisible: false, title: w.title, priceFormat: k === "rsi" ? { type: "price", precision: 0, minMove: 1 } : { formatter: (p: number) => fmtAxis(p, mode), type: "custom" } }, w.pane ?? 0);
+        indSeries.current[k] = sr;
+        if (k === "rsi") { try { chart.panes()[1]?.setHeight(90); sr.createPriceLine({ price: 70, color: "rgba(240,83,79,0.5)", lineWidth: 1, lineStyle: lw.LineStyle.Dotted, axisLabelVisible: false, title: "" }); sr.createPriceLine({ price: 30, color: "rgba(34,197,128,0.5)", lineWidth: 1, lineStyle: lw.LineStyle.Dotted, axisLabelVisible: false, title: "" }); } catch { /* pane API optional */ } }
+      }
+      sr.setData(w.data);
+    }
+  }, [ind, candles, scale, mode, ready]);
+  const clearLevels = () => { const cs = candleRef.current; for (const l of levelsRef.current) { try { cs?.removePriceLine(l); } catch { /* gone */ } } levelsRef.current = []; setLevelCount(0); };
+
   const last = hover ?? (candles.length ? { ...candles[candles.length - 1] } : null);
   const sc = hover ? 1 : scale; // hover values are already scaled by the chart
   const chg = last && last.o > 0 ? ((last.c - last.o) / last.o) * 100 : 0;
@@ -207,7 +272,18 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
           <span>Vol <b style={{ color: "var(--arc-ink)" }}>${last.v.toFixed(0)}</b></span>
         </div>
       )}
-      <div ref={box} style={{ height, width: "100%" }} />
+      <div className="arc-mono arc-chart-tools" style={{ position: "absolute", right: 64, top: 6, zIndex: 3, display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: "60%" }}>
+        {([["ma20", "MA20"], ["ma50", "MA50"], ["ema20", "EMA20"], ["bb", "BB"], ["vwap", "VWAP"], ["rsi", "RSI"]] as [Ind, string][]).map(([k, l]) => (
+          <button key={k} onClick={() => toggleInd(k)} type="button" title={`toggle ${l}`}
+            style={{ background: ind[k] ? "rgba(34,197,128,0.18)" : "rgba(20,24,32,0.75)", border: "1px solid " + (ind[k] ? "rgba(34,197,128,0.6)" : "rgba(60,70,90,0.5)"), borderRadius: 4, color: ind[k] ? "#22c580" : "#7c889e", cursor: "pointer", fontSize: 10, padding: "2px 6px" }}>{l}</button>
+        ))}
+        <button onClick={() => setLineTool((v) => !v)} type="button" title="Horizontal level: turn on, then click the chart at a price. Click again to turn off."
+          style={{ background: lineTool ? "rgba(245,197,66,0.2)" : "rgba(20,24,32,0.75)", border: "1px solid " + (lineTool ? "#f5c542" : "rgba(60,70,90,0.5)"), borderRadius: 4, color: lineTool ? "#f5c542" : "#7c889e", cursor: "pointer", fontSize: 10, padding: "2px 6px" }}>— level{levelCount ? ` ${levelCount}` : ""}</button>
+        {levelCount > 0 && <button onClick={clearLevels} type="button" title="remove all levels" style={{ background: "rgba(20,24,32,0.75)", border: "1px solid rgba(60,70,90,0.5)", borderRadius: 4, color: "#7c889e", cursor: "pointer", fontSize: 10, padding: "2px 6px" }}>×</button>}
+        <button onClick={() => setLogScale((v) => !v)} type="button" title="price scale: logarithmic / linear"
+          style={{ background: "rgba(20,24,32,0.75)", border: "1px solid rgba(60,70,90,0.5)", borderRadius: 4, color: "#7c889e", cursor: "pointer", fontSize: 10, padding: "2px 6px" }}>{logScale ? "log" : "lin"}</button>
+      </div>
+      <div ref={box} style={{ height, width: "100%", cursor: lineTool ? "crosshair" : undefined }} />
       {pins.map((p, i) => (
         <a key={i} href={p.a.href} rel="noreferrer" target="_blank" title={p.a.title}
           style={{ left: p.x - 14, position: "absolute", top: p.y - 46 + (candles.length ? 0 : 0), zIndex: 3, display: "block", width: 28, height: 28, pointerEvents: "auto" }}>

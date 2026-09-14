@@ -152,11 +152,26 @@ function TokenPage() {
   useEffect(() => {
     if (!loaded.pending) { setLate(null); return; }
     let alive = true;
+    const lite = (loaded as { lite?: PadToken | null }).lite ?? null;
+    // the full page needs ~10 RPC round-trips; when the public RPCs are down we still have everything the chart, trades and
+    // swap panel need from the cached Terminal row + our own index → render a degraded page instead of a skeleton forever
+    const fromLite = (t: PadToken): TokenPageInfo => {
+      const V3_PADS = new Set(["Lift", "eve.fun", "ArcPad", "Archemist", "RadarDex", "UniswapV3", "Arguspad V3", "Tolly", "Ellipse", "long.supply"]);
+      const isPad = t.pad === "ArcToolsPad";
+      return {
+        token: t.token, name: t.name || t.symbol, symbol: t.symbol, decimals: 18, supply: 1e9, venue: isPad ? "pad" : t.pad === "UniswapV4" || t.pad === "Arguspad" || t.pad === "act.fun" || t.pad === "UBI.fun" ? "v4" : V3_PADS.has(t.pad) ? "v3" : "external",
+        v4Key: null, curveAddress: null, pool: t.pool ?? null, poolFee: 10000, liquidityUsdc: t.liqUsd ?? null, price1m: t.priceUsd != null ? t.priceUsd * 1e6 : null, mcapUsd: t.mcapUsd ?? null,
+        logo: t.logo ?? null, website: t.website ?? null, twitter: t.twitter ?? null, telegram: t.telegram ?? null, launchpad: t.pad, venueUrl: t.venueUrl ?? null, holders: null, createdAt: t.createdAt ?? null, deployer: null,
+        padAddress: null, quoteToken: t.quote ?? null, quoteSymbol: t.quoteSymbol ?? "USDC", quoteUsd: 1, graduated: false, padMode: null, targetQuote: null, stock: null, longPool: null,
+      };
+    };
     const go = async (attempt: number) => {
       const r = await tokenPage({ data: { token: params.ca } }).catch(() => null);
       if (!alive) return;
-      if (r) setLate({ info: "error" in r ? null : r, error: "error" in r ? r.error : null });
-      else if (attempt < 3) setTimeout(() => void go(attempt + 1), 1500);
+      if (r && !("error" in r)) setLate({ info: r, error: null });
+      else if (r && "error" in r && !lite) setLate({ info: null, error: r.error });
+      else if (attempt < 1 && !lite) setTimeout(() => void go(attempt + 1), 1500);
+      else if (lite) { setLate({ info: fromLite(lite), error: null }); if (attempt < 2) setTimeout(() => void go(attempt + 1), 8000); }   // degraded now, upgrade when RPC answers
       else setLate({ info: null, error: "Could not load this token right now — try again in a moment." });
     };
     void go(0);
@@ -768,8 +783,8 @@ function TokenPage() {
           <section style={{ border: "1px solid var(--arc-line)", marginTop: 14, padding: "10px 14px" }}>
             <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, letterSpacing: "0.08em" }}>MAIN MARKET · long.supply</div>
             <div style={{ fontSize: 13, marginTop: 4 }}>
-              Quoted in <b>{info.longPool.pairSymbol}</b> (a wrapped stock, ${info.longPool.pairUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}) on a Uniswap V3 pool
-              {info.longPool.liquidityUsd != null ? <> with <b>${Math.round(info.longPool.liquidityUsd).toLocaleString()}</b> liquidity</> : null}. USD price here is derived through the stock price.
+              Quoted in <b>{info.longPool.pairSymbol}</b> (a wrapped-stock IOU trading at ${info.longPool.pairUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })} on Arc) on a Uniswap V3 pool
+              {info.longPool.liquidityUsd != null ? <> with <b>${Math.round(info.longPool.liquidityUsd).toLocaleString()}</b> liquidity</> : null}. USD price = pool price × what the IOU actually trades for on Arc (its deepest USDC pool), not the NYSE quote.
               {info.venue !== "external" ? " Our aggregator quotes both the USDC pool and the two-hop route through the stock and takes the better fill." : ` No USDC pool — our aggregator buys ${info.longPool.pairSymbol} with your USDC and swaps it into the token in one transaction (1.5% fee).`}
               {" "}<a href={`https://long.supply/${ca.toLowerCase()}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)" }} target="_blank">open on long.supply ↗</a>
             </div>
