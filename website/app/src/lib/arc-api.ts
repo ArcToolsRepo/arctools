@@ -1842,8 +1842,9 @@ export const holderRisk = createServerFn({ method: "POST" })
     const want = [...new Set(data.tokens.slice(0, 60).map((t) => t.toLowerCase()))];
     if (!want.length) return {};
     try {
-      const r = await memo(`hrisk:${want.join(",")}`, 45_000, async () => {
-        const j = await fetch(`https://bot-production-4200.up.railway.app/api/holder-risk?tokens=${want.join(",")}`).then((x) => x.json()) as { risk?: Record<string, { holders: number; top10: number | null; top1: number | null }> };
+      // short memo: the index answers with what it has and computes the rest in the background, so the client re-polls
+      const r = await memo(`hrisk:${want.join(",")}`, 8_000, async () => {
+        const j = await fetch(`https://bot-production-4200.up.railway.app/api/holder-risk?tokens=${want.join(",")}`, { signal: AbortSignal.timeout(12_000) }).then((x) => x.json()) as { risk?: Record<string, { holders: number; top10: number | null; top1: number | null }> };
         return j.risk ?? {};
       });
       return r as Record<string, { holders: number; top10: number | null; top1: number | null }>;
@@ -2041,7 +2042,7 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   function compactToken(t: PadToken): PadToken {
     return {
       createdAt: t.createdAt, logo: t.logo, mcapUsd: t.mcapUsd, name: (t.name ?? "").slice(0, 40), pad: t.pad, pool: t.pool, priceUsd: t.priceUsd, stage: t.stage ?? null,
-      symbol: (t.symbol ?? "").slice(0, 16), telegram: t.telegram, token: t.token, twitter: t.twitter, venueUrl: t.venueUrl, volUsd: t.volUsd, website: t.website,
+      symbol: (t.symbol ?? "").slice(0, 16), telegram: t.telegram, token: t.token.toLowerCase(), twitter: t.twitter, venueUrl: t.venueUrl, volUsd: t.volUsd, website: t.website,
       og: t.og || scrMeta.get(t.token.toLowerCase())?.og || false, dexes: t.dexes?.length ? t.dexes : (scrMeta.get(t.token.toLowerCase())?.dexes ?? []),
       ...(t.stock ? { stock: true } : {}), ...(t.quote ? { quote: t.quote, quoteSymbol: t.quoteSymbol } : {}), ...(t.liqUsd != null ? { liqUsd: t.liqUsd } : {}),
     } as PadToken;

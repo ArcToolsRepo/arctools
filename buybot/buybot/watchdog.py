@@ -22,6 +22,7 @@ from .warm import WARM_AUTH, WARM_URL
 
 log = logging.getLogger("watchdog")
 SITE = "https://arctools.fun"
+BOT = "http://127.0.0.1:" + __import__("os").environ.get("PORT", "8080")
 RELAY = os.environ.get("RELAY_RPC", "https://rpc-production-ba7a.up.railway.app")
 ARCT = "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52"
 EVERY = int(os.environ.get("WATCHDOG_EVERY", "180"))
@@ -200,7 +201,37 @@ async def chk_display(s):
     return True, f"pad {n} tokens, {n - len(nologo)} logos · stocks {len(stocks)} · page+route ok"
 
 
-CHECKS = [("pages", chk_pages), ("tokens", chk_tokens_api), ("relay", chk_relay), ("index", chk_index), ("api", chk_own_api), ("display", chk_display)]
+async def chk_cells(s):
+    """Terminal cell coverage: for the first 150 Terminal rows (default order) + 50 random others, how many have a Score
+    and a liquidity figure in the index right now. A gap schedules background compute (holder-risk does that itself)
+    and, if it persists on the second look, fails the check so it is visible in the status pill and the hourly DM."""
+    import random
+    j = await _json(s, f"{SITE}/api/tokens?full=1")
+    toks = [t["token"].lower() for t in ((j or {}).get("tokens") or []) if (t.get("mcapUsd") or 0) > 0]
+    if len(toks) < 50:
+        return True, "cells: list too small to judge"
+    # what the Terminal actually opens on: the Trending tab (all-time volume order) — brand-new tokens without an indexed
+    # pool legitimately have no LIQ yet, so they are not part of the liquidity threshold
+    tr = await _json(s, f"{BOT}/api/trending?minutes=0&limit=150")
+    top = [r["token"].lower() for r in ((tr or {}).get("rows") or [])] or toks[:150]
+    sample = list(dict.fromkeys(top + random.sample(toks, min(50, len(toks)))))
+    async def coverage():
+        risk_ok = 0
+        for i in range(0, len(sample), 50):
+            r = await _json(s, f"{BOT}/api/holder-risk?tokens={','.join(sample[i:i + 50])}")
+            risk_ok += sum(1 for t in sample[i:i + 50] if (r or {}).get("risk", {}).get(t))
+        liq = await _json(s, f"{BOT}/api/liq?tokens={','.join(top[:120])}")
+        liq_ok = sum(1 for t in top[:120] if t in ((liq or {}).get("liq") or {}))
+        return risk_ok / len(sample), liq_ok / max(1, len(top[:120]))
+    rc, lc = await coverage()
+    if rc < 0.9 or lc < 0.6:
+        await asyncio.sleep(20)          # background compute kicked in — look again
+        rc, lc = await coverage()
+    detail = f"score {rc:.0%} · liq {lc:.0%} of {len(sample)} rows"
+    return (rc >= 0.9 and lc >= 0.6), "cells: " + detail
+
+
+CHECKS = [("pages", chk_pages), ("cells", chk_cells), ("tokens", chk_tokens_api), ("relay", chk_relay), ("index", chk_index), ("api", chk_own_api), ("display", chk_display)]
 REPORT_EVERY = int(os.getenv("WATCHDOG_REPORT_EVERY", "3600"))   # hourly "all good" summary to the admin
 _last_report = 0.0
 

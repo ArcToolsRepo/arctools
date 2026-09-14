@@ -212,12 +212,53 @@ async def dev_activity(token: str, dev: str | None, bundle: set[str]) -> dict:
     return out
 
 
+_risk_db_loaded = False
+
+
+async def risk_cache_init():
+    """Create the table and preload every persisted score into memory (one query) so the API answers instantly after a restart."""
+    global _risk_db_loaded
+    await db.execute(text("CREATE TABLE IF NOT EXISTS risk_cache (token VARCHAR(64) PRIMARY KEY, data TEXT, ts BIGINT)"))
+    try:
+        import json as _json
+        rows = await db.fetchall(text("SELECT token, data, ts FROM risk_cache WHERE ts > :t").bindparams(t=int(time.time()) - 6 * 3600))
+        for r in rows:
+            try:
+                _risk_cache.setdefault(r["token"], (float(r["ts"]), _json.loads(r["data"])))
+            except Exception:  # noqa
+                pass
+        log.info("risk_cache: %d scores preloaded", len(rows))
+    except Exception as e:  # noqa
+        log.warning("risk_cache preload: %s", e)
+    _risk_db_loaded = True
+
+
+_risk_bg: set[str] = set()
+
+
+def _risk_schedule(token: str):
+    """Compute in the background (bounded); the API answers now and the next poll picks the value up."""
+    if token in _risk_bg or token in _risk_inflight:
+        return
+    _risk_bg.add(token)
+
+    async def _go():
+        try:
+            async with aiohttp.ClientSession() as s2:
+                await _risk_compute(s2, token)
+        except Exception as e:  # noqa
+            log.debug("risk bg %s: %s", token[:10], e)
+        finally:
+            _risk_bg.discard(token)
+    asyncio.create_task(_go())
+
+
 async def _risk_one(s: aiohttp.ClientSession, token: str) -> dict:
     c = _risk_cache.get(token)
     if c and time.time() - c[0] < 60:
         return c[1]
-    if c and time.time() - c[0] < 900:
-        # stale-while-revalidate: answer instantly from the ≤15 min value, refresh in the background
+    if c and time.time() - c[0] < 6 * 3600:
+        # stale-while-revalidate: answer instantly from the ≤6 h value, refresh in the background
         if token not in _risk_inflight:
             _risk_inflight.add(token)
             async def _bg():
@@ -276,20 +317,54 @@ async def _risk_compute(s: aiohttp.ClientSession, token: str) -> dict:
         from .risk_score import score as _score
         out["score"], out["grade"], out["flags"] = _score(out)
         _risk_cache[token] = (time.time(), out)
+        # persist: a buybot restart / redeploy must not empty the Score column for minutes
+        try:
+            import json as _json
+            await db.execute(text("INSERT INTO risk_cache (token, data, ts) VALUES (:t, :d, :ts) ON CONFLICT (token) DO UPDATE SET data = :d, ts = :ts")
+                             .bindparams(t=token, d=_json.dumps(out), ts=int(time.time())))
+        except Exception as e:  # noqa
+            log.debug("risk_cache persist %s: %s", token[:10], e)
     except Exception as e:  # noqa
         log.debug("holder risk %s: %s", token, e)
     return out
 
 
 async def api_holder_risk(req: web.Request):
+    """GET /api/holder-risk?tokens=a,b,c[&wait=1]
+    Default: answers immediately with everything cached (≤6 h, refreshed in the background) and schedules the rest —
+    the caller polls again in a few seconds. wait=1 = old blocking behaviour (used by the sniper)."""
     raw = req.query.get("tokens", "")
     tokens = [t.strip().lower() for t in raw.split(",") if t.strip().startswith("0x") and len(t.strip()) == 42][:60]
     if not tokens:
-        return web.json_response({"risk": {}})
-    async with aiohttp.ClientSession() as s:
-        res = await asyncio.gather(*[_risk_one(s, t) for t in tokens])
-    return web.json_response({"risk": dict(zip(tokens, res))},
-                             headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=60"})
+        return web.json_response({"risk": {}, "pending": []}, headers={"Access-Control-Allow-Origin": "*"})
+    if req.query.get("wait"):
+        async with aiohttp.ClientSession() as s:
+            res = await asyncio.gather(*[_risk_one(s, t) for t in tokens])
+        return web.json_response({"risk": dict(zip(tokens, res)), "pending": []},
+                                 headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=60"})
+    out: dict[str, dict] = {}
+    pending: list[str] = []
+    now = time.time()
+    for t in tokens:
+        c = _risk_cache.get(t)
+        if c and now - c[0] < 6 * 3600:
+            out[t] = c[1]
+            if now - c[0] > 60:
+                _risk_schedule(t)
+        else:
+            pending.append(t)
+            _risk_schedule(t)
+    # give very small batches a moment — most first-page requests come back complete in one round-trip
+    if pending and len(pending) <= 4:
+        for _ in range(12):
+            await asyncio.sleep(0.25)
+            done = [t for t in pending if t in _risk_cache]
+            for t in done:
+                out[t] = _risk_cache[t][1]; pending.remove(t)
+            if not pending:
+                break
+    return web.json_response({"risk": out, "pending": pending},
+                             headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-store"})
 
 
 async def risk_warm_loop():
@@ -304,6 +379,15 @@ async def risk_warm_loop():
                 toks = j.get("tokens") or []
                 want = [t["token"].lower() for t in toks if t.get("pad") == "ArcToolsPad"]
                 want += [t["token"].lower() for t in toks[:220]]
+                # everything the Terminal can show (all sources, ~1.5k rows) — slow lane, oldest cache first
+                try:
+                    async with s.get("https://arctools.fun/api/tokens?full=1", headers={"User-Agent": "ArcTools-buybot/1.0"}, timeout=aiohttp.ClientTimeout(total=90)) as r2:
+                        full = (await r2.json()).get("tokens") or []
+                    rest = [t["token"].lower() for t in full if (t.get("mcapUsd") or 0) > 0]
+                    rest.sort(key=lambda t: _risk_cache.get(t, (0,))[0])
+                    want += rest[:400]
+                except Exception as e:  # noqa
+                    log.debug("risk warm full list: %s", e)
                 want = list(dict.fromkeys(want))
                 for i in range(0, len(want), 6):
                     await asyncio.gather(*[_risk_one(s, t) for t in want[i:i + 6]], return_exceptions=True)
@@ -315,7 +399,10 @@ async def risk_warm_loop():
 
 
 def register_risk(app: web.Application):
-    asyncio.create_task(risk_warm_loop(), name="risk-warm")
+    async def _boot():
+        await risk_cache_init()
+        await risk_warm_loop()
+    asyncio.create_task(_boot(), name="risk-warm")
     from .risk_score import register as _reg_score
     _reg_score(app)
     app.router.add_get("/api/holder-risk", api_holder_risk)

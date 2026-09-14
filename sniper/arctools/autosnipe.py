@@ -76,7 +76,7 @@ async def _risk(token: str) -> dict | None:
     for attempt in range(3):
         try:
             async with aiohttp.ClientSession() as s:
-                async with s.get(f"{INDEX_API}/api/holder-risk", params={"tokens": token}, timeout=aiohttp.ClientTimeout(total=25)) as r:
+                async with s.get(f"{INDEX_API}/api/holder-risk", params={"tokens": token, "wait": "1"}, timeout=aiohttp.ClientTimeout(total=25)) as r:
                     if r.status == 200:
                         j = await r.json()
                         k = (j.get("risk") or {}).get(token.lower())
