@@ -784,3 +784,33 @@ select option:disabled { color: #6b7385; }
   .arc-tabs { flex-wrap: wrap !important; row-gap: 4px; }
   .arc-tabs > button { white-space: nowrap; flex: 0 0 auto; }
 }
+
+/* ---------- light theme (html[data-theme="light"]) ---------- */
+html[data-theme="light"] .arc-site, html[data-theme="light"] body {
+  --arc-paper: #f4f6fa;
+  --arc-paper-deep: #ffffff;
+  --arc-ink: #0f1522;
+  --arc-muted: #5c6880;
+  --arc-cobalt: #1f6fe0;
+  --arc-line: rgba(15, 21, 34, 0.14);
+  --arc-up: #16a34a;
+  --arc-on-accent: #ffffff;
+}
+html[data-theme="light"] body { background: #f4f6fa; color: #0f1522; }
+/* the many inline dark surfaces in the app: flip them without touching every component */
+html[data-theme="light"] .arc-site [style*="#0e1118"], html[data-theme="light"] .arc-site [style*="#0b0d13"], html[data-theme="light"] .arc-site [style*="#0a0c10"] { background-color: #ffffff !important; }
+html[data-theme="light"] .arc-site [style*="rgba(255,255,255,0.02"], html[data-theme="light"] .arc-site [style*="rgba(255,255,255,0.03"], html[data-theme="light"] .arc-site [style*="rgba(255,255,255,0.05"], html[data-theme="light"] .arc-site [style*="rgba(255,255,255,0.08"] { background-color: rgba(15, 21, 34, 0.04) !important; }
+html[data-theme="light"] .arc-site [style*="rgba(20,24,32,0.75)"] { background-color: rgba(255, 255, 255, 0.9) !important; }
+html[data-theme="light"] .arc-site [style*="rgba(0,0,0,0.15)"], html[data-theme="light"] .arc-site [style*="rgba(0,0,0,0.25)"], html[data-theme="light"] .arc-site [style*="rgba(0,0,0,0.32)"], html[data-theme="light"] .arc-site [style*="rgba(0,0,0,0.12)"], html[data-theme="light"] .arc-site [style*="rgba(0,0,0,0.1)"] { background-color: rgba(15, 21, 34, 0.05) !important; }
+html[data-theme="light"] .arc-site [style*="color: #06130b"], html[data-theme="light"] .arc-site [style*="color:#06130b"] { color: #ffffff !important; }
+html[data-theme="light"] .arc-nav, html[data-theme="light"] .arc-ticker { background: #ffffff; }
+html[data-theme="light"] .arc-site img[alt="ArcTools monogram"] { filter: invert(1) hue-rotate(180deg); }
+html[data-theme="light"] .arc-site table tbody tr:hover { background: rgba(15, 21, 34, 0.04); }
+/* light theme contrast fixes */
+html[data-theme="light"] .arc-site thead th { background: #eef1f6 !important; color: #3c4658 !important; }
+html[data-theme="light"] .arc-site thead th button { color: #3c4658 !important; }
+html[data-theme="light"] .arc-nav--side .arc-link-tick[data-active], html[data-theme="light"] .arc-nav--side .arc-link-tick[style*="underline"] { background: rgba(31, 111, 224, 0.12); color: #0f1522; }
+html[data-theme="light"] .arc-site [style*="#f5c542"] { color: #a16207 !important; }
+html[data-theme="light"] .arc-site [style*="#7cc4ff"], html[data-theme="light"] .arc-site [style*="#8ab4ff"] { color: #1f6fe0 !important; border-color: #1f6fe0 !important; }
+html[data-theme="light"] .arc-site .arc-status-pill, html[data-theme="light"] .arc-site [class*="system-status"] { background: #ffffff; color: #0f1522; border: 1px solid var(--arc-line); }
+html[data-theme="light"] .arc-site .arc-mono[style*="color: var(--arc-muted)"] { color: #5c6880; }

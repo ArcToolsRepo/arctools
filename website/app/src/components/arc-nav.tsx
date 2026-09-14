@@ -5,6 +5,8 @@ import { connectWallet, disconnectWallet, getStoredWallet, onWalletChange, setSt
 import { bindRef, captureRef } from "@/lib/arc-ref";
 import { hotAddress, onHotChange } from "@/lib/arc-hotwallet";
 import { PadTicker } from "./pad-ticker";
+import { PrefsBar } from "./prefs-bar";
+import { usePrefs } from "@/lib/i18n";
 
 /** Shared site nav: tool links, launchpad, rewards, wallet connect. */
 export function ArcNav({ active }: { active?: string }) {
@@ -50,6 +52,8 @@ export function ArcNav({ active }: { active?: string }) {
     ["/bridge", "Bridge"],
   ] as const;
 
+  const { t } = usePrefs();
+  const side = !!(active && active !== "/");
   return (
     <>
     <nav className={"arc-nav" + (active && active !== "/" ? " arc-nav--side" : "")}>
@@ -58,7 +62,7 @@ export function ArcNav({ active }: { active?: string }) {
         ArcTools
       </a>
       {active && active !== "/" && active !== "/trade" && (
-        <a className="arc-nav__back arc-mono" href="/trade" title="Back to the trading terminal">← Terminal</a>
+        <a className="arc-nav__back arc-mono" href="/trade" title="Back to the trading terminal">{t("← Terminal")}</a>
       )}
       <div className="arc-nav__links" style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 18 }}>
         {links.map(([href, label]) => (
@@ -68,20 +72,20 @@ export function ArcNav({ active }: { active?: string }) {
             key={href}
             style={active === href ? { textDecoration: "underline", textUnderlineOffset: 6 } : undefined}
           >
-            {label}
+            {t(label)}
           </a>
         ))}
         <a className="arc-link-tick" data-active={active === "/launchpad" || undefined} href="/launchpad">
-          Launchpad
+          {t("Launchpad")}
         </a>
         <a className="arc-link-tick" data-active={active === "/rewards" || undefined} href="/rewards">
-          Rewards
+          {t("Rewards")}
         </a>
         <a className="arc-link-tick" data-active={active === "/insiders" || undefined} href="/insiders">
-          Insiders
+          {t("Insiders")}
         </a>
         <a className="arc-link-tick" data-active={active === "/intel" || undefined} href="/intel">
-          Intel
+          {t("Intel")}
         </a>
       </div>
       <div className="arc-nav__socials" aria-label="ArcTools links">
@@ -118,10 +122,12 @@ export function ArcNav({ active }: { active?: string }) {
         </button>
       ) : (
         <button className="arc-wallet arc-wallet--connect arc-mono" onClick={() => void connect()} type="button">
-          Connect wallet
+          {t("Connect wallet")}
         </button>
       )}
+      {!side && <PrefsBar />}
     </nav>
+    {side && <PrefsBar fixed />}
     <PadTicker />
     <style>{`
       .arc-nav__socials { display: flex; align-items: center; gap: 6px; }

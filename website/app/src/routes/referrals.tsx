@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
+import { usePrefs } from "@/lib/i18n";
 import { hotAddress, hotSignMessage, isUnlocked, onHotChange } from "@/lib/arc-hotwallet";
 import { claimRef } from "@/lib/arc-ref";
 import { connectWallet, getStoredWallet, onWalletChange } from "@/lib/arc-wallet";
@@ -16,6 +17,7 @@ export const Route = createFileRoute("/referrals")({
 });
 
 function Referrals() {
+  const { t: tr_ } = usePrefs();
   const [addr, setAddr] = useState<string | null>(null);
   const [st, setSt] = useState<Stats | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -55,7 +57,7 @@ function Referrals() {
       <ArcNav active="/referrals" />
       <section className="arc-section" style={{ maxWidth: 900, paddingTop: 112 }}>
         <p className="arc-eyebrow">REFERRALS</p>
-        <h1 className="arc-h2" style={{ fontSize: 30 }}>Earn 25% of the fees, forever</h1>
+        <h1 className="arc-h2" style={{ fontSize: 30 }}>{tr_("Earn 25% of the fees, forever")}</h1>
         <p className="arc-body" style={{ maxWidth: 700 }}>
           Every trade of everyone who joins through your link pays you a quarter of the platform fee: 1.5% per swap on the Terminal, 1% per trade in the sniper bot. No cap, no expiry. Claim your USDC any time — it is sent to your wallet on the spot.
         </p>
@@ -79,7 +81,7 @@ function Referrals() {
             </div>
             <div style={{ alignItems: "center", background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.35)", borderRadius: 12, display: "flex", flexWrap: "wrap", gap: 14, justifyContent: "space-between", marginTop: 14, padding: "14px 18px" }}>
               <div>
-                <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: 0, textTransform: "uppercase" }}>Claimable now</p>
+                <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: 0, textTransform: "uppercase" }}>{tr_("Claimable now")}</p>
                 <p className="arc-mono" style={{ color: "var(--arc-up)", fontSize: 26, fontWeight: 700, margin: "2px 0 0" }}>{usd(st.pending_usd)}</p>
                 <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: "4px 0 0" }}>
                   Native USDC, sent to your payout wallet the moment you claim · minimum {payer?.min_claim_usd ?? 1} USDC
@@ -87,7 +89,7 @@ function Referrals() {
                 </p>
               </div>
               <div style={{ textAlign: "right" }}>
-                <button className="arc-cta" disabled={claim.busy || (st.pending_usd ?? 0) < (payer?.min_claim_usd ?? 1)} onClick={() => void doClaim()} style={{ opacity: (st.pending_usd ?? 0) < (payer?.min_claim_usd ?? 1) ? 0.5 : 1 }} type="button">{claim.busy ? "Signing…" : "Claim USDC"}</button>
+                <button className="arc-cta" disabled={claim.busy || (st.pending_usd ?? 0) < (payer?.min_claim_usd ?? 1)} onClick={() => void doClaim()} style={{ opacity: (st.pending_usd ?? 0) < (payer?.min_claim_usd ?? 1) ? 0.5 : 1 }} type="button">{claim.busy ? "Signing…" : tr_("Claim USDC")}</button>
                 {claim.msg && <p className="arc-mono" style={{ color: claim.ok ? "var(--arc-up)" : "#f0534f", fontSize: 11, margin: "8px 0 0" }}>{claim.msg}</p>}
               </div>
             </div>

@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
+import { usePrefs } from "@/lib/i18n";
 import { SocialCheck } from "@/components/social-check";
 import { SmartFollowers } from "@/components/smart-followers";
 import { RiskCard, StockCard, Tags, useWalletLabels } from "@/components/risk";
@@ -172,6 +173,7 @@ function AutoRetry() {
 }
 
 function TokenPage() {
+  const { t: tr_ } = usePrefs();
   const loaded = Route.useLoaderData();
   const params = Route.useParams();
   const [late, setLate] = useState<{ info: TokenPageInfo | null; error: string | null } | null>(null);
@@ -661,9 +663,9 @@ function TokenPage() {
             </div>
           </div>
           <div className="arc-token__kpis">
-            <div><p className="arc-mono arc-token__k">MCAP</p><p className="arc-mono arc-token__v">{mcap !== null ? money(mcap, 0) : "—"}</p></div>
-            <div><p className="arc-mono arc-token__k">PRICE</p><p className="arc-mono arc-token__v">{price !== null ? `$${price < 0.01 ? price.toFixed(8) : price.toFixed(5)}` : "—"}</p></div>
-            <div><p className="arc-mono arc-token__k">LIQUIDITY</p><p className="arc-mono arc-token__v">{money(liquidity, 0)}</p></div>
+            <div><p className="arc-mono arc-token__k">{tr_("MCAP")}</p><p className="arc-mono arc-token__v">{mcap !== null ? money(mcap, 0) : "—"}</p></div>
+            <div><p className="arc-mono arc-token__k">{tr_("PRICE")}</p><p className="arc-mono arc-token__v">{price !== null ? `$${price < 0.01 ? price.toFixed(8) : price.toFixed(5)}` : "—"}</p></div>
+            <div><p className="arc-mono arc-token__k">{tr_("LIQUIDITY")}</p><p className="arc-mono arc-token__v">{money(liquidity, 0)}</p></div>
             <div><p className="arc-mono arc-token__k">24H</p><p className="arc-mono arc-token__v" style={{ color: (eff.change["24h"] ?? 0) >= 0 ? "#22c580" : "#f0534f" }}>{pct(eff.change["24h"])}</p></div>
           </div>
         </div>
@@ -735,7 +737,7 @@ function TokenPage() {
                   ))}
                   <a className="arc-mono" href={`https://t.me/ArcSniper_bot?start=ca_${ca.slice(2)}`} rel="noreferrer" style={{ alignSelf: "center", color: "var(--arc-muted)", fontSize: 11, textDecoration: "none" }} target="_blank" title="Limit orders, TP/SL and turbo gas in the sniper bot">Limit ↗</a>
                 </div>
-                <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: "0 0 4px" }}>YOU PAY</p>
+                <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: "0 0 4px" }}>{tr_("YOU PAY")}</p>
                 <div style={{ alignItems: "center", background: "#0e1118", border: "1px solid var(--arc-line)", display: "flex", gap: 8, padding: "8px 10px" }}>
                   <input className="arc-mono" inputMode="decimal" onChange={(e) => setAmount(e.target.value.replace(",", "."))} placeholder="0.0" style={{ background: "transparent", border: "none", color: "var(--arc-ink)", flex: 1, fontSize: 20, minWidth: 0, outline: "none" }} value={amount} />
                   <span className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 14, fontSize: 12, marginRight: 4, padding: "3px 10px" }}>{side === "buy" ? (info.venue === "pad" || v3Quote ? qSym : "USDC") : info.symbol}</span>
@@ -749,7 +751,7 @@ function TokenPage() {
                     <button className="arc-mono" key={p} onClick={() => setPctAmount(p)} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-muted)", cursor: "pointer", flex: 1, fontSize: 11, padding: "7px 0" }} type="button">{p === 1 ? "Max" : `${p * 100}%`}</button>
                   ))}
                 </div>
-                <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: "12px 0 4px" }}>TO (ESTIMATED)</p>
+                <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: "12px 0 4px" }}>{tr_("TO (ESTIMATED)")}</p>
                 <div style={{ alignItems: "center", background: "#0e1118", border: "1px solid var(--arc-line)", display: "flex", gap: 8, padding: "8px 10px" }}>
                   <span className="arc-mono" style={{ flex: 1, fontSize: 20 }}>{quote !== null ? fmt(quote, side === "buy" ? 2 : 4) : "0.0"}</span>
                   <span className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 14, fontSize: 12, marginRight: 4, padding: "3px 10px" }}>{side === "buy" ? info.symbol : (info.venue === "pad" || v3Quote ? qSym : "USDC")}</span>

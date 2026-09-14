@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
+import { usePrefs } from "@/lib/i18n";
 import { holderRisk, listAllTokens, tokenLogos, xAvatar, type PadToken } from "@/lib/arc-api";
 import { ARC_AGGREGATOR, connectWallet, encodeAggregatorSwap, ethCall, getStoredWallet, onWalletChange, p32, sendTx, waitReceipt } from "@/lib/arc-wallet";
 import { hotAddress, hotCall, hotSend, hotWait } from "@/lib/arc-hotwallet";
@@ -69,6 +70,7 @@ const OFFICIAL_TOKEN = "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52";
 const OFFICIAL_META: PadToken = { createdAt: "2026-09-09T10:12:53.699Z", logo: "https://i.ibb.co/xSh1WBWy/hf-20260909-062713-c61f9f46-e827-41b1-82e0-bb565b9c05b3.png", mcapUsd: null, name: "ArcTools", pad: "RadarDex", pool: "0xf89005ccf237a59eeee1521e74b15c7d8d022ab7", priceUsd: null, symbol: "ARCT", telegram: "https://t.me/ArcToolsPortal", token: OFFICIAL_TOKEN, twitter: "https://x.com/ArcToolsBackup", venueUrl: `/token/${OFFICIAL_TOKEN}`, volUsd: null, website: "https://arctools.fun" };
 
 function Trade() {
+  const { t: tr_ } = usePrefs();
   const navigate = useNavigate();
   // whole row is clickable: one click = token page with chart + swap; buttons/links inside keep their own action
   const rowClick = (token: string) => (e: React.MouseEvent<HTMLTableRowElement>) => {
@@ -89,7 +91,7 @@ function Trade() {
   const PAGE = 50;
   const [page, setPage] = useState(1);
   const [minMc, setMinMc] = useState(""); const [maxMc, setMaxMc] = useState(""); const [minVol, setMinVol] = useState("");
-  const PADS: [string, string][] = [["all", "All sources"], ["ArcToolsPad", "ArcToolsPad"], ["ArcPad", "ArcPad"], ["RadarDex", "RadarDex"], ["Warp", "Warp"], ["Tolly", "Tolly"], ["Archemist", "Archemist"], ["Arguspad", "Arguspad"], ["UniswapV4", "Uniswap V4"], ["UniswapV3", "Uniswap V3 pools"], ["Lift", "Lift"], ["eve.fun", "eve.fun"], ["Ellipse", "Ellipse"], ["Sashimi", "Sashimi"], ["aka.fun", "aka.fun"], ["long.supply", "📈 Stock pairs"], ["Stocks", "📈 Stocks"], ["DYORSwap", "DYORSwap · V2"], ["UBI.fun", "UBI.fun"]];
+  const PADS: [string, string][] = [["all", tr_("All sources")], ["ArcToolsPad", "ArcToolsPad"], ["ArcPad", "ArcPad"], ["RadarDex", "RadarDex"], ["Warp", "Warp"], ["Tolly", "Tolly"], ["Archemist", "Archemist"], ["Arguspad", "Arguspad"], ["UniswapV4", "Uniswap V4"], ["UniswapV3", "Uniswap V3 pools"], ["Lift", "Lift"], ["eve.fun", "eve.fun"], ["Ellipse", "Ellipse"], ["Sashimi", "Sashimi"], ["aka.fun", "aka.fun"], ["long.supply", "📈 Stock pairs"], ["Stocks", "📈 Stocks"], ["DYORSwap", "DYORSwap · V2"], ["UBI.fun", "UBI.fun"]];
   useEffect(() => { try { setToastsOn(localStorage.getItem("arctools_toasts") !== "0"); } catch { /* ignore */ } }, []);
   const toggleToasts = () => setToastsOn((v) => { try { localStorage.setItem("arctools_toasts", v ? "0" : "1"); } catch { /* ignore */ } return !v; });
   const [browserAddr, setBrowserAddr] = useState<string | null>(null);
@@ -264,12 +266,12 @@ function Trade() {
 
   const pager = (pos: "top" | "bottom") => tableRows.length > PAGE && (
                   <div className="arc-pager arc-mono" style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", padding: pos === "top" ? "0 0 8px" : "12px 0 4px" }}>
-                    <button className="arc-mono" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: page <= 1 ? "var(--arc-line)" : "var(--arc-ink)", cursor: page <= 1 ? "default" : "pointer", fontSize: 12, padding: "5px 10px" }} type="button">← prev</button>
+                    <button className="arc-mono" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: page <= 1 ? "var(--arc-line)" : "var(--arc-ink)", cursor: page <= 1 ? "default" : "pointer", fontSize: 12, padding: "5px 10px" }} type="button">{tr_("← prev")}</button>
                     {Array.from({ length: pages }, (_, i) => i + 1).filter((n) => n === 1 || n === pages || Math.abs(n - page) <= 2).reduce<(number | "…")[]>((acc, n) => { const last = acc[acc.length - 1]; if (typeof last === "number" && n - last > 1) acc.push("…"); acc.push(n); return acc; }, []).map((n, i) => n === "…" ? <span key={`e${i}`} style={{ color: "var(--arc-muted)", padding: "0 4px" }}>…</span> : (
                       <button className="arc-mono" key={n} onClick={() => setPage(n)} style={{ background: n === page ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (n === page ? "var(--arc-cobalt)" : "var(--arc-line)"), borderRadius: 4, color: n === page ? "#fff" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, minWidth: 32, padding: "5px 8px" }} type="button">{n}</button>
                     ))}
-                    <button className="arc-mono" disabled={page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: page >= pages ? "var(--arc-line)" : "var(--arc-ink)", cursor: page >= pages ? "default" : "pointer", fontSize: 12, padding: "5px 10px" }} type="button">next →</button>
-                    <span style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 8 }}>{tableRows.length} tokens · page {page}/{pages}</span>
+                    <button className="arc-mono" disabled={page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: page >= pages ? "var(--arc-line)" : "var(--arc-ink)", cursor: page >= pages ? "default" : "pointer", fontSize: 12, padding: "5px 10px" }} type="button">{tr_("next →")}</button>
+                    <span style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 8 }}>{tableRows.length} {tr_("tokens · page")} {page}/{pages}</span>
                   </div>
   );
   const BuyBtn = ({ token, symbol }: { token: string; symbol: string }) => (
@@ -418,25 +420,25 @@ function Trade() {
           <div>
             <div className="arc-title" style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
               <h1 style={{ fontSize: 26, margin: 0 }}>Terminal</h1>
-              <span style={{ color: "var(--arc-muted)", fontSize: 13 }}>every Arc launchpad · one click · best price across venues · <a href="/profile" style={{ color: "var(--arc-cobalt)" }}>profile & history →</a></span>
+              <span style={{ color: "var(--arc-muted)", fontSize: 13 }}>{tr_("every Arc launchpad · one click · best price across venues · ")}<a href="/profile" style={{ color: "var(--arc-cobalt)" }}>{tr_("profile & history →")}</a></span>
             </div>
             {/* quick-buy bar */}
             <button className="arc-mono arc-mobile-bar" onClick={() => setMobileOpen((o) => (o === "settings" ? "" : "settings"))} type="button">
               <span>⚡ {buyAmt} USDC · slip {slip}% · {signer === "hot" ? (addr ? "trading wallet" : "no wallet") : "browser wallet"}</span><span style={{ color: "var(--arc-muted)" }}>{mobileOpen === "settings" ? "hide ▴" : "settings ▾"}</span>
             </button>
             <div className={`arc-controls${mobileOpen === "settings" ? " arc-mobile-open" : ""}`} style={{ alignItems: "center", background: "var(--arc-paper)", border: "1px solid var(--arc-line)", display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10, padding: "8px 12px" }}>
-              <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>SIGN WITH</span>
+              <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{tr_("SIGN WITH")}</span>
               {(["hot", "browser"] as const).map((k) => (
                 <button className="arc-mono" key={k} onClick={() => { setSigner(k); if (k === "browser" && !browserAddr) void connectWallet().then(setBrowserAddr).catch(() => null); }} style={{ background: signer === k ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (signer === k ? "var(--arc-cobalt)" : "var(--arc-line)"), borderRadius: 4, color: signer === k ? "#fff" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "4px 8px" }} title={k === "hot" ? "In-browser trading wallet: one click, no popups" : "MetaMask / Rabby: confirm every transaction"} type="button">
                   {k === "hot" ? "⚡ trading" : browserAddr && signer === "browser" ? `🦊 ${browserAddr.slice(0, 6)}…` : "🦊 browser"}
                 </button>
               ))}
-              <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 6 }}>QUICK BUY</span>
+              <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 6 }}>{tr_("QUICK BUY")}</span>
               {[1, 5, 20, 100].map((a) => <button key={a} className="arc-mono" onClick={() => { setAmount(a); setCustom(""); }} style={{ background: amount === a && !custom ? "rgba(34,197,128,0.18)" : "transparent", border: "1px solid " + (amount === a && !custom ? UP : "var(--arc-line)"), color: amount === a && !custom ? UP : "var(--arc-ink)", cursor: "pointer", fontSize: 12, padding: "4px 10px" }} type="button">{a} USDC</button>)}
               <input className="arc-mono" inputMode="decimal" onChange={(e) => setCustom(e.target.value)} placeholder="custom" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 12, padding: "4px 8px", width: 80 }} value={custom} />
-              <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 8 }}>SLIPPAGE</span>
+              <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 8 }}>{tr_("SLIPPAGE")}</span>
               {[1, 5, 15, 30].map((s) => <button key={s} className="arc-mono" onClick={() => setSlip(s)} style={{ background: slip === s ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (slip === s ? "var(--arc-cobalt)" : "var(--arc-line)"), color: slip === s ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "3px 8px" }} type="button">{s}%</button>)}
-              <input className="arc-mono" onChange={(e) => setQ(e.target.value)} placeholder="search any Arc token · name / symbol / CA" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", flex: "1 1 160px", fontSize: 12, marginLeft: "auto", padding: "4px 8px" }} value={q} />
+              <input className="arc-mono" onChange={(e) => setQ(e.target.value)} placeholder={tr_("search any Arc token · name / symbol / CA")} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", flex: "1 1 160px", fontSize: 12, marginLeft: "auto", padding: "4px 8px" }} value={q} />
             </div>
             {/* tabs */}
             <button className="arc-mono arc-mobile-bar" onClick={() => setMobileOpen((o) => (o === "filters" ? "" : "filters"))} type="button">
@@ -447,16 +449,16 @@ function Trade() {
               {PADS.map(([k, l]) => <button className="arc-mono" key={k} onClick={() => setPadF(k)} style={{ background: padF === k ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (padF === k ? "var(--arc-cobalt)" : "var(--arc-line)"), borderRadius: 999, color: padF === k ? "#fff" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "3px 10px" }} type="button">{l}</button>)}
               </div>
               <span style={{ flex: 1 }} />
-              {[["min MC $", minMc, setMinMc], ["max MC $", maxMc, setMaxMc], ["min vol $", minVol, setMinVol]].map(([ph, v, set]) => (
+              {[[tr_("min MC $"), minMc, setMinMc], [tr_("max MC $"), maxMc, setMaxMc], [tr_("min vol $"), minVol, setMinVol]].map(([ph, v, set]) => (
                 <input className="arc-mono" inputMode="numeric" key={ph as string} onChange={(e) => (set as (x: string) => void)(e.target.value.replace(/[^0-9.]/g, ""))} placeholder={ph as string} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-ink)", fontSize: 11, padding: "4px 8px", width: 84 }} value={v as string} />
               ))}
               <select className="arc-mono" onChange={(e) => setSortKey(e.target.value as typeof sortKey)} style={{ background: "#0e1118", border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-ink)", fontSize: 11, padding: "4px 6px" }} value={sortKey}>
-                <option value="vol">Sort: volume</option><option value="age">Sort: newest</option><option value="mcap">Sort: market cap</option><option value="txs">Sort: trades</option><option value="chg">Sort: % change</option><option value="smart">Sort: smart money</option>
+                <option value="vol">{tr_("Sort: volume")}</option><option value="age">{tr_("Sort: newest")}</option><option value="mcap">{tr_("Sort: market cap")}</option><option value="txs">{tr_("Sort: trades")}</option><option value="chg">{tr_("Sort: % change")}</option><option value="smart">{tr_("Sort: smart money")}</option>
               </select>
               {(padF !== "all" || minMc || maxMc || minVol || q) && <button className="arc-mono" onClick={() => { setPadF("all"); setMinMc(""); setMaxMc(""); setMinVol(""); setQ(""); }} style={{ background: "transparent", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, textDecoration: "underline" }} type="button">clear</button>}
             </div>
             <div className="arc-tabs" style={{ display: "flex", gap: 4, marginBottom: 10, padding: 4, border: "1px solid var(--arc-line)", borderRadius: 12, background: "rgba(255,255,255,0.025)", alignItems: "center" }}>
-              {([["all", padF === "all" ? "All" : `All · ${PADS.find(([k]) => k === padF)?.[1] ?? padF}`], ["new", "New pair"], ["new15", "New <15m"], ["trending", "Trending"], ["insiders", "Insider picks"], ["favs", `★ Watchlist${favs.size ? ` (${favs.size})` : ""}`], ["holdings", `Holdings${positions.length ? ` (${positions.length})` : ""}`]] as const).map(([k, l]) => (
+              {([["all", padF === "all" ? tr_("All") : `${tr_("All")} · ${PADS.find(([k]) => k === padF)?.[1] ?? padF}`], ["new", tr_("New pair")], ["new15", tr_("New <15m")], ["trending", tr_("Trending")], ["insiders", tr_("Insider picks")], ["favs", `${tr_("★ Watchlist")}${favs.size ? ` (${favs.size})` : ""}`], ["holdings", `${tr_("Holdings")}${positions.length ? ` (${positions.length})` : ""}`]] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setTab(k)} style={{ background: tab === k ? "linear-gradient(180deg, rgba(34,197,94,0.22), rgba(34,197,94,0.10))" : "transparent", border: "1px solid " + (tab === k ? "rgba(34,197,94,0.55)" : "transparent"), borderRadius: 9, boxShadow: tab === k ? "0 0 0 1px rgba(34,197,94,0.15) inset, 0 2px 10px rgba(34,197,94,0.15)" : "none", color: tab === k ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, fontWeight: tab === k ? 700 : 500, padding: "7px 14px", transition: "background .15s, color .15s" }} type="button">{l}</button>
               ))}
               <span style={{ marginLeft: "auto" }}>
@@ -487,12 +489,12 @@ function Trade() {
                       <th style={{ ...hd, width: 26 }} />
                       <th style={hd}>Token / <button className="arc-mono" onClick={() => setSortKey("age")} style={{ background: "none", border: "none", color: sortKey === "age" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">Age ⇅</button></th>
                       <th style={hd}><button className="arc-mono" onClick={() => setSortKey("mcap")} style={{ background: "none", border: "none", color: sortKey === "mcap" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">MC ⇅</button></th>
-                      <th className="arc-col-ath" style={hd}>ATH MC</th>
-                      <th className="arc-col-liq" style={hd}>Liq</th>
+                      <th className="arc-col-ath" style={hd}>{tr_("ATH MC")}</th>
+                      <th className="arc-col-liq" style={hd}>{tr_("LIQ")}</th>
                       <th className="arc-col-vol" style={hd}><button className="arc-mono" onClick={() => setSortKey("vol")} style={{ background: "none", border: "none", color: sortKey === "vol" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">{tfLabel(tf)} Vol ⇅</button></th>
                       <th className="arc-col-txs" style={hd}><button className="arc-mono" onClick={() => setSortKey("txs")} style={{ background: "none", border: "none", color: sortKey === "txs" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">{tfLabel(tf)} TXs ⇅</button></th>
-                      <th style={hd} title="Token Score 0-100: deployer share, bundle, whale concentration, dev / bundle selling, deployer rug history, holders. Hover a badge for the flags. ☠ = deployer dumped a token before">Score</th>
-                      <th className="arc-col-dev" style={hd} title="Dev: deployer wallet's share of supply · Bundle: supply held by wallets that bought within 2 s of the first trade">Dev / bundle</th>
+                      <th style={hd} title="Token Score 0-100: deployer share, bundle, whale concentration, dev / bundle selling, deployer rug history, holders. Hover a badge for the flags. ☠ = deployer dumped a token before">{tr_("SCORE")}</th>
+                      <th className="arc-col-dev" style={hd} title="Dev: deployer wallet's share of supply · Bundle: supply held by wallets that bought within 2 s of the first trade">{tr_("DEV / BUNDLE")}</th>
                       <th className="arc-col-ins" style={hd} title={`Smart money: net USDC flow of the top-100 insiders (buys − sells) in the ${tfLabel(tf)} window · distinct insiders buying/selling`}><button className="arc-mono" onClick={() => setSortKey("smart")} style={{ background: "none", border: "none", color: sortKey === "smart" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", font: "inherit", padding: 0 }}>Smart ⇅</button></th>
                       <th style={hd} />
                     </tr>

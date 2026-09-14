@@ -174,6 +174,7 @@ function RootShell({ children }: { children: ReactNode }) {
           above. Do not add quanta's bootstrapScript/ThemeController, a theme
           toggle, or a light mode. */}
       <head>
+        <script dangerouslySetInnerHTML={{ __html: "try{var t=localStorage.getItem('arctools_theme');if(t)document.documentElement.dataset.theme=t;var l=localStorage.getItem('arctools_lang');if(l)document.documentElement.lang=l;}catch(e){}" }} />
         <HeadContent />
       </head>
       <body className="bg-q-background-primary text-q-text-primary">
