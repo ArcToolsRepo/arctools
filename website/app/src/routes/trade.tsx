@@ -103,7 +103,7 @@ function Trade() {
   const [amount, setAmount] = useState(5);
   const [custom, setCustom] = useState("");
   const [slip, setSlip] = useState(5);
-  const [tab, setTab] = useState<"new" | "new15" | "trending" | "insiders" | "favs" | "holdings">("trending");
+  const [tab, setTab] = useState<"all" | "new" | "new15" | "trending" | "insiders" | "favs" | "holdings">("trending");
   const initial = Route.useLoaderData();
   const [rows, setRows] = useState<PadToken[]>(initial?.rows ?? []);
   const [movers, setMovers] = useState<Mover[]>([]);
@@ -309,7 +309,8 @@ function Trade() {
   const matches = (r: Row) => !q || `${r.name} ${r.symbol} ${r.token}`.toLowerCase().includes(q.toLowerCase());
   const tableRows: Row[] = useMemo(() => {
     let base: Row[];
-    if (tab === "new") base = rows.map((t) => toRow(t.token)).sort((a, b) => (b.age ?? 0) - (a.age ?? 0));
+    if (tab === "all") base = rows.map((t) => toRow(t.token));   // every token we know (all sources), or every token of the selected launchpad
+    else if (tab === "new") base = rows.map((t) => toRow(t.token)).sort((a, b) => (b.age ?? 0) - (a.age ?? 0));
     else if (tab === "new15") {
       // freshest launches: under 15 minutes old — the snipe window
       const now = Date.now() / 1000;
@@ -335,8 +336,8 @@ function Trade() {
     if (lo) base = base.filter((r) => (r.mcap ?? 0) >= lo);
     if (hi) base = base.filter((r) => (r.mcap ?? 0) > 0 && (r.mcap ?? 0) <= hi);
     if (mv) base = base.filter((r) => r.vol >= mv);
-    if ((tab !== "new" && tab !== "new15" && padF === "all") || sortKey !== "vol") {
-      const key = ((tab === "new" || tab === "new15") || padF !== "all") && sortKey === "vol" ? "age" : sortKey;
+    if ((tab !== "new" && tab !== "new15" && (padF === "all" || tab === "all")) || sortKey !== "vol") {
+      const key = ((tab === "new" || tab === "new15") || (padF !== "all" && tab !== "all")) && sortKey === "vol" ? "age" : sortKey;
       base.sort((a, b) => key === "age" ? (b.age ?? 0) - (a.age ?? 0) : key === "mcap" ? (b.mcap ?? 0) - (a.mcap ?? 0) : key === "txs" ? b.txs - a.txs : key === "chg" ? (b.chg ?? -1e9) - (a.chg ?? -1e9) : key === "smart" ? (b.smart?.net ?? -1e9) - (a.smart?.net ?? -1e9) : b.vol - a.vol);
     }
     // pin the official token on top (every tab except Holdings), regardless of sort / filter
@@ -429,9 +430,9 @@ function Trade() {
               </select>
               {(padF !== "all" || minMc || maxMc || minVol || q) && <button className="arc-mono" onClick={() => { setPadF("all"); setMinMc(""); setMaxMc(""); setMinVol(""); setQ(""); }} style={{ background: "transparent", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, textDecoration: "underline" }} type="button">clear</button>}
             </div>
-            <div className="arc-tabs" style={{ borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 2, marginBottom: 8 }}>
-              {([["new", "New pair"], ["new15", "New <15m"], ["trending", "Trending"], ["insiders", "Insider picks"], ["favs", `★ Watchlist${favs.size ? ` (${favs.size})` : ""}`], ["holdings", `Holdings${positions.length ? ` (${positions.length})` : ""}`]] as const).map(([k, l]) => (
-                <button key={k} onClick={() => setTab(k)} style={{ background: "transparent", border: "none", borderBottom: "2px solid " + (tab === k ? "var(--arc-up)" : "transparent"), color: tab === k ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, fontWeight: tab === k ? 700 : 400, padding: "8px 14px" }} type="button">{l}</button>
+            <div className="arc-tabs" style={{ display: "flex", gap: 4, marginBottom: 10, padding: 4, border: "1px solid var(--arc-line)", borderRadius: 12, background: "rgba(255,255,255,0.025)", alignItems: "center" }}>
+              {([["all", padF === "all" ? "All" : `All · ${PADS.find(([k]) => k === padF)?.[1] ?? padF}`], ["new", "New pair"], ["new15", "New <15m"], ["trending", "Trending"], ["insiders", "Insider picks"], ["favs", `★ Watchlist${favs.size ? ` (${favs.size})` : ""}`], ["holdings", `Holdings${positions.length ? ` (${positions.length})` : ""}`]] as const).map(([k, l]) => (
+                <button key={k} onClick={() => setTab(k)} style={{ background: tab === k ? "linear-gradient(180deg, rgba(34,197,94,0.22), rgba(34,197,94,0.10))" : "transparent", border: "1px solid " + (tab === k ? "rgba(34,197,94,0.55)" : "transparent"), borderRadius: 9, boxShadow: tab === k ? "0 0 0 1px rgba(34,197,94,0.15) inset, 0 2px 10px rgba(34,197,94,0.15)" : "none", color: tab === k ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, fontWeight: tab === k ? 700 : 500, padding: "7px 14px", transition: "background .15s, color .15s" }} type="button">{l}</button>
               ))}
               <span style={{ marginLeft: "auto" }}>
                 {[1, 5, 60, 360, 1440, 0].map((m) => <button key={m} className="arc-mono" onClick={() => setTf(m)} style={{ background: tf === m ? "rgba(255,255,255,0.08)" : "transparent", border: "1px solid " + (tf === m ? "var(--arc-line)" : "transparent"), borderRadius: 4, color: tf === m ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, marginLeft: 2, padding: "4px 9px" }} type="button">{tfLabel(m)}</button>)}
