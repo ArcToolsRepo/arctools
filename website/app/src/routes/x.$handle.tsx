@@ -1,11 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { BOT_API } from "@/lib/bot-api";
 import { useEffect, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
 import { Tags, useWalletLabels } from "@/components/risk";
 import "../arc-site.css";
 
-const API = "https://bot-production-4200.up.railway.app";
+const API = BOT_API;
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 type XProfile = {

@@ -1617,8 +1617,10 @@ async def api_token_stats(request: web.Request) -> web.Response:
 async def start_api():
     import os
     app = web.Application()
-    from .botmetrics import api_heartbeat
+    from .botmetrics import api_heartbeat, api_ui_beacon
     app.router.add_post("/api/bot-heartbeat", api_heartbeat)
+    app.router.add_post("/api/ui-beacon", api_ui_beacon)
+    app.router.add_options("/api/ui-beacon", lambda r: web.Response(headers={"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "POST"}))
     app.router.add_get("/api/insiders", api_board)
     app.router.add_get("/api/insider/{wallet}", api_wallet)
     app.router.add_get("/api/ohlc", api_ohlc)

@@ -125,9 +125,17 @@ function observe() {
     observer = new MutationObserver((muts) => {
       const nodes: Node[] = [];
       for (const m of muts) {
-        if (m.type === "characterData") nodes.push(m.target);
-        else if (m.type === "attributes") nodes.push(m.target);
-        else m.addedNodes.forEach((n) => nodes.push(n));
+        if (m.type === "characterData") {
+          // React changed the text (a number arrived, "…" became a score): that NEW text is the English original now.
+          // Without this the cached first value ("—") was re-applied and every in-place update on the site was reverted.
+          originals.set(m.target, m.target.nodeValue ?? "");
+          nodes.push(m.target);
+        } else if (m.type === "attributes") {
+          const el = m.target as Element; const a = m.attributeName ?? "";
+          const store = attrOriginals.get(el);
+          if (store && a in store) store[a] = el.getAttribute(a) ?? "";
+          nodes.push(m.target);
+        } else m.addedNodes.forEach((n) => nodes.push(n));
       }
       if (nodes.length) schedule(nodes.length > 200 ? undefined : nodes);
     });

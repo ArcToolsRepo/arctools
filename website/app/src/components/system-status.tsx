@@ -9,7 +9,7 @@ const API = "https://bot-production-4200.up.railway.app/api/status";
 type Status = { state: "running" | "degraded" | "stale" | "starting"; ts: number; age_s: number | null; every_s: number; checks: Record<string, { ok: boolean; detail: string; streak: number }>; bots?: Record<string, BotBeat> };
 type BotBeat = { p50_ms?: number | null; p95_ms?: number | null; buys_1h?: number; buys_ok_1h?: number; buy_median_s?: number | null; tg_ping_ms?: number | null; heartbeat_age_s?: number; uptime_s?: number; updates_15m?: number };
 
-const LABEL: Record<string, string> = { bots: "bots", terminal: "terminal rows", cells: "table cells", pages: "site", tokens: "token feed", relay: "RPC relay", index: "swap index", api: "data API", display: "display" };
+const LABEL: Record<string, string> = { bots: "bots", ui: "what users see", terminal: "terminal rows", cells: "table cells", pages: "site", tokens: "token feed", relay: "RPC relay", index: "swap index", api: "data API", display: "display" };
 
 export function SystemStatus() {
   const [st, setSt] = useState<Status | null>(null);

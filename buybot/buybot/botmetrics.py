@@ -65,3 +65,32 @@ def all_bots() -> dict:
     for k, v in BEATS.items():
         out[k] = dict(v, heartbeat_age_s=int(time.time() - v.get("received_at", 0)))
     return out
+
+
+# ---- real-user UI render beacons (site lib/ui-beacon.ts) ----
+UI: dict[str, deque] = {}          # page -> deque[(ts, data, empty, lang)]
+_UI_PAGES = {"/", "/trade", "/token", "/intel", "/insiders", "/insider", "/wallets", "/portfolio", "/profile", "/referrals", "/launchpad", "/rewards", "/bridge", "/scan", "/x"}
+
+
+async def api_ui_beacon(req: web.Request):
+    try:
+        j = await req.json()
+    except Exception:  # noqa
+        return web.json_response({"ok": False}, status=400)
+    page = str(j.get("page") or "")[:24]
+    if page not in _UI_PAGES:
+        return web.json_response({"ok": False}, status=400)
+    d = UI.setdefault(page, deque(maxlen=400))
+    d.append((time.time(), int(j.get("data") or 0), int(j.get("empty") or 0), str(j.get("lang") or "en")[:5]))
+    return web.json_response({"ok": True}, headers={"Access-Control-Allow-Origin": "*"})
+
+
+def ui_summary(window_s: int = 1800) -> dict:
+    now = time.time(); out = {}
+    for page, d in UI.items():
+        rows = [r for r in d if now - r[0] < window_s]
+        if not rows:
+            continue
+        data = sum(r[1] for r in rows); empty = sum(r[2] for r in rows)
+        out[page] = {"views": len(rows), "data": data, "empty": empty, "empty_ratio": round(empty / max(1, data + empty), 3), "last_age_s": int(now - rows[-1][0])}
+    return out

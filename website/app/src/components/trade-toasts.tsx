@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { BOT_API } from "@/lib/bot-api";
 import { useEffect, useRef, useState } from "react";
 
 import { TokenLogo } from "@/components/token-logo";
@@ -8,7 +9,7 @@ import { TokenLogo } from "@/components/token-logo";
  * Polls the swap index every 4 s, shows the newest fills as cards stacked bottom-left,
  * each for ~6 s. Only swaps that happened after the page opened are shown, deduped by tx+log.
  */
-const API = "https://bot-production-4200.up.railway.app";
+const API = BOT_API;
 const SHOW_MS = 6500;
 const MAX_VISIBLE = 3;
 const MIN_USD = 5;

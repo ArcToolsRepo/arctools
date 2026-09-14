@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { BOT_API } from "@/lib/bot-api";
 import { useEffect, useMemo, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
@@ -6,7 +7,7 @@ import { QuickBuy } from "@/components/quick-buy";
 import { Tags, useWalletLabels } from "@/components/risk";
 import "../arc-site.css";
 
-const API = "https://bot-production-4200.up.railway.app";
+const API = BOT_API;
 const BOT = "https://t.me/ArcToolsBuyBot";
 const SNIPER = "https://t.me/ArcSniper_bot";
 

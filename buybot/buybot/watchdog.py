@@ -315,8 +315,25 @@ async def chk_terminal(s):
     return True, note
 
 
-CHECKS = [("bots", chk_bots), ("terminal", chk_terminal), ("pages", chk_pages), ("cells", chk_cells), ("tokens", chk_tokens_api), ("relay", chk_relay), ("index", chk_index), ("api", chk_own_api), ("display", chk_display)]
-REPORT_EVERY = int(os.getenv("WATCHDOG_REPORT_EVERY", "3600"))   # hourly "all good" summary to the admin
+async def chk_ui(s):
+    """What real visitors saw in the last 30 min, per tab: the site pings us 8 s after each page settles with the
+    count of data cells vs placeholders ("—", "…"). A tab where >40 % of cells stayed empty across ≥3 views is
+    broken for users no matter what the APIs say → flag + warm the site caches."""
+    from .botmetrics import ui_summary
+    summ = ui_summary(1800)
+    if not summ:
+        return True, "ui: no visitors in 30 min"
+    bad = {p: v for p, v in summ.items() if v["views"] >= 3 and v["empty_ratio"] > 0.4}
+    note = " · ".join(f"{p} {int((1 - v['empty_ratio']) * 100)}%/{v['views']}v" for p, v in sorted(summ.items()))
+    if bad:
+        await _warm(s)
+        _healed["ui"] = _healed.get("ui", 0) + 1
+        return False, "empty for users: " + ", ".join(f"{p} ({int(v['empty_ratio'] * 100)}% empty, {v['views']} views)" for p, v in bad.items()) + " | " + note
+    return True, note
+
+
+CHECKS = [("bots", chk_bots), ("ui", chk_ui), ("terminal", chk_terminal), ("pages", chk_pages), ("cells", chk_cells), ("tokens", chk_tokens_api), ("relay", chk_relay), ("index", chk_index), ("api", chk_own_api), ("display", chk_display)]
+REPORT_EVERY = int(os.getenv("WATCHDOG_REPORT_EVERY", "1800"))   # hourly "all good" summary to the admin
 _last_report = 0.0
 
 
@@ -381,6 +398,6 @@ async def api_status(req):
     state = "starting" if LAST["ok"] is None else ("running" if LAST["ok"] else "degraded")
     if age is not None and age > EVERY * 4:
         state = "stale"
-    from .botmetrics import all_bots
-    return web.json_response({"state": state, "ts": LAST["ts"], "age_s": age, "every_s": EVERY, "rounds": LAST["rounds"], "checks": LAST["checks"], "bots": all_bots()},
+    from .botmetrics import all_bots, ui_summary
+    return web.json_response({"state": state, "ts": LAST["ts"], "age_s": age, "every_s": EVERY, "rounds": LAST["rounds"], "checks": LAST["checks"], "bots": all_bots(), "ui": ui_summary(1800)},
                              headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=30"})

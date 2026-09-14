@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BOT_API } from "@/lib/bot-api";
 import { SystemStatus } from "@/components/system-status";
 import {
   Outlet,
@@ -97,7 +98,7 @@ function buildHead(meta: AppMeta) {
       ...(ogVideo ? [{ property: "og:video", content: ogVideo }] : []),
     ],
     links: [
-      { rel: "preconnect", href: "https://bot-production-4200.up.railway.app" },
+      { rel: "preconnect", href: BOT_API },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       { rel: "dns-prefetch", href: "https://api.radardex.pro" },
@@ -168,6 +169,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (st) => st.location.pathname });
+  // real-user render check → watchdog (see lib/ui-beacon.ts)
+  useEffect(() => { void import("@/lib/ui-beacon").then((m) => m.scheduleBeacon()); }, [pathname]);
   return (
     <html lang="en" data-theme="default-dark" style={{ colorScheme: "dark" }}>
       {/* Marketplace apps are permanently dark: data-theme is pinned on <html>

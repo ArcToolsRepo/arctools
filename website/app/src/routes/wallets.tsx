@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { BOT_API } from "@/lib/bot-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { TokenLogo } from "@/components/token-logo";
@@ -11,7 +12,7 @@ import "../arc-site.css";
  * record from the swap index, open positions and last trades, and a one-tap "alert me in Telegram" deep link
  * into the buy bot (/start watch_<addr>) which DMs every swap of that wallet.
  */
-const API = "https://bot-production-4200.up.railway.app";
+const API = BOT_API;
 const BOT = "https://t.me/ArcToolsBuyBot";
 const KEY = "arctools_wallets";
 const isAddr = (a: string) => /^0x[0-9a-fA-F]{40}$/.test(a.trim());

@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { BOT_API } from "@/lib/bot-api";
 import { useEffect, useMemo, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
@@ -6,7 +7,7 @@ import { QuickBuy } from "@/components/quick-buy";
 import { Tags, useWalletLabels } from "@/components/risk";
 import "../arc-site.css";
 
-const API = "https://bot-production-4200.up.railway.app";
+const API = BOT_API;
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const usd = (v: number) => (Math.abs(v) >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : Math.abs(v) >= 1e4 ? `$${(v / 1e3).toFixed(1)}K` : `$${v.toFixed(Math.abs(v) >= 100 ? 0 : 2)}`);
 const signed = (v: number) => (v >= 0 ? "+" : "−") + usd(Math.abs(v));

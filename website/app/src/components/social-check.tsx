@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { BOT_API } from "@/lib/bot-api";
 
 /**
  * Social check: who is behind the token. X account age/followers/previous
@@ -6,7 +7,6 @@ import { useEffect, useState } from "react";
  * record — and, most important, the SAME account/group/domain reused by other
  * tokens on Arc. Data from the ArcTools registry (bot API).
  */
-const BOT_API = "https://bot-production-4200.up.railway.app";
 
 type Reuse = { token: string; symbol: string | null; mcap: number | null };
 type Check = {

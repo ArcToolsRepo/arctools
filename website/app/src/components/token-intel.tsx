@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
+import { BOT_API } from "@/lib/bot-api";
 
 import { type ChartAvatar, type ChartMarker } from "@/components/tv-chart";
 import { Tags, useWalletLabels } from "@/components/risk";
 
-const API = "https://bot-production-4200.up.railway.app";
+const API = BOT_API;
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const usd = (v: number) => (Math.abs(v) >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : Math.abs(v) >= 1e4 ? `$${(v / 1e3).toFixed(1)}K` : `$${v.toFixed(Math.abs(v) >= 100 ? 0 : 2)}`);
 const signed = (v: number) => (v >= 0 ? "+" : "−") + usd(Math.abs(v));

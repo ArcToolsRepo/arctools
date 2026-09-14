@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { BOT_API } from "@/lib/bot-api";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
@@ -10,7 +11,7 @@ import { creditRef } from "@/lib/arc-ref";
 import { ARC_AGGREGATOR, encodeAggregatorSwap, p32, pnum } from "@/lib/arc-wallet";
 import "../arc-site.css";
 
-const API = "https://bot-production-4200.up.railway.app";
+const API = BOT_API;
 
 export const Route = createFileRoute("/profile")({
   head: () => ({ meta: [{ title: "ArcTools Profile: trading wallet balance, holdings, trades, PnL" }, { content: "Your in-browser trading wallet on Arc: deposited USDC, open positions with PnL, full trade history, deposits and withdrawals.", name: "description" }] }),

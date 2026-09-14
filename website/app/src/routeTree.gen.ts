@@ -30,6 +30,7 @@ import { Route as XHandleRouteImport } from './routes/x.$handle'
 import { Route as TokenCaRouteImport } from './routes/token.$ca'
 import { Route as PadCaRouteImport } from './routes/pad.$ca'
 import { Route as InsiderWalletRouteImport } from './routes/insider.$wallet'
+import { Route as BotSplatRouteImport } from './routes/bot/$'
 import { Route as ApiWarmRouteImport } from './routes/api/warm'
 import { Route as ApiTokensRouteImport } from './routes/api/tokens'
 import { Route as ApiTokenpageRouteImport } from './routes/api/tokenpage'
@@ -148,6 +149,11 @@ const InsiderWalletRoute = InsiderWalletRouteImport.update({
   path: '/insider/$wallet',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BotSplatRoute = BotSplatRouteImport.update({
+  id: '/bot/$',
+  path: '/bot/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiWarmRoute = ApiWarmRouteImport.update({
   id: '/api/warm',
   path: '/api/warm',
@@ -237,6 +243,7 @@ export interface FileRoutesByFullPath {
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
   '/api/warm': typeof ApiWarmRoute
+  '/bot/$': typeof BotSplatRoute
   '/insider/$wallet': typeof InsiderWalletRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
@@ -272,6 +279,7 @@ export interface FileRoutesByTo {
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
   '/api/warm': typeof ApiWarmRoute
+  '/bot/$': typeof BotSplatRoute
   '/insider/$wallet': typeof InsiderWalletRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
@@ -308,6 +316,7 @@ export interface FileRoutesById {
   '/api/tokenpage': typeof ApiTokenpageRoute
   '/api/tokens': typeof ApiTokensRoute
   '/api/warm': typeof ApiWarmRoute
+  '/bot/$': typeof BotSplatRoute
   '/insider/$wallet': typeof InsiderWalletRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
@@ -345,6 +354,7 @@ export interface FileRouteTypes {
     | '/api/tokenpage'
     | '/api/tokens'
     | '/api/warm'
+    | '/bot/$'
     | '/insider/$wallet'
     | '/pad/$ca'
     | '/token/$ca'
@@ -380,6 +390,7 @@ export interface FileRouteTypes {
     | '/api/tokenpage'
     | '/api/tokens'
     | '/api/warm'
+    | '/bot/$'
     | '/insider/$wallet'
     | '/pad/$ca'
     | '/token/$ca'
@@ -415,6 +426,7 @@ export interface FileRouteTypes {
     | '/api/tokenpage'
     | '/api/tokens'
     | '/api/warm'
+    | '/bot/$'
     | '/insider/$wallet'
     | '/pad/$ca'
     | '/token/$ca'
@@ -451,6 +463,7 @@ export interface RootRouteChildren {
   ApiTokenpageRoute: typeof ApiTokenpageRoute
   ApiTokensRoute: typeof ApiTokensRoute
   ApiWarmRoute: typeof ApiWarmRoute
+  BotSplatRoute: typeof BotSplatRoute
   InsiderWalletRoute: typeof InsiderWalletRoute
   PadCaRoute: typeof PadCaRoute
   TokenCaRoute: typeof TokenCaRoute
@@ -608,6 +621,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InsiderWalletRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/bot/$': {
+      id: '/bot/$'
+      path: '/bot/$'
+      fullPath: '/bot/$'
+      preLoaderRoute: typeof BotSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/warm': {
       id: '/api/warm'
       path: '/api/warm'
@@ -723,6 +743,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiTokenpageRoute: ApiTokenpageRoute,
   ApiTokensRoute: ApiTokensRoute,
   ApiWarmRoute: ApiWarmRoute,
+  BotSplatRoute: BotSplatRoute,
   InsiderWalletRoute: InsiderWalletRoute,
   PadCaRoute: PadCaRoute,
   TokenCaRoute: TokenCaRoute,

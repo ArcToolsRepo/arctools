@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { BOT_API } from "@/lib/bot-api";
 
-const API = "https://bot-production-4200.up.railway.app";
+const API = BOT_API;
 
 type Kol = { handle: string; name: string; followers: number; avatar: string; category: string };
 type Resp = {

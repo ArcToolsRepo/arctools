@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { BOT_API } from "@/lib/bot-api";
 
 /** Token Score / rug database / wallet labels — read from the ArcTools risk engine (buybot). */
-const API = "https://bot-production-4200.up.railway.app";
+const API = BOT_API;
 
 export type Risk = {
   holders: number; top10: number | null; top1: number | null; dev: string | null; dev_pct: number | null; bundle_pct: number | null; bundlers: number;

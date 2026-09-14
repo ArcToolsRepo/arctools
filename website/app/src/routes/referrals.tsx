@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { BOT_API } from "@/lib/bot-api";
 import { useEffect, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
@@ -8,7 +9,7 @@ import { claimRef } from "@/lib/arc-ref";
 import { connectWallet, getStoredWallet, onWalletChange } from "@/lib/arc-wallet";
 import "../arc-site.css";
 
-const API = "https://bot-production-4200.up.railway.app";
+const API = BOT_API;
 type Stats = { code: string; share: number; referred: number; trades: number; fees_usd: number; earned_usd: number; paid_usd: number; pending_usd: number; payout_wallet: string | null; link_bot: string; link_site: string; recent: { source: string; tx: string; fee_usd: number; share_usd: number; ts: number }[] };
 
 export const Route = createFileRoute("/referrals")({

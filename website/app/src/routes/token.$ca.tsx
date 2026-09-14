@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { BOT_API } from "@/lib/bot-api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
@@ -96,7 +97,6 @@ export const Route = createFileRoute("/token/$ca")({
   component: TokenPage,
 });
 
-const BOT_API = "https://bot-production-4200.up.railway.app";
 const USDC = "0x3600000000000000000000000000000000000000";
 const QUOTER_V2 = "0x7dfd4f31be6814d2906bde155c3e1b146eac1468";
 const SWAP_ROUTER02 = "0x53BF6B0684Ec7eF91e1387Da3D1a1769bC5A6F77";

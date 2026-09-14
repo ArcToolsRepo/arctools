@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
+import { BOT_API } from "@/lib/bot-api";
 
 import { TokenLogo } from "@/components/token-logo";
 
-const API = "https://bot-production-4200.up.railway.app";
+const API = BOT_API;
 type Trend = { token: string; symbol: string; mcap: number | null; chg: number | null; vol: number };
 type Meta = { token: string; logo?: string | null; twitter?: string | null; stock?: boolean; quoteSymbol?: string | null };
 

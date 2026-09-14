@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
+import { BOT_API } from "@/lib/bot-api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
@@ -17,7 +18,7 @@ import { routeSwap, type RouteResult } from "@/lib/arc-route";
 import { quickAmount, setQuickAmount } from "@/components/quick-buy";
 import "../arc-site.css";
 
-const API = "https://bot-production-4200.up.railway.app";
+const API = BOT_API;
 const SNIPER = "https://t.me/ArcSniper_bot";
 
 export const Route = createFileRoute("/trade")({
