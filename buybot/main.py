@@ -49,6 +49,8 @@ async def main():
 
     social.bot = bot
     insider_alerts.bot = bot
+    from buybot import chain_status
+    chain_status.bot = bot
     kols.bot = bot
     bridge_watch.bot = bot
     watchlist.bot = bot
@@ -57,6 +59,7 @@ async def main():
     tasks = [
         asyncio.create_task(watcher.watcher_loop(), name="watcher"),
         asyncio.create_task(trending.trending_loop(), name="trending"),
+        asyncio.create_task(chain_status.loop(), name="chain-status"),
         asyncio.create_task(insider.ingest_loop(), name="insider-ingest"),
         asyncio.create_task(insider.stats_loop(), name="insider-stats"),
         asyncio.create_task(insider.repair_loop(), name="insider-repair"),
