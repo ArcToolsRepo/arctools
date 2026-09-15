@@ -14,8 +14,8 @@ scrim = Image.new('RGBA', (W, H), (0, 0, 0, 0)); sd = ImageDraw.Draw(scrim); sd.
 bg = Image.alpha_composite(bg, scrim.filter(ImageFilter.GaussianBlur(40))); d = ImageDraw.Draw(bg)
 d.text((56, 44), 'ArcTools', font=f(30), fill=INK); d.rounded_rectangle((208, 46, 318, 78), radius=8, fill=COB); d.text((222, 50), 'INTEL', font=f(20), fill=INK)
 d.text((56, 108), 'WHO IS TALKING ABOUT ARC', font=f(22), fill=GRN)
-d.text((56, 138), '700 Arc KOLs', font=f(72), fill=INK)
-d.text((56, 232), 'tracked, mapped and matched to every token', font=f(24), fill=INK)
+d.text((56, 138), '526 Arc KOLs', font=f(72), fill=INK)
+d.text((56, 232), 'tracked (10k+ followers), mapped and matched to every token', font=f(24), fill=INK)
 d.text((56, 266), 'smart followers on each token page  ·  KOL mentions on the chart  ·  /x/<handle> profiles', font=f(19, R), fill=MUTED)
 # robot (network hologram) left
 robot = Image.open('robot_net.png').convert('RGBA'); LEFT_W = 520

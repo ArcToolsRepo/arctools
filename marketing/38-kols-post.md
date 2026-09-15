@@ -4,7 +4,7 @@ Attach: `38-kols.png`. No emoji. Link in first reply. Numbers from our own index
 
 ## Post
 
-700 Arc KOLs tracked. 37.3M combined followers, 72 of them above 100k.
+526 Arc KOLs tracked (10k+ followers each, out of 700 Arc X profiles indexed). 37.3M combined followers, 72 of them above 100k.
 
 We map who follows whom on Arc X (1.46M follow edges), catch every tweet that names a token by contract, cashtag or handle, and link deployer wallets to X accounts.
 
