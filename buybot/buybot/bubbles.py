@@ -63,14 +63,31 @@ class DSU:
 
 
 async def _holders(s, token):
+    """arc-scan holders, merged with holders derived from our own swap index (net bought − sold per wallet).
+    arc-scan's holder index is partial for many tokens (COOL: 2 of 1,836), our index misses plain transfers — the union
+    is the best picture we can give without walking every Transfer log."""
     j = await _get(s, f"tokens/{token}/holders", limit=MAX_HOLDERS)
-    out = []
+    out: dict[str, dict] = {}
     for x in (j or {}).get("items") or []:
         a = ((x.get("address") or {}).get("address") or "").lower()
         if not a or a in SKIP:
             continue
-        out.append({"address": a, "share": float(x.get("share") or 0), "balance": float((x.get("balance") or {}).get("formatted") or 0)})
-    return out
+        out[a] = {"address": a, "share": float(x.get("share") or 0), "balance": float((x.get("balance") or {}).get("formatted") or 0), "src": "scan"}
+    try:
+        from .insider import total_supply_nowait
+        supply = total_supply_nowait(token)
+        rows = await db.fetchall(text(
+            "SELECT wallet, SUM(CASE WHEN side='buy' THEN tokens ELSE -tokens END) net FROM swaps WHERE token = :t GROUP BY wallet "
+            "HAVING SUM(CASE WHEN side='buy' THEN tokens ELSE -tokens END) > 0 ORDER BY net DESC LIMIT :n").bindparams(t=token, n=MAX_HOLDERS))
+        for r in rows:
+            a = (r["wallet"] or "").lower(); net = float(r["net"] or 0)
+            if not a or a in SKIP or a in out:
+                continue
+            out[a] = {"address": a, "share": (net / supply) if supply else 0.0, "balance": net, "src": "index"}
+    except Exception as e:  # noqa
+        log.debug("index holders: %s", e)
+    lst = sorted(out.values(), key=lambda h: -h["balance"])[:MAX_HOLDERS]
+    return lst
 
 
 async def _transfers(s, token):
@@ -224,7 +241,7 @@ async def build(token: str) -> dict:
     nodes = []
     for h in holders:
         a = h["address"]; k, lab = kind[a]
-        nodes.append({"address": a, "share": round(h["share"] * 100, 3), "balance": h["balance"], "kind": k, "label": lab,
+        nodes.append({"address": a, "share": round(h["share"] * 100, 3), "balance": h["balance"], "kind": k, "label": lab, "src": h.get("src"),
                       "cluster": cid.get(a), "funder": funder_of.get(a), "tags": [x.get("text") or x.get("kind") for x in (labels.get(a) or []) if isinstance(x, dict)][:3]})
     out = {"token": token, "holders": len(holders), "eoa": len(eoas), "nodes": nodes,
            "edges": [{"a": a, "b": b, "why": sorted(w)} for (a, b), w in edges.items()],
@@ -249,3 +266,29 @@ async def api_bubbles(request):
 
 def register(app):
     app.router.add_get("/api/bubbles", api_bubbles)
+
+
+async def warm_loop():
+    """Precompute the map for the top-30 Terminal tokens every 10 min so the tab opens instantly for what people look at."""
+    await asyncio.sleep(90)
+    while True:
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get("https://arctools.fun/api/tokens", timeout=aiohttp.ClientTimeout(total=40)) as r:
+                    toks = [x["token"].lower() for x in ((await r.json(content_type=None)).get("tokens") or [])[:30]]
+            for t in toks:
+                hit = _cache.get(t)
+                if hit and time.time() - hit[0] < CACHE_S * 0.8:
+                    continue
+                try:
+                    await asyncio.wait_for(build(t), timeout=90)
+                except Exception as e:  # noqa
+                    log.debug("bubbles warm %s: %s", t[:10], e)
+                await asyncio.sleep(3)
+        except Exception as e:  # noqa
+            log.warning("bubbles warm loop: %s", e)
+        await asyncio.sleep(600)
+
+
+def start_warm():
+    asyncio.create_task(warm_loop(), name="bubbles-warm")

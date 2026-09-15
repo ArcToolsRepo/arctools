@@ -765,7 +765,7 @@ function TokenPage() {
                   {(["buy", "sell"] as const).map((s) => (
                     <button className="arc-mono" key={s} onClick={() => { setSide(s); setAmount(""); }} style={{ background: side === s ? (s === "buy" ? "#22c580" : "#f0534f") : "transparent", border: `1px solid ${s === "buy" ? "#22c580" : "#f0534f"}`, color: side === s ? "#06090f" : (s === "buy" ? "#22c580" : "#f0534f"), cursor: "pointer", flex: 1, fontSize: 12, fontWeight: 700, padding: "8px 0", textTransform: "uppercase" }} type="button">{s}</button>
                   ))}
-                  <a className="arc-mono" href={`https://t.me/ArcSniper_bot?start=ca_${ca.slice(2)}`} rel="noreferrer" style={{ alignSelf: "center", color: "var(--arc-muted)", fontSize: 11, textDecoration: "none" }} target="_blank" title="Limit orders, TP/SL and turbo gas in the sniper bot">Limit ↗</a>
+                  <button className="arc-mono" onClick={() => document.querySelector(".arc-orders")?.scrollIntoView({ behavior: "smooth", block: "center" })} style={{ alignSelf: "center", background: "none", border: "none", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 11, marginLeft: "auto", padding: 0 }} title="Limit buy / take profit / stop loss — below" type="button">Limit / TP / SL ↓</button>
                 </div>
                 <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: "0 0 4px" }}>{tr_("YOU PAY")}</p>
                 <div style={{ alignItems: "center", background: "#0e1118", border: "1px solid var(--arc-line)", display: "flex", gap: 8, padding: "8px 10px" }}>
@@ -831,7 +831,7 @@ function TokenPage() {
                   {busy ?? (hot && hotOk && useAgg ? `⚡ ${side === "buy" ? "Buy" : "Sell"} ${info.symbol} · no popup` : wallet ? `${side === "buy" ? "Buy" : "Sell"} ${info.symbol}` : "Connect & trade")}
                 </button>
                 <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, marginTop: 8 }}>
-                  {info.venue === "pad" ? `1% platform fee, 10% of it to ARCT stakers.${info.padMode === "curve" && info.targetQuote ? ` Graduates to Uniswap at ${fmt(info.targetQuote)} ${qSym} real reserve.` : ""}` : v3Quote ? `Uniswap V3 pool ${info.symbol}/${qSym}, swapped directly (pool fee 1%, no service fee).` : "1.5% platform fee, best price across every venue (V3, V4, curves)."} Need TP/SL or limit orders? Use the sniper bot.
+                  {info.venue === "pad" ? `1% platform fee, 10% of it to ARCT stakers.${info.padMode === "curve" && info.targetQuote ? ` Graduates to Uniswap at ${fmt(info.targetQuote)} ${qSym} real reserve.` : ""}` : v3Quote ? `Uniswap V3 pool ${info.symbol}/${qSym}, swapped directly (pool fee 1%, no service fee).` : "1.5% platform fee, best price across every venue (V3, V4, curves)."} Limit buy, take profit and stop loss: set them below — non-custodial, filled 24/7 by our keeper.
                 </p>
               </>
             ) : (

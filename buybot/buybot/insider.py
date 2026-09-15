@@ -440,6 +440,8 @@ async def v4_bootstrap():
     asyncio.create_task(watchdog_loop(), name="site-watchdog")
     from .orders import init as _orders_init
     await _orders_init()
+    from .bubbles import start_warm as _bubbles_warm
+    _bubbles_warm()
     asyncio.create_task(quote_pools_loop(), name="quote-pools")
     if await db.kv_get("v4_bootstrapped"):
         return
