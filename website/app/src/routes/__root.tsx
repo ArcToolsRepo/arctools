@@ -161,6 +161,16 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   // Read the committed page metadata at build time (no runtime fetch).
   head: () => buildHead(appMeta),
+  // chain / RPC outage flag rendered into the first HTML (the banner must not depend on a client fetch racing hydration)
+  loader: async () => {
+    try {
+      const { BOT_ORIGIN } = await import("@/lib/bot-api");
+      const r = await fetch(`${BOT_ORIGIN}/api/chain-status`, { signal: AbortSignal.timeout(2500) });
+      const j = await r.json() as { down?: boolean; since?: number | null; last_block?: number | null; stale_s?: number };
+      return { chain: j };
+    } catch { return { chain: null }; }
+  },
+  staleTime: 20_000,
   shellComponent: RootShell,
   component: RootComponent,
   notFoundComponent: NotFoundComponent,

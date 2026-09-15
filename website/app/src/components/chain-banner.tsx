@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getRouteApi } from "@tanstack/react-router";
 
 import { BOT_API } from "@/lib/bot-api";
 
@@ -6,8 +7,12 @@ import { BOT_API } from "@/lib/bot-api";
  *  Same source of truth as the Telegram announcements (buybot chain_status). */
 type St = { down: boolean; since: number | null; last_block: number | null; stale_s: number; live_since: number | null };
 
+const rootApi = getRouteApi("__root__");
+
 export function ChainBanner() {
-  const [st, setSt] = useState<St | null>(null);
+  let initial: St | null = null;
+  try { initial = ((rootApi.useLoaderData() as { chain?: St | null } | undefined)?.chain) ?? null; } catch { initial = null; }
+  const [st, setSt] = useState<St | null>(initial);
   useEffect(() => {
     let alive = true;
     const load = () => fetch(`${BOT_API}/api/chain-status`).then((r) => r.json()).then((j: St) => { if (alive) setSt(j); }).catch(() => null);
