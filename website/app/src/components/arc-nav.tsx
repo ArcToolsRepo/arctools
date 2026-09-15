@@ -6,6 +6,7 @@ import { bindRef, captureRef } from "@/lib/arc-ref";
 import { hotAddress, onHotChange } from "@/lib/arc-hotwallet";
 import { PadTicker } from "./pad-ticker";
 import { ChainBanner } from "./chain-banner";
+import { HelpDrawer, openHelp } from "./help-drawer";
 import { PrefsBar } from "./prefs-bar";
 import { usePrefs } from "@/lib/i18n";
 
@@ -126,8 +127,10 @@ export function ArcNav({ active }: { active?: string }) {
           {t("Connect wallet")}
         </button>
       )}
+      <button className="arc-mono arc-nav__help" onClick={() => openHelp()} title="Ask how to do something on ArcTools" type="button"><span style={{ background: "var(--arc-cobalt)", borderRadius: 5, color: "#fff", display: "inline-grid", fontSize: 11, fontWeight: 800, height: 18, placeItems: "center", width: 18 }}>?</span>{side ? "Help" : ""}</button>
       {!side && <PrefsBar />}
     </nav>
+    <HelpDrawer />
     {side && <PrefsBar fixed />}
     <PadTicker />
     <ChainBanner />

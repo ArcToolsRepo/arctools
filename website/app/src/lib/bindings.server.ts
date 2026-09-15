@@ -28,6 +28,7 @@ type AppEnv = {
   FAUCET_AUTH?: string;
   WARM_AUTH?: string;
   RELAY_KEY?: string;
+  OPENROUTER_API_KEY?: string;
   REF_AUTH?: string;
 };
 
