@@ -146,3 +146,13 @@ async def loop():
         except Exception as e:  # noqa
             log.warning("chain status loop: %s", e)
         await asyncio.sleep(CHECK_S)
+
+
+async def api_status(request):
+    """GET /api/chain-status — what the site banner reads (down flag, since, last block)."""
+    from aiohttp import web
+    st = await _load()
+    now = time.time()
+    out = {"down": bool(st.get("down")), "since": st.get("since"), "last_block": st.get("last_block"),
+           "stale_s": int(now - float(st.get("last_block_ts") or now)), "live_since": st.get("live_since"), "ts": int(now)}
+    return web.json_response(out, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=15"})

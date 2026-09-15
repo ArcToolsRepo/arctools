@@ -1719,6 +1719,8 @@ async def start_api():
     _orders.register(app)
     from . import bubbles as _bubbles
     _bubbles.register(app)
+    from .chain_status import api_status as _chain_status
+    app.router.add_get("/api/chain-status", _chain_status)
     app.router.add_get("/api/insiders", api_board)
     app.router.add_get("/api/insider/{wallet}", api_wallet)
     app.router.add_get("/api/ohlc", api_ohlc)

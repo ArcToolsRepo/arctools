@@ -5,6 +5,7 @@ import { connectWallet, disconnectWallet, getStoredWallet, onWalletChange, setSt
 import { bindRef, captureRef } from "@/lib/arc-ref";
 import { hotAddress, onHotChange } from "@/lib/arc-hotwallet";
 import { PadTicker } from "./pad-ticker";
+import { ChainBanner } from "./chain-banner";
 import { PrefsBar } from "./prefs-bar";
 import { usePrefs } from "@/lib/i18n";
 
@@ -129,6 +130,7 @@ export function ArcNav({ active }: { active?: string }) {
     </nav>
     {side && <PrefsBar fixed />}
     <PadTicker />
+    <ChainBanner />
     <style>{`
       .arc-nav__socials { display: flex; align-items: center; gap: 6px; }
       .arc-nav__back { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px; font-size: 12px; letter-spacing: 0.04em; color: #06130b; background: var(--arc-up); text-decoration: none; font-weight: 700; white-space: nowrap; }
