@@ -122,6 +122,11 @@ export const KB: Article[] = [
     body: `Every ERC-20 on Arc can be found by pasting its contract address in the Terminal search — it opens the token page even if we have no trades indexed. "No trades indexed yet" means our swap index has not seen its pool yet (new pool types are picked up within minutes; tokens paired with a quote token other than USDC, e.g. Arguspad's ARGUS pairs, are converted through the quote's price). Price/MC come from the last indexed swap × total supply. If a token still shows nothing after 15 min, report the address in @arctoolsportal.`,
   },
   {
+    id: "archy", title: "Archy Agent (this assistant)", url: "/",
+    keywords: ["archy", "who are you", "kim jesteś", "кто ты", "quién eres", "你是谁", "assistant", "agent", "help chat", "ai"],
+    body: `Archy is the ArcTools assistant — the chat you are using now. Open it from "Archy Agent" at the bottom of the left menu (or the round button bottom-left on mobile). Archy answers only about ArcTools and the Arc chain, from ArcTools' own documentation plus live data (token stats, chain status, system status). It does not give financial advice or price predictions, and it can be wrong — verify on-chain. Limit: 20 questions per hour. Humans: Telegram @arctoolsportal.`,
+  },
+  {
     id: "desktop", title: "Desktop app", url: "/",
     keywords: ["desktop", "app", "download", "windows", "mac", "aplikacja"],
     body: `A desktop app is in the works. No release date yet — announcements on X @arctoolsbackup and @arctoolsportal.`,

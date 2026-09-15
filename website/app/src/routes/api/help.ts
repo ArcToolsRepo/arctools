@@ -14,7 +14,7 @@ const FALLBACK = "openai/gpt-4o-mini";
 const PER_HOUR = 20;
 const MAX_TURNS = 8;
 
-const SYSTEM = `You are ArcTools Help, the assistant on arctools.fun. You answer questions about ArcTools (the website, the Telegram bots, fees, how to do things and where to find them) and about the Arc chain in general.
+const SYSTEM = `You are Archy, the ArcTools agent on arctools.fun (full name: Archy Agent). If asked who you are or what your name is, say you are Archy, the ArcTools assistant. You answer questions about ArcTools (the website, the Telegram bots, fees, how to do things and where to find them) and about the Arc chain in general.
 Rules:
 - Answer ONLY from the ARTICLES and TOOL RESULTS given to you. If the answer is not there, say you do not know and point to Telegram @arctoolsportal. Never invent features, numbers, addresses or dates.
 - Off-topic requests (anything not about ArcTools / Arc): reply in one sentence that you only help with ArcTools and Arc.
@@ -69,7 +69,7 @@ async function runTool(name: string, args: Record<string, string>, origin: strin
 async function chat(key: string, model: string, messages: unknown[], tools: unknown[]) {
   const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST", signal: AbortSignal.timeout(22_000),
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://arctools.fun", "X-Title": "ArcTools Help" },
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://arctools.fun", "X-Title": "Archy Agent (ArcTools)" },
     body: JSON.stringify({ model, messages, tools, tool_choice: "auto", max_tokens: 600, temperature: 0.2 }),
   });
   const j = await r.json() as { choices?: { message: { content?: string; tool_calls?: { id: string; function: { name: string; arguments: string } }[] } }[]; error?: { message: string } };

@@ -127,7 +127,7 @@ export function ArcNav({ active }: { active?: string }) {
           {t("Connect wallet")}
         </button>
       )}
-      <button className="arc-mono arc-nav__help" onClick={() => openHelp()} title="Ask how to do something on ArcTools" type="button"><span style={{ background: "var(--arc-cobalt)", borderRadius: 5, color: "#fff", display: "inline-grid", fontSize: 11, fontWeight: 800, height: 18, placeItems: "center", width: 18 }}>?</span>{side ? "Help" : ""}</button>
+      <button className="arc-mono arc-nav__help" onClick={() => openHelp()} title="Archy Agent — ask how to do something on ArcTools" type="button"><img alt="" src="/archy.png" style={{ borderRadius: "50%", height: 20, width: 20 }} />{side ? "Archy Agent" : ""}</button>
       {!side && <PrefsBar />}
     </nav>
     <HelpDrawer />

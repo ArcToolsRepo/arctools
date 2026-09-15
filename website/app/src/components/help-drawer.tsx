@@ -61,15 +61,15 @@ export function HelpDrawer() {
   return (
     <>
       {/* mobile / no-sidebar launcher: bottom-left (bottom-right is taken by the status pill and live toasts) */}
-      <button aria-label="Help" className="arc-mono arc-help-fab" onClick={() => setOpen(true)} type="button">?</button>
+      <button aria-label="Archy Agent" className="arc-help-fab" onClick={() => setOpen(true)} type="button"><img alt="Archy" src="/archy.png" style={{ borderRadius: "50%", height: 36, width: 36 }} /></button>
       {open && (
         <div aria-modal className="arc-help" role="dialog">
           <div className="arc-help__scrim" onClick={() => setOpen(false)} />
           <aside className="arc-help__panel">
             <header className="arc-help__head">
               <span style={{ alignItems: "center", display: "inline-flex", gap: 8 }}>
-                <span style={{ background: "var(--arc-cobalt)", borderRadius: 6, color: "#fff", display: "inline-grid", fontSize: 12, fontWeight: 800, height: 22, placeItems: "center", width: 22 }}>?</span>
-                <b>ArcTools Help</b>
+                <img alt="" src="/archy.png" style={{ borderRadius: "50%", height: 28, width: 28 }} />
+                <b>Archy Agent</b>
                 <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10 }}>ArcTools &amp; Arc only · EN PL ES RU ZH</span>
               </span>
               <button aria-label="Close" className="arc-mono" onClick={() => setOpen(false)} style={{ background: "none", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 16 }} type="button">✕</button>
@@ -77,7 +77,7 @@ export function HelpDrawer() {
             <div className="arc-help__list" ref={listRef}>
               {msgs.length === 0 && (
                 <div>
-                  <p className="arc-body" style={{ color: "var(--arc-muted)", fontSize: 13, margin: "4px 0 10px" }}>Ask how to do something or where to find it. I answer only about ArcTools and the Arc chain, from our own docs and live data — no price calls, no financial advice.</p>
+                  <p className="arc-body" style={{ color: "var(--arc-muted)", fontSize: 13, margin: "4px 0 10px" }}>Hi, I am Archy. Ask how to do something or where to find it. I answer only about ArcTools and the Arc chain, from our own docs and live data — no price calls, no financial advice.</p>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {SUGGESTIONS.map((s) => <button className="arc-mono" key={s} onClick={() => void ask(s)} style={{ background: "rgba(46,124,255,0.08)", border: "1px solid var(--arc-line)", borderRadius: 8, color: "var(--arc-ink)", cursor: "pointer", fontSize: 11, padding: "6px 10px", textAlign: "left" }} type="button">{s}</button>)}
                   </div>
@@ -96,7 +96,7 @@ export function HelpDrawer() {
               {busy && <div className="arc-help__msg arc-help__msg--assistant"><div className="arc-help__bubble"><span className="arc-alpha-bar" /></div></div>}
             </div>
             <form className="arc-help__form" onSubmit={(e) => { e.preventDefault(); void ask(q); }}>
-              <input className="arc-mono" disabled={busy} maxLength={600} onChange={(e) => setQ(e.target.value)} placeholder="Ask about ArcTools or Arc…" ref={inputRef} value={q} />
+              <input className="arc-mono" disabled={busy} maxLength={600} onChange={(e) => setQ(e.target.value)} placeholder="Ask Archy about ArcTools or Arc…" ref={inputRef} value={q} />
               <button className="arc-cta" disabled={busy || !q.trim()} style={{ fontSize: 12, padding: "8px 14px" }} type="submit">Ask</button>
             </form>
             <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: "6px 14px 10px" }}>Answers can be wrong — verify on-chain. Not financial advice. Humans: <a href="https://t.me/arctoolsportal" rel="noreferrer" style={{ color: "var(--arc-cobalt)" }} target="_blank">@arctoolsportal</a></p>
