@@ -1,0 +1,48 @@
+swaps loaded: 149,639 (5 days)
+cutoffs: 193
+
+== FRESH ==
+  baseline (all)      1h  n=29801 median -100%  >+10%: 5%  ≥2x: 0%  rug/dead: 58%
+  baseline (all)      6h  n=29801 median -24%  >+10%: 9%  ≥2x: 1%  rug/dead: 45%
+  baseline (all)     24h  n=29801 median -20%  >+10%: 11%  ≥2x: 2%  rug/dead: 39%
+  score ≥ 40          1h  n=201   median -14%  >+10%: 12%  ≥2x: 6%  rug/dead: 26%
+  score ≥ 40          6h  n=201   median -13%  >+10%: 10%  ≥2x: 5%  rug/dead: 17%
+  score ≥ 40         24h  n=201   median -10%  >+10%: 11%  ≥2x: 5%  rug/dead: 15%
+  score ≥ 60          1h  n=97    median -17%  >+10%: 18%  ≥2x: 9%  rug/dead: 18%
+  score ≥ 60          6h  n=97    median -19%  >+10%: 15%  ≥2x: 9%  rug/dead: 13%
+  score ≥ 60         24h  n=97    median -19%  >+10%: 16%  ≥2x: 9%  rug/dead: 12%
+  score ≥ 75          1h  n=60    median -17%  >+10%: 22%  ≥2x: 13%  rug/dead: 15%
+  score ≥ 75          6h  n=60    median -18%  >+10%: 22%  ≥2x: 13%  rug/dead: 10%
+  score ≥ 75         24h  n=60    median -19%  >+10%: 22%  ≥2x: 13%  rug/dead: 8%
+  distinct tokens ≥60: 81
+
+== ACCUM ==
+  baseline (all)      1h  n=29801 median -100%  >+10%: 5%  ≥2x: 0%  rug/dead: 58%
+  baseline (all)      6h  n=29801 median -24%  >+10%: 9%  ≥2x: 1%  rug/dead: 45%
+  baseline (all)     24h  n=29801 median -20%  >+10%: 11%  ≥2x: 2%  rug/dead: 39%
+  score ≥ 40          1h  n=3008  median -2%  >+10%: 14%  ≥2x: 1%  rug/dead: 18%
+  score ≥ 40          6h  n=3008  median -5%  >+10%: 25%  ≥2x: 4%  rug/dead: 11%
+  score ≥ 40         24h  n=3008  median -6%  >+10%: 33%  ≥2x: 9%  rug/dead: 8%
+  score ≥ 60          1h  n=1054  median +0%  >+10%: 20%  ≥2x: 2%  rug/dead: 6%
+  score ≥ 60          6h  n=1054  median -2%  >+10%: 30%  ≥2x: 4%  rug/dead: 4%
+  score ≥ 60         24h  n=1054  median +0%  >+10%: 40%  ≥2x: 10%  rug/dead: 3%
+  score ≥ 75          1h  n=144   median +4%  >+10%: 31%  ≥2x: 6%  rug/dead: 1%
+  score ≥ 75          6h  n=144   median +1%  >+10%: 33%  ≥2x: 6%  rug/dead: 2%
+  score ≥ 75         24h  n=144   median +1%  >+10%: 42%  ≥2x: 10%  rug/dead: 2%
+  distinct tokens ≥60: 74
+
+== REVIVAL ==
+  baseline (all)      1h  n=29801 median -100%  >+10%: 5%  ≥2x: 0%  rug/dead: 58%
+  baseline (all)      6h  n=29801 median -24%  >+10%: 9%  ≥2x: 1%  rug/dead: 45%
+  baseline (all)     24h  n=29801 median -20%  >+10%: 11%  ≥2x: 2%  rug/dead: 39%
+  score ≥ 40          1h  n=21    median -1%  >+10%: 24%  ≥2x: 10%  rug/dead: 19%
+  score ≥ 40          6h  n=21    median -19%  >+10%: 24%  ≥2x: 5%  rug/dead: 14%
+  score ≥ 40         24h  n=21    median -15%  >+10%: 29%  ≥2x: 10%  rug/dead: 10%
+  score ≥ 60          1h  n=12    median +6%  >+10%: 42%  ≥2x: 17%  rug/dead: 0%
+  score ≥ 60          6h  n=12    median -1%  >+10%: 42%  ≥2x: 8%  rug/dead: 0%
+  score ≥ 60         24h  n=12    median -2%  >+10%: 42%  ≥2x: 17%  rug/dead: 0%
+  score ≥ 75          1h  n=7     median +6%  >+10%: 43%  ≥2x: 29%  rug/dead: 0%
+  score ≥ 75          6h  n=7     median -21%  >+10%: 43%  ≥2x: 14%  rug/dead: 0%
+  score ≥ 75         24h  n=7     median -29%  >+10%: 29%  ≥2x: 14%  rug/dead: 0%
+  distinct tokens ≥60: 7
+

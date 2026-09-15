@@ -1621,6 +1621,8 @@ async def start_api():
     app.router.add_post("/api/bot-heartbeat", api_heartbeat)
     app.router.add_post("/api/ui-beacon", api_ui_beacon)
     app.router.add_options("/api/ui-beacon", lambda r: web.Response(headers={"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "POST"}))
+    from .alpha import api_alpha
+    app.router.add_get("/api/alpha", api_alpha)
     app.router.add_get("/api/insiders", api_board)
     app.router.add_get("/api/insider/{wallet}", api_wallet)
     app.router.add_get("/api/ohlc", api_ohlc)

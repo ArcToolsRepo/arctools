@@ -9,6 +9,7 @@ import { rememberRows } from "@/lib/lite-cache";
 import { ARC_AGGREGATOR, connectWallet, encodeAggregatorSwap, ethCall, getStoredWallet, onWalletChange, p32, sendTx, waitReceipt } from "@/lib/arc-wallet";
 import { hotAddress, hotCall, hotSend, hotWait } from "@/lib/arc-hotwallet";
 import { TokenLogo } from "@/components/token-logo";
+import { QuickBuy } from "@/components/quick-buy";
 import { TradeToasts } from "@/components/trade-toasts";
 import { ChainSearch } from "@/components/chain-search";
 import { ScoreBadge, type Risk } from "@/components/risk";
@@ -107,7 +108,43 @@ function Trade() {
   const [amount, setAmount] = useState(5);
   const [custom, setCustom] = useState("");
   const [slip, setSlip] = useState(5);
-  const [tab, setTab] = useState<"all" | "new" | "new15" | "trending" | "insiders" | "favs" | "holdings">("trending");
+  const [tab, setTab] = useState<"all" | "new" | "new15" | "trending" | "insiders" | "favs" | "holdings" | "alpha">("trending");
+  // ---- ⚡ Alpha: composite screener from our own data (smart money, clusters, buyer acceleration, KOLs, clean risk).
+  // Top 3 visible to everyone; the full list unlocks for ARCT stakers (same gate as /insiders).
+  type AlphaRow = { token: string; symbol: string | null; score: number; reasons: string[]; age_s: number | null; vol_6h: number; buyers_30m: number; sm_wallets: number; sm_usd: number; cluster: number; liq: number | null; price1m: number | null };
+  const [alphaMode, setAlphaMode] = useState<"fresh" | "accum" | "revival">("fresh");
+  const [alpha, setAlpha] = useState<Record<string, AlphaRow[]>>({});
+  const [alphaLoading, setAlphaLoading] = useState(false);
+  const [alphaUnlocked, setAlphaUnlocked] = useState(false);
+  const alphaTouched = useRef(false);
+  const ALPHA_GATE = 10_000;
+  useEffect(() => {
+    if (tab !== "alpha") return;
+    let alive = true;
+    const load = () => {
+      setAlphaLoading(true);
+      // the other two modes are fetched in the background as well: on first open jump to whichever has picks
+      // (fresh is empty most of the day by design — it only fires when smart money enters a < 1 h token)
+      void Promise.all((["fresh", "accum", "revival"] as const).map((m) => fetch(`${API}/api/alpha?mode=${m}&limit=30`).then((r) => r.json()).then((j: { rows?: AlphaRow[] }) => [m, j.rows ?? []] as const).catch(() => [m, [] as AlphaRow[]] as const)))
+        .then((all) => {
+          if (!alive) return;
+          const next: Record<string, AlphaRow[]> = {}; for (const [m, rows] of all) next[m] = rows;
+          setAlpha(next);
+          if (!alphaTouched.current && !(next[alphaMode] ?? []).length) { const best = (["accum", "revival", "fresh"] as const).find((m) => (next[m] ?? []).length); if (best) setAlphaMode(best); }
+        }).finally(() => { if (alive) setAlphaLoading(false); });
+    };
+    load();
+    const id = setInterval(() => { if (!document.hidden) load(); }, 45_000);
+    return () => { alive = false; clearInterval(id); };
+  }, [tab, alphaMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const w = browserAddr ?? hotAddr;
+    if (!w) { setAlphaUnlocked(false); return; }
+    ethCall("0x48aDA931C2C220B074c39449B7e70860A3B4C277", "0x98807d84" + p32(w)).then((r) => {
+      const staked = r && r !== "0x" ? Number(BigInt(r) / 10n ** 12n) / 1e6 : 0;
+      setAlphaUnlocked(staked >= ALPHA_GATE);
+    }).catch(() => setAlphaUnlocked(false));
+  }, [browserAddr, hotAddr]); // eslint-disable-line react-hooks/exhaustive-deps
   const initial = Route.useLoaderData();
   const [rows, setRows] = useState<PadToken[]>(initial?.rows ?? []);
   const [movers, setMovers] = useState<Mover[]>([]);
@@ -491,7 +528,7 @@ function Trade() {
               {(padF !== "all" || minMc || maxMc || minVol || q) && <button className="arc-mono" onClick={() => { setPadF("all"); setMinMc(""); setMaxMc(""); setMinVol(""); setQ(""); }} style={{ background: "transparent", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, textDecoration: "underline" }} type="button">clear</button>}
             </div>
             <div className="arc-tabs" style={{ display: "flex", gap: 4, marginBottom: 10, padding: 4, border: "1px solid var(--arc-line)", borderRadius: 12, background: "rgba(255,255,255,0.025)", alignItems: "center" }}>
-              {([["all", padF === "all" ? tr_("All") : `${tr_("All")} · ${PADS.find(([k]) => k === padF)?.[1] ?? padF}`], ["new", tr_("New pair")], ["new15", tr_("New <15m")], ["trending", tr_("Trending")], ["insiders", tr_("Insider picks")], ["favs", `${tr_("★ Watchlist")}${favs.size ? ` (${favs.size})` : ""}`], ["holdings", `${tr_("Holdings")}${positions.length ? ` (${positions.length})` : ""}`]] as const).map(([k, l]) => (
+              {([["all", padF === "all" ? tr_("All") : `${tr_("All")} · ${PADS.find(([k]) => k === padF)?.[1] ?? padF}`], ["new", tr_("New pair")], ["new15", tr_("New <15m")], ["trending", tr_("Trending")], ["alpha", "⚡ Alpha"], ["insiders", tr_("Insider picks")], ["favs", `${tr_("★ Watchlist")}${favs.size ? ` (${favs.size})` : ""}`], ["holdings", `${tr_("Holdings")}${positions.length ? ` (${positions.length})` : ""}`]] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setTab(k)} style={{ background: tab === k ? "linear-gradient(180deg, rgba(34,197,94,0.22), rgba(34,197,94,0.10))" : "transparent", border: "1px solid " + (tab === k ? "rgba(34,197,94,0.55)" : "transparent"), borderRadius: 9, boxShadow: tab === k ? "0 0 0 1px rgba(34,197,94,0.15) inset, 0 2px 10px rgba(34,197,94,0.15)" : "none", color: tab === k ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, fontWeight: tab === k ? 700 : 500, padding: "7px 14px", transition: "background .15s, color .15s" }} type="button">{l}</button>
               ))}
               <span style={{ marginLeft: "auto" }}>
@@ -515,7 +552,7 @@ function Trade() {
 
             {tab !== "holdings" && pager("top")}
             <div className="arc-tablewrap" style={{ overflowX: "auto" }}>
-              {tab !== "holdings" && (
+              {tab !== "holdings" && tab !== "alpha" && (
                 <><table style={{ borderCollapse: "collapse", width: "100%" }}>
                   <thead>
                     <tr>
@@ -570,6 +607,70 @@ function Trade() {
                 </table>
               </>
               )}
+              {tab === "alpha" && (() => {
+                const rows = alpha[alphaMode] ?? [];
+                const ageS = (a: number | null) => a == null ? "—" : a < 3600 ? `${Math.floor(a / 60)}m` : a < 86400 ? `${Math.floor(a / 3600)}h` : `${Math.floor(a / 86400)}d`;
+                const modeCopy: Record<string, [string, string]> = {
+                  fresh: ["Fresh alpha", "tokens under 1 h old where smart capital is already entering"],
+                  accum: ["Accumulation", "older tokens where top-100 wallets keep buying for hours while the price has not run yet"],
+                  revival: ["Revival", "a token that went quiet for hours and is waking up on real volume from several wallets"],
+                };
+                return (
+                  <div>
+                    <div style={{ alignItems: "center", borderBottom: "1px solid var(--arc-line)", display: "flex", flexWrap: "wrap", gap: 6, padding: "8px 10px" }}>
+                      {(["fresh", "accum", "revival"] as const).map((m) => (
+                        <button className="arc-mono" key={m} onClick={() => { alphaTouched.current = true; setAlphaMode(m); }} style={{ background: alphaMode === m ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (alphaMode === m ? "var(--arc-cobalt)" : "var(--arc-line)"), borderRadius: 8, color: alphaMode === m ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "5px 11px" }} type="button">{modeCopy[m][0]}</button>
+                      ))}
+                      <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 8 }}>{modeCopy[alphaMode][1]}</span>
+                      <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: "auto" }}>{alphaLoading ? "scoring…" : `${rows.length} candidates · refresh 45 s`}</span>
+                    </div>
+                    <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: "8px 10px 0" }}>
+                      Score 0–100 from our own index: top-100 wallets buying, insider clusters, unique-buyer acceleration, buy flow, KOL mentions, clean dev/bundle. Screener, not advice — most memecoins go to zero. Every pick shows <b>why</b>.
+                    </p>
+                    {rows.length === 0 && !alphaLoading && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: "18px 10px" }}>Nothing qualifies right now — the gate is strict on purpose (dev ≤ 25 %, bundle ≤ 20 %, no dev selling, real volume).</p>}
+                    <div style={{ display: "grid", gap: 8, padding: 10 }}>
+                      {rows.map((a, i) => {
+                        const gated = !alphaUnlocked && i >= 3;
+                        const t = byToken.get(a.token.toLowerCase());
+                        const col = a.score >= 75 ? "var(--arc-up)" : a.score >= 55 ? "#f5c542" : "var(--arc-muted)";
+                        return (
+                          <div key={a.token} style={{ alignItems: "center", background: i < 3 ? "rgba(46,124,255,0.06)" : "transparent", border: "1px solid var(--arc-line)", borderRadius: 10, display: "grid", filter: gated ? "blur(6px)" : "none", gap: 12, gridTemplateColumns: "64px minmax(0, 1fr) auto", padding: "10px 12px", pointerEvents: gated ? "none" : "auto", userSelect: gated ? "none" : "auto" }}>
+                            <div className="arc-mono" style={{ textAlign: "center" }}>
+                              <div style={{ color: col, fontSize: 22, fontWeight: 700, lineHeight: 1 }}>{a.score}</div>
+                              <div style={{ color: "var(--arc-muted)", fontSize: 10, marginTop: 3 }}>#{i + 1}</div>
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 8 }}>
+                                <Link params={{ ca: a.token }} preload="intent" style={{ alignItems: "center", color: "var(--arc-ink)", display: "inline-flex", fontWeight: 700, gap: 8, textDecoration: "none" }} to="/token/$ca">
+                                  <TokenLogo fallback={xAvatar(t?.twitter)} src={t?.logo ?? null} symbol={a.symbol ?? t?.symbol ?? "?"} />{a.symbol ?? t?.symbol ?? a.token.slice(0, 8)}
+                                </Link>
+                                <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{t?.pad ?? ""} · age {ageS(a.age_s)} · vol 6h {usd(a.vol_6h)}{a.liq != null ? ` · liq ${usd(a.liq)}` : ""}</span>
+                              </div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                                {a.reasons.map((r, k) => <span className="arc-mono" key={k} style={{ background: "rgba(34,197,128,0.10)", border: "1px solid rgba(34,197,128,0.35)", borderRadius: 6, color: "var(--arc-ink)", fontSize: 11, padding: "2px 8px" }}>{r}</span>)}
+                              </div>
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                              <QuickBuy compact symbol={a.symbol ?? "?"} token={a.token} />
+                              <a className="arc-mono" href={`https://t.me/ArcSniper_bot?start=ca_${a.token.slice(2)}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)", fontSize: 11, textAlign: "center", textDecoration: "none" }} target="_blank">snipe ↗</a>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {!alphaUnlocked && rows.length > 3 && (
+                      <div className="arc-mono" style={{ background: "rgba(46,124,255,0.08)", border: "1px solid var(--arc-cobalt)", borderRadius: 10, margin: "0 10px 12px", padding: "14px 16px", textAlign: "center" }}>
+                        <div style={{ color: "var(--arc-ink)", fontSize: 14, fontWeight: 700 }}>🔒 {rows.length - 3} more picks for ARCT stakers</div>
+                        <div style={{ color: "var(--arc-muted)", fontSize: 12, marginTop: 4 }}>Top 3 are free for everyone. Stake {ALPHA_GATE.toLocaleString()} ARCT to see the full list, all three modes, 45 s refresh.</div>
+                        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 10 }}>
+                          <a className="arc-cta" href="/rewards" style={{ fontSize: 12, padding: "8px 14px" }}>Stake ARCT →</a>
+                          {!(browserAddr ?? hotAddr) && <button className="arc-mono" onClick={() => void connectWallet().then(setBrowserAddr).catch(() => null)} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 8, color: "var(--arc-ink)", cursor: "pointer", fontSize: 12, padding: "8px 14px" }} type="button">Connect wallet to check stake</button>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               {tab === "holdings" && (
                 <table style={{ borderCollapse: "collapse", width: "100%" }}>
                   <thead><tr><th style={hd}>token</th><th style={hd}>amount</th><th style={hd}>avg entry</th><th style={hd}>price</th><th style={hd}>value</th><th style={hd}>unrealized</th><th style={hd}>realized</th><th style={hd}>sell</th></tr></thead>
