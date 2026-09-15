@@ -438,6 +438,8 @@ async def v4_bootstrap():
     await _pads_init()
     from .watchdog import watchdog_loop
     asyncio.create_task(watchdog_loop(), name="site-watchdog")
+    from .orders import init as _orders_init
+    await _orders_init()
     asyncio.create_task(quote_pools_loop(), name="quote-pools")
     if await db.kv_get("v4_bootstrapped"):
         return
@@ -1623,6 +1625,10 @@ async def start_api():
     app.router.add_options("/api/ui-beacon", lambda r: web.Response(headers={"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "POST"}))
     from .alpha import api_alpha
     app.router.add_get("/api/alpha", api_alpha)
+    from . import orders as _orders
+    _orders.register(app)
+    from . import bubbles as _bubbles
+    _bubbles.register(app)
     app.router.add_get("/api/insiders", api_board)
     app.router.add_get("/api/insider/{wallet}", api_wallet)
     app.router.add_get("/api/ohlc", api_ohlc)

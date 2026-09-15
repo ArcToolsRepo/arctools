@@ -16,6 +16,8 @@ import { creditRef } from "@/lib/arc-ref";
 import { routeSwap, type RouteResult } from "@/lib/arc-route";
 import { hotAddress, hotSend, isUnlocked, onHotChange } from "@/lib/arc-hotwallet";
 import { QuickBuy } from "@/components/quick-buy";
+import { ORDER_COLORS, OrdersPanel, type OrderRow } from "@/components/orders-panel";
+import { BubbleMap } from "@/components/bubble-map";
 import { ARC_AGGREGATOR, encodeAggregatorSwap } from "@/lib/arc-wallet";
 import { padHolders } from "@/lib/arcpad";
 import {
@@ -225,7 +227,7 @@ function TokenPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [holders, setHolders] = useState<{ count: number; top: { address: string; pct: number }[] } | null>(null);
   const [venue, setVenue] = useState<VenueData | null>(null);
-  const [tab, setTab] = useState<"trades" | "positions" | "holders" | "traders" | "dev" | "info">("trades");
+  const [tab, setTab] = useState<"trades" | "positions" | "holders" | "bubbles" | "traders" | "dev" | "info">("trades");
   const [copied, setCopied] = useState(false);
 
   // ---- swap state
@@ -267,6 +269,8 @@ function TokenPage() {
   // aggregator handles every USDC-paired venue (V3 tiers, V4 pools, ArcToolsPad USDC curves) with best-price + split routing
   const useAgg = !!info && ((info.venue === "v3" && !info.quoteToken) || info.venue === "v4" || info.venue === "curve" || info.venue === "pad" || viaHop);
   const [route, setRoute] = useState<RouteResult | null>(null);
+  const [myOrders, setMyOrders] = useState<OrderRow[]>([]);
+  const orderLines = useMemo(() => myOrders.filter((o) => o.status === "open").map((o) => ({ price: o.trigger_price, color: ORDER_COLORS[o.kind], title: `${o.kind === "limit" ? "LIMIT BUY" : o.kind === "tp" ? "TP" : "SL"} ${o.is_buy ? `${(Number(o.amount_in) / 1e18).toFixed(0)} USDC` : `${Math.round(Number(o.amount_in) / 1e18).toLocaleString()}`}` })), [myOrders]);
   const [hot, setHot] = useState(false);          // sign with the in-browser trading wallet instead of the connected wallet
   const [hotOk, setHotOk] = useState(false);
   useEffect(() => { setHotOk(isUnlocked()); setHot(isUnlocked()); const off = onHotChange(() => { setHotOk(isUnlocked()); if (!isUnlocked()) setHot(false); }); return () => { off(); }; }, []);
@@ -711,7 +715,7 @@ function TokenPage() {
             {adv ? (
               <TvAdvanced height={Math.max(460, Number((typeof localStorage !== "undefined" && localStorage.getItem("arc_chart_h")) || 520))} interval={tf} light={typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light"} mode={mode} onFail={() => setAdv(false)} token={params.ca.toLowerCase()} />
             ) : (
-              <TvChart avatars={chartAvatars} candles={effCandles} interval={tf} markers={chartMarkers} mode={mode} onVisible={setMarkersVisible} scale={scale} storageKey={params.ca} symbol={info ? `${info.symbol}/${pairSym}` : undefined} />
+              <TvChart avatars={chartAvatars} candles={effCandles} interval={tf} markers={chartMarkers} mode={mode} onVisible={setMarkersVisible} orderLines={orderLines} scale={scale} storageKey={params.ca} symbol={info ? `${info.symbol}/${pairSym}` : undefined} />
             )}
             <MarkerLegend data={eventsData} visible={markersVisible} />
           </div>
@@ -839,6 +843,7 @@ function TokenPage() {
                 {info.venueUrl && <a className="arc-mono" href={info.venueUrl} rel="noreferrer" style={{ color: "var(--arc-muted)", display: "block", fontSize: 12, marginTop: 10, textAlign: "center" }} target="_blank">open on {info.launchpad ?? "venue"} ↗</a>}
               </div>
             )}
+            <OrdersPanel balTok={balTok} balUsdc={balUsdc} onOrdersChange={setMyOrders} price={price} supply={info.supply ?? null} symbol={info.symbol} token={ca} />
           </aside>
         </div>
 
@@ -867,8 +872,8 @@ function TokenPage() {
         {/* ---------- tabs ---------- */}
         <div style={{ border: "1px solid var(--arc-line)", marginTop: 14 }}>
           <div style={{ borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 2, padding: "0 8px" }}>
-            {(["trades", "positions", "holders", "traders", "dev", "info"] as const).map((t) => (
-              <button className="arc-mono" key={t} onClick={() => setTab(t)} style={{ background: "transparent", border: "none", borderBottom: tab === t ? "2px solid var(--arc-cobalt)" : "2px solid transparent", color: tab === t ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "10px 12px", textTransform: "uppercase" }} type="button">{({ trades: "Trades", positions: "My position", holders: `Holders${holderCount ? ` ${holderCount}` : ""}`, traders: "Top traders", dev: "Dev tokens", info: "Info" } as const)[t]}</button>
+            {(["trades", "positions", "holders", "bubbles", "traders", "dev", "info"] as const).map((t) => (
+              <button className="arc-mono" key={t} onClick={() => setTab(t)} style={{ background: "transparent", border: "none", borderBottom: tab === t ? "2px solid var(--arc-cobalt)" : "2px solid transparent", color: tab === t ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "10px 12px", textTransform: "uppercase" }} type="button">{({ trades: "Trades", positions: "My position", holders: `Holders${holderCount ? ` ${holderCount}` : ""}`, bubbles: "Bubble map", traders: "Top traders", dev: "Dev tokens", info: "Info" } as const)[t]}</button>
             ))}
           </div>
           {tab === "trades" && (
@@ -903,6 +908,7 @@ function TokenPage() {
           )}
           {tab === "traders" && <TopTraders symbol={info.symbol} token={ca} />}
           {tab === "dev" && <DevTokens current={ca} dev={info.deployer} />}
+          {tab === "bubbles" && <BubbleMap deployer={(info as { deployer?: string | null }).deployer ?? null} token={ca} />}
           {tab === "holders" && (
             <div style={{ padding: 12 }}>
               {holders && holders.top.length > 0 ? holders.top.map((h, i) => (

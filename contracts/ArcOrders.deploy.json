@@ -1,0 +1,538 @@
+{
+ "orders": "0x1abE31ba5d3c496635EFd35CB0B7f7d86BA30aF2",
+ "keeper": "0xb35c471b31D636B96f95b84E7A27D69B63235C0D",
+ "aggregator": "0x43CdbF8edb8fE41ddE4ba519F49499D1ED78E74A",
+ "block": 21003251,
+ "deployedAt": 1789482841,
+ "abi": [
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "_aggregator",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "_keeper",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "nonpayable",
+   "type": "constructor"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "bytes32",
+     "name": "hash",
+     "type": "bytes32"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "maker",
+     "type": "address"
+    }
+   ],
+   "name": "Cancelled",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": false,
+     "internalType": "uint16",
+     "name": "feeBps",
+     "type": "uint16"
+    }
+   ],
+   "name": "FeeSet",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "bytes32",
+     "name": "hash",
+     "type": "bytes32"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "maker",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "bool",
+     "name": "isBuy",
+     "type": "bool"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "amountIn",
+     "type": "uint256"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "amountOut",
+     "type": "uint256"
+    },
+    {
+     "indexed": false,
+     "internalType": "address",
+     "name": "keeper",
+     "type": "address"
+    }
+   ],
+   "name": "Filled",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": false,
+     "internalType": "address",
+     "name": "keeper",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "bool",
+     "name": "on",
+     "type": "bool"
+    }
+   ],
+   "name": "KeeperSet",
+   "type": "event"
+  },
+  {
+   "inputs": [],
+   "name": "DOMAIN_SEPARATOR",
+   "outputs": [
+    {
+     "internalType": "bytes32",
+     "name": "",
+     "type": "bytes32"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "ORDER_TYPEHASH",
+   "outputs": [
+    {
+     "internalType": "bytes32",
+     "name": "",
+     "type": "bytes32"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "USDC_FACADE",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "aggregator",
+   "outputs": [
+    {
+     "internalType": "contract IArcAggregator",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "components": [
+      {
+       "internalType": "address",
+       "name": "maker",
+       "type": "address"
+      },
+      {
+       "internalType": "address",
+       "name": "token",
+       "type": "address"
+      },
+      {
+       "internalType": "bool",
+       "name": "isBuy",
+       "type": "bool"
+      },
+      {
+       "internalType": "uint256",
+       "name": "amountIn",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint256",
+       "name": "minRate",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint256",
+       "name": "expiry",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint256",
+       "name": "salt",
+       "type": "uint256"
+      }
+     ],
+     "internalType": "struct ArcOrders.Order",
+     "name": "o",
+     "type": "tuple"
+    }
+   ],
+   "name": "cancel",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "components": [
+      {
+       "internalType": "address",
+       "name": "maker",
+       "type": "address"
+      },
+      {
+       "internalType": "address",
+       "name": "token",
+       "type": "address"
+      },
+      {
+       "internalType": "bool",
+       "name": "isBuy",
+       "type": "bool"
+      },
+      {
+       "internalType": "uint256",
+       "name": "amountIn",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint256",
+       "name": "minRate",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint256",
+       "name": "expiry",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint256",
+       "name": "salt",
+       "type": "uint256"
+      }
+     ],
+     "internalType": "struct ArcOrders.Order",
+     "name": "o",
+     "type": "tuple"
+    },
+    {
+     "internalType": "bytes",
+     "name": "sig",
+     "type": "bytes"
+    },
+    {
+     "components": [
+      {
+       "internalType": "uint8",
+       "name": "venue",
+       "type": "uint8"
+      },
+      {
+       "internalType": "address",
+       "name": "target",
+       "type": "address"
+      },
+      {
+       "internalType": "uint24",
+       "name": "fee",
+       "type": "uint24"
+      },
+      {
+       "components": [
+        {
+         "internalType": "address",
+         "name": "currency0",
+         "type": "address"
+        },
+        {
+         "internalType": "address",
+         "name": "currency1",
+         "type": "address"
+        },
+        {
+         "internalType": "uint24",
+         "name": "fee",
+         "type": "uint24"
+        },
+        {
+         "internalType": "int24",
+         "name": "tickSpacing",
+         "type": "int24"
+        },
+        {
+         "internalType": "address",
+         "name": "hooks",
+         "type": "address"
+        }
+       ],
+       "internalType": "struct IPoolManager.PoolKey",
+       "name": "key",
+       "type": "tuple"
+      },
+      {
+       "internalType": "uint256",
+       "name": "amount",
+       "type": "uint256"
+      }
+     ],
+     "internalType": "struct IArcAggregator.Leg[]",
+     "name": "legs",
+     "type": "tuple[]"
+    }
+   ],
+   "name": "execute",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "out",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "feeBps",
+   "outputs": [
+    {
+     "internalType": "uint16",
+     "name": "",
+     "type": "uint16"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "components": [
+      {
+       "internalType": "address",
+       "name": "maker",
+       "type": "address"
+      },
+      {
+       "internalType": "address",
+       "name": "token",
+       "type": "address"
+      },
+      {
+       "internalType": "bool",
+       "name": "isBuy",
+       "type": "bool"
+      },
+      {
+       "internalType": "uint256",
+       "name": "amountIn",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint256",
+       "name": "minRate",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint256",
+       "name": "expiry",
+       "type": "uint256"
+      },
+      {
+       "internalType": "uint256",
+       "name": "salt",
+       "type": "uint256"
+      }
+     ],
+     "internalType": "struct ArcOrders.Order",
+     "name": "o",
+     "type": "tuple"
+    }
+   ],
+   "name": "hashOrder",
+   "outputs": [
+    {
+     "internalType": "bytes32",
+     "name": "",
+     "type": "bytes32"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "name": "keepers",
+   "outputs": [
+    {
+     "internalType": "bool",
+     "name": "",
+     "type": "bool"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "owner",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "token",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "to",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "amount",
+     "type": "uint256"
+    }
+   ],
+   "name": "rescue",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint16",
+     "name": "bps",
+     "type": "uint16"
+    }
+   ],
+   "name": "setFee",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "k",
+     "type": "address"
+    },
+    {
+     "internalType": "bool",
+     "name": "on",
+     "type": "bool"
+    }
+   ],
+   "name": "setKeeper",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "o",
+     "type": "address"
+    }
+   ],
+   "name": "setOwner",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "bytes32",
+     "name": "",
+     "type": "bytes32"
+    }
+   ],
+   "name": "status",
+   "outputs": [
+    {
+     "internalType": "uint8",
+     "name": "",
+     "type": "uint8"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "stateMutability": "payable",
+   "type": "receive"
+  }
+ ]
+}

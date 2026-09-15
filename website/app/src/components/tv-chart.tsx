@@ -37,6 +37,8 @@ type Props = {
   interval?: string;
   /** drawings persist under this key (token address) */
   storageKey?: string;
+  /** open orders drawn as horizontal lines (price in USDC per token; scaled like candles) */
+  orderLines?: { price: number; color: string; title: string }[];
 };
 
 type ChartType = "candles" | "hollow" | "bars" | "line" | "area" | "heikin";
@@ -82,7 +84,7 @@ function themeColors() {
     : { text: "#7c889e", grid: "rgba(60,70,90,0.18)", gridV: "rgba(60,70,90,0.10)", border: "rgba(60,70,90,0.35)", wm: "rgba(150,170,200,0.07)", up: "#22c580", down: "#f0534f", light };
 }
 
-export function TvChart({ candles, scale, mode, height = 440, markers, avatars, onVisible, symbol, interval, storageKey }: Props) {
+export function TvChart({ candles, scale, mode, height = 440, markers, avatars, onVisible, symbol, interval, storageKey, orderLines }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const chartRef = useRef<import("lightweight-charts").IChartApi | null>(null);
@@ -440,6 +442,20 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
       }
     }
   }, [drawings, scale, mode, ready, ctype, times, step, candles]);
+
+  // ---- open orders as price lines (limit = green, TP = cobalt, SL = red)
+  const orderPL = useRef<{ s: unknown; l: unknown }[]>([]);
+  useEffect(() => {
+    const lw = lwRef.current; const m = mainRef.current;
+    if (!lw || !m) return;
+    for (const pl of orderPL.current) { try { (pl.s as { removePriceLine: (l: unknown) => void }).removePriceLine(pl.l); } catch { /* gone */ } }
+    orderPL.current = [];
+    for (const o of orderLines ?? []) {
+      // candles are price1m × scale; order price is USDC/token → price1m = price × 1e6
+      const l = m.createPriceLine({ price: o.price * 1e6 * scale, color: o.color, lineWidth: 2, lineStyle: lw.LineStyle.Dashed, axisLabelVisible: true, title: o.title });
+      orderPL.current.push({ s: m, l });
+    }
+  }, [orderLines, scale, mode, ready, ctype]);
 
   // ---- actions
   const screenshot = () => {

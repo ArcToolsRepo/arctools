@@ -243,3 +243,41 @@ export async function hotWait(hash: string, timeoutMs = 90_000): Promise<{ statu
 export async function hotWithdraw(to: string, amountUsdc: number): Promise<string> {
   return hotSend({ to, value: BigInt(Math.round(amountUsdc * 1e6)) * 10n ** 12n, gasLimit: 30_000n });
 }
+
+// ---------------------------------------------------------------- ArcOrders (limit / TP / SL) — EIP-712 signing
+export const ARC_ORDERS = "0x1abE31ba5d3c496635EFd35CB0B7f7d86BA30aF2";
+export type ArcOrder = { maker: string; token: string; isBuy: boolean; amountIn: bigint; minRate: bigint; expiry: bigint; salt: bigint };
+
+const utf8 = (s: string) => new TextEncoder().encode(s);
+const pad32 = (h: string) => h.replace(/^0x/, "").padStart(64, "0");
+const u256 = (v: bigint) => v.toString(16).padStart(64, "0");
+const ORDER_TYPEHASH = "0x" + Array.from(keccak_256(utf8("Order(address maker,address token,bool isBuy,uint256 amountIn,uint256 minRate,uint256 expiry,uint256 salt)"))).map((b) => b.toString(16).padStart(2, "0")).join("");
+const DOMAIN_TYPEHASH = "0x" + Array.from(keccak_256(utf8("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"))).map((b) => b.toString(16).padStart(2, "0")).join("");
+const h32 = (u8: Uint8Array) => "0x" + Array.from(keccak_256(u8)).map((b) => b.toString(16).padStart(2, "0")).join("");
+const hexBytes = (hex: string) => { const s = hex.replace(/^0x/, ""); const o = new Uint8Array(s.length / 2); for (let i = 0; i < o.length; i++) o[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16); return o; };
+
+export function arcOrderDigest(o: ArcOrder): string {
+  const domain = h32(hexBytes(pad32(DOMAIN_TYPEHASH) + pad32(h32(utf8("ArcOrders"))) + pad32(h32(utf8("1"))) + u256(CHAIN_ID) + pad32(ARC_ORDERS)));
+  const struct = h32(hexBytes(pad32(ORDER_TYPEHASH) + pad32(o.maker) + pad32(o.token) + u256(o.isBuy ? 1n : 0n) + u256(o.amountIn) + u256(o.minRate) + u256(o.expiry) + u256(o.salt)));
+  return h32(hexBytes("1901" + pad32(domain) + pad32(struct)));
+}
+
+/** Sign an ArcOrders order with the trading wallet (EIP-712, no gas). Returns 65-byte hex signature (v = 27/28). */
+export async function hotSignOrder(o: ArcOrder): Promise<string> {
+  if (!_key || !_addr) throw new Error("Wallet locked.");
+  armLock();
+  const digest = hexBytes(arcOrderDigest(o));
+  const sig = await secp.signAsync(digest, _key, { lowS: true });
+  return "0x" + sig.r.toString(16).padStart(64, "0") + sig.s.toString(16).padStart(64, "0") + (27 + sig.recovery).toString(16).padStart(2, "0");
+}
+
+/** ERC-20 approve(spender, amount) from the trading wallet. */
+export async function hotApprove(token: string, spender: string, amount: bigint): Promise<string> {
+  return hotSend({ to: token, data: "0x095ea7b3" + pad32(spender) + u256(amount) });
+}
+
+/** allowance(owner, spender) as bigint. */
+export async function hotAllowance(token: string, owner: string, spender: string): Promise<bigint> {
+  const r = await hotCall(token, "0xdd62ed3e" + pad32(owner) + pad32(spender));
+  return r && r !== "0x" ? BigInt(r) : 0n;
+}
