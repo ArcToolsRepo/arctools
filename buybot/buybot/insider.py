@@ -735,7 +735,7 @@ async def _total_supply_fetch(token: str) -> float | None:
     for url in SUPPLY_RPCS:
         try:
             async with _aiohttp.ClientSession() as s:
-                async with s.post(url, json=body, headers={"X-Priority": "high"}, timeout=_aiohttp.ClientTimeout(total=6)) as r:
+                async with s.post(url, json=body, headers={"X-Priority": "high", "X-Relay-Key": os.getenv("RELAY_KEY", "")}, timeout=_aiohttp.ClientTimeout(total=6)) as r:
                     j = await r.json()
             if not isinstance(j, list):
                 continue

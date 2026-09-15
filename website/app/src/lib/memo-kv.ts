@@ -20,3 +20,8 @@ export function keepAlive(p: Promise<unknown>) {
   try { _waitUntil?.(p); } catch { /* ignore */ }
   void p.catch(() => null);
 }
+
+/** Relay client key (server secret) — our relay exempts trusted callers from its per-IP rate limit. */
+let _relayKey = "";
+export function setRelayKey(k: string | undefined) { if (k) _relayKey = k; }
+export function relayKey(): string { return _relayKey; }

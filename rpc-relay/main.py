@@ -43,9 +43,37 @@ def method_ok(body, can_send: bool = False) -> bool:
 CORS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-Send-Auth, X-Priority",
+    "Access-Control-Allow-Headers": "Content-Type, X-Send-Auth, X-Priority, X-Relay-Key",
     "Access-Control-Max-Age": "86400",
 }
+
+
+# ---- per-client fairness. The relay is public (the site's browsers use it); one anonymous client was sending 1.4M
+# eth_getBalance and starving the indexers. Our own services carry X-Send-Auth (sniper) or the relay key; everyone
+# else gets a token bucket per IP. Over the limit → 429 with Retry-After, no upstream call.
+IP_RATE = float(os.getenv("IP_RATE_PER_S", "3"))
+IP_BURST = float(os.getenv("IP_BURST", "30"))
+RELAY_KEY = os.getenv("RELAY_KEY", "")
+_ipb: dict[str, list[float]] = {}          # ip -> [tokens, ts]
+_ip_hits: dict[str, int] = {}
+_ip_drops: dict[str, int] = {}
+
+
+def _client_ip(request: web.Request) -> str:
+    xf = request.headers.get("X-Forwarded-For", "")
+    return (xf.split(",")[0].strip() if xf else (request.remote or "?"))
+
+
+def _ip_allow(ip: str, n: int = 1) -> bool:
+    now = time.time()
+    b = _ipb.get(ip)
+    if b is None:
+        b = _ipb[ip] = [IP_BURST, now]
+    b[0] = min(IP_BURST, b[0] + (now - b[1]) * IP_RATE); b[1] = now
+    if b[0] >= n:
+        b[0] -= n
+        return True
+    return False
 
 
 async def relay(request: web.Request) -> web.Response:
@@ -54,6 +82,16 @@ async def relay(request: web.Request) -> web.Response:
     except Exception:
         return web.json_response({"error": "bad json"}, status=400, headers=CORS)
     can_send = bool(SEND_AUTH) and request.headers.get("X-Send-Auth") == SEND_AUTH
+    trusted = can_send or (bool(RELAY_KEY) and request.headers.get("X-Relay-Key") == RELAY_KEY)
+    if not trusted:
+        ip = _client_ip(request)
+        _ip_hits[ip] = _ip_hits.get(ip, 0) + 1
+        n = len(body) if isinstance(body, list) else 1
+        if not _ip_allow(ip, n):
+            _ip_drops[ip] = _ip_drops.get(ip, 0) + 1
+            return web.json_response({"jsonrpc": "2.0", "id": body.get("id") if isinstance(body, dict) else None,
+                                      "error": {"code": -32005, "message": f"rate limited: {IP_RATE:g} req/s per client on the public relay"}},
+                                     status=429, headers={**CORS, "Retry-After": "1"})
     if not method_ok(body, can_send):
         return web.json_response(
             {"jsonrpc": "2.0", "id": None,
@@ -393,6 +431,9 @@ async def relay_stats(req):
     if req.query.get("prof"):
         top = sorted(_prof.items(), key=lambda x: -x[1])[:60]
         return web.json_response({"top": top, "total": sum(_prof.values())}, headers=CORS)
+    if req.query.get("ips"):
+        top = sorted(_ip_hits.items(), key=lambda kv: -kv[1])[:20]
+        return web.json_response({"ips": [[ip, n, _ip_drops.get(ip, 0)] for ip, n in top]}, headers=CORS)
     return web.json_response({**_stats, **_bstats, "cooldown": {k: round(v - time.time()) for k, v in _cooldown.items() if v > time.time()}}, headers=CORS)
 
 

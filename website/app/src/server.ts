@@ -2,7 +2,7 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
-import { setMemoRuntime } from "./lib/memo-kv";
+import { setMemoRuntime, setRelayKey } from "./lib/memo-kv";
 import { applySecurityHeaders } from "./lib/security-headers.server";
 
 type ServerEntry = {
@@ -44,7 +44,7 @@ export default {
     try {
       const e = env as { KV?: import("./lib/memo-kv").KVLike } | undefined;
       const c = ctx as { waitUntil?: (p: Promise<unknown>) => void } | undefined;
-      setMemoRuntime(e?.KV, c?.waitUntil ? c.waitUntil.bind(c) : undefined);
+      setMemoRuntime(e?.KV, c?.waitUntil ? c.waitUntil.bind(c) : undefined); setRelayKey((env as { RELAY_KEY?: string }).RELAY_KEY);
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return applySecurityHeaders(await normalizeCatastrophicSsrResponse(response));

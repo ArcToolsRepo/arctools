@@ -1,3 +1,4 @@
+import os
 """Multi-RPC: odczyty round-robin, broadcast race na wszystkie endpointy."""
 import asyncio
 import logging
@@ -36,6 +37,8 @@ class Chain:
             hdr = {"Content-Type": "application/json", "User-Agent": "arcsniper/1.0"}
             if "railway.app" in u or "arctools" in u:
                 hdr["X-Priority"] = "high"
+                if os.getenv("RELAY_KEY"):
+                    hdr["X-Relay-Key"] = os.getenv("RELAY_KEY", "")
                 if send_auth:
                     hdr["X-Send-Auth"] = send_auth
             return AsyncWeb3(AsyncHTTPProvider(u, request_kwargs={"timeout": 4, "headers": hdr}))

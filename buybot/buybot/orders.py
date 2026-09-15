@@ -88,7 +88,7 @@ async def _rpc(method: str, params: list, send: bool = False):
     last = None
     async with aiohttp.ClientSession() as s:
         for url in RPCS:
-            hdr = {"X-Priority": "high"}
+            hdr = {"X-Priority": "high", "X-Relay-Key": os.getenv("RELAY_KEY", "")}
             if send and "railway" in url:
                 if not SEND_AUTH:
                     continue

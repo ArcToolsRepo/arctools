@@ -1,3 +1,4 @@
+import os
 """Async multi-RPC reader (Infura primary, arc-scan fallback)."""
 import logging
 from web3 import AsyncWeb3, AsyncHTTPProvider
@@ -15,7 +16,7 @@ ERC20_ABI = [
 
 class Chain:
     def __init__(self, urls: list[str]):
-        self.w3s = [AsyncWeb3(AsyncHTTPProvider(u, request_kwargs={"timeout": 10})) for u in urls]
+        self.w3s = [AsyncWeb3(AsyncHTTPProvider(u, request_kwargs={"timeout": 10, "headers": {"X-Priority": "high", "X-Relay-Key": os.getenv("RELAY_KEY", ""), "User-Agent": "arcbuybot/1.0"}})) for u in urls]
         self._i = 0
 
     @property

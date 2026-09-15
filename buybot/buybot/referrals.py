@@ -215,7 +215,7 @@ async def _rpc(method: str, params: list):
             for _ in range(3):
                 try:
                     async with s_.post(url, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
-                                       headers={"X-Priority": "high"}, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                                       headers={"X-Priority": "high", "X-Relay-Key": os.getenv("RELAY_KEY", "")}, timeout=aiohttp.ClientTimeout(total=15)) as r:
                         j = await r.json(content_type=None)
                     if "result" in j:
                         return j["result"]

@@ -27,6 +27,7 @@ type AppEnv = {
   APP_SLUG?: string;
   FAUCET_AUTH?: string;
   WARM_AUTH?: string;
+  RELAY_KEY?: string;
   REF_AUTH?: string;
 };
 

@@ -5,8 +5,9 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 
+
 import { bindings } from "@/lib/bindings.server";
-import { keepAlive, memoKV } from "@/lib/memo-kv";
+import { keepAlive, memoKV, relayKey } from "@/lib/memo-kv";
 
 // Primary: our Railway relay (arc-scan via Railway egress: no CF 429, no quota).
 // Fallbacks: Infura shared key (daily quota), then arc-scan direct.
@@ -81,6 +82,7 @@ export async function rpc(method: string, params: any[], opts?: { priority?: boo
           "Content-Type": "application/json",
           "User-Agent": "Mozilla/5.0 (compatible; ArcToolsSite/1.0)",
           ...(opts?.priority ? { "X-Priority": "high" } : {}),   // relay: skip the batch queue (interactive quote)
+          ...(relayKey() ? { "X-Relay-Key": relayKey() } : {}),   // relay: trusted caller, exempt from the per-IP limit   // relay: trusted client, exempt from the per-IP limit
         },
         method: "POST",
       });
