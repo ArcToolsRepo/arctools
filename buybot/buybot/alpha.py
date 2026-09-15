@@ -220,6 +220,12 @@ async def rank(mode: str, limit: int = 30) -> list[dict]:
         if r:
             r["liq"] = liq.get(t); out.append(r)
     out.sort(key=lambda x: (-x["score"], -x["vol_6h"]))
+    # market cap now (last price × cached total supply) + "first call": the moment this token first entered the list
+    from .insider import total_supply_nowait
+    for o in out:
+        sup = total_supply_nowait(o["token"]); p = o.get("price1m")
+        o["mcap"] = round(p * sup / 1e6, 2) if (p and sup) else None      # price1m = USDC per 1M tokens
+    await _record_calls(mode, out[:60], now)
     # symbols
     syms = await db.fetchall(text("SELECT token, symbol FROM token_symbols WHERE token = ANY(:t)").bindparams(t=[o["token"] for o in out[:60]]))
     sm = {r["token"]: r["symbol"] for r in syms}
@@ -227,6 +233,37 @@ async def rank(mode: str, limit: int = 30) -> list[dict]:
         o["symbol"] = sm.get(o["token"])
     _cache[mode] = (time.time(), out)
     return out[:limit]
+
+
+_calls_ready = False
+
+
+async def _record_calls(mode: str, rows: list[dict], now: int) -> None:
+    """Persist the first appearance of (token, mode) with its score and market cap, and attach it to every row.
+    That is the "first call" users measure us against — kept forever, never rewritten."""
+    global _calls_ready
+    if not rows:
+        return
+    try:
+        if not _calls_ready:
+            await db.execute(text("CREATE TABLE IF NOT EXISTS alpha_calls (token VARCHAR(64) NOT NULL, mode VARCHAR(12) NOT NULL, "
+                                  "ts BIGINT, score INTEGER, mcap DOUBLE PRECISION, price DOUBLE PRECISION, PRIMARY KEY (token, mode))"))
+            _calls_ready = True
+        toks = [r["token"] for r in rows]
+        have = {r["token"]: dict(r) for r in await db.fetchall(text(
+            "SELECT token, ts, score, mcap, price FROM alpha_calls WHERE mode = :m AND token = ANY(:t)").bindparams(m=mode, t=toks))}
+        for r in rows:
+            c = have.get(r["token"])
+            if c is None:
+                await db.execute(text("INSERT INTO alpha_calls (token, mode, ts, score, mcap, price) VALUES (:t, :m, :ts, :s, :mc, :p) "
+                                      "ON CONFLICT DO NOTHING").bindparams(t=r["token"], m=mode, ts=now, s=r["score"], mc=r.get("mcap"), p=r.get("price1m")))
+                c = {"ts": now, "score": r["score"], "mcap": r.get("mcap"), "price": r.get("price1m")}
+            r["first_ts"] = int(c["ts"]) if c.get("ts") else None
+            r["first_score"] = c.get("score"); r["first_mcap"] = c.get("mcap"); r["first_price"] = c.get("price")
+            fm, nm = c.get("mcap"), r.get("mcap")
+            r["since_call"] = round(nm / fm - 1, 4) if (fm and nm) else None
+    except Exception as e:  # noqa
+        log.warning("alpha_calls: %s", e)
 
 
 async def api_alpha(request):

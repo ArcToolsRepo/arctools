@@ -111,7 +111,7 @@ function Trade() {
   const [tab, setTab] = useState<"all" | "new" | "new15" | "trending" | "insiders" | "favs" | "holdings" | "alpha">("trending");
   // ---- ⚡ Alpha: composite screener from our own data (smart money, clusters, buyer acceleration, KOLs, clean risk).
   // Top 3 visible to everyone; the full list unlocks for ARCT stakers (same gate as /insiders).
-  type AlphaRow = { token: string; symbol: string | null; score: number; reasons: string[]; age_s: number | null; vol_6h: number; buyers_30m: number; sm_wallets: number; sm_usd: number; cluster: number; liq: number | null; price1m: number | null };
+  type AlphaRow = { token: string; symbol: string | null; score: number; reasons: string[]; age_s: number | null; vol_6h: number; buyers_30m: number; sm_wallets: number; sm_usd: number; cluster: number; liq: number | null; price1m: number | null; mcap: number | null; first_ts: number | null; first_score: number | null; first_mcap: number | null; since_call: number | null };
   const [alphaMode, setAlphaMode] = useState<"fresh" | "accum" | "revival">("fresh");
   const [alpha, setAlpha] = useState<Record<string, AlphaRow[]>>({});
   const [alphaLoading, setAlphaLoading] = useState(false);
@@ -644,7 +644,17 @@ function Trade() {
                                 <Link params={{ ca: a.token }} preload="intent" style={{ alignItems: "center", color: "var(--arc-ink)", display: "inline-flex", fontWeight: 700, gap: 8, textDecoration: "none" }} to="/token/$ca">
                                   <TokenLogo fallback={xAvatar(t?.twitter)} src={t?.logo ?? null} symbol={a.symbol ?? t?.symbol ?? "?"} />{a.symbol ?? t?.symbol ?? a.token.slice(0, 8)}
                                 </Link>
-                                <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{t?.pad ?? ""} · age {ageS(a.age_s)} · vol 6h {usd(a.vol_6h)}{a.liq != null ? ` · liq ${usd(a.liq)}` : ""}</span>
+                                <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{t?.pad ?? ""} · age {ageS(a.age_s)} · <b style={{ color: "var(--arc-ink)" }}>MC {usd(a.mcap ?? t?.mcap ?? null)}</b> · vol 6h {usd(a.vol_6h)}{a.liq != null ? ` · liq ${usd(a.liq)}` : ""}</span>
+                                {a.first_mcap != null && a.first_ts != null && (() => {
+                                  const agoS = Math.max(0, Math.floor(Date.now() / 1000) - a.first_ts);
+                                  const ago = agoS < 120 ? "just now" : agoS < 3600 ? `${Math.floor(agoS / 60)}m ago` : agoS < 86400 ? `${Math.floor(agoS / 3600)}h ago` : `${Math.floor(agoS / 86400)}d ago`;
+                                  const ch = a.since_call;
+                                  return (
+                                    <span className="arc-mono" style={{ background: "rgba(46,124,255,0.10)", border: "1px solid rgba(46,124,255,0.40)", borderRadius: 6, color: "var(--arc-ink)", fontSize: 11, padding: "2px 8px" }} title={`First time this token entered the Alpha list (${modeCopy[alphaMode][0]}): score ${a.first_score ?? "—"} at MC ${usd(a.first_mcap)}`}>
+                                      first call {usd(a.first_mcap)} · {ago}{ch != null && agoS >= 120 ? <b style={{ color: ch >= 0 ? "var(--arc-up)" : "var(--arc-down)", marginLeft: 6 }}>{ch >= 0 ? "+" : ""}{(ch * 100).toFixed(0)}%</b> : null}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
                                 {a.reasons.map((r, k) => <span className="arc-mono" key={k} style={{ background: "rgba(34,197,128,0.10)", border: "1px solid rgba(34,197,128,0.35)", borderRadius: 6, color: "var(--arc-ink)", fontSize: 11, padding: "2px 8px" }}>{r}</span>)}
