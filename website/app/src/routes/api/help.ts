@@ -26,6 +26,30 @@ Rules:
 
 type Msg = { role: "user" | "assistant"; content: string };
 
+/** Live facts refreshed every 10 min: Archy "keeps learning" the numbers without anyone editing the KB. */
+let _facts: { ts: number; text: string } = { ts: 0, text: "" };
+async function liveFacts(origin: string): Promise<string> {
+  if (Date.now() - _facts.ts < 600_000 && _facts.text) return _facts.text;
+  const get = async (u: string) => { try { const r = await fetch(u, { signal: AbortSignal.timeout(6000) }); return r.ok ? await r.json() : null; } catch { return null; } };
+  const [kols, tokens, chain, status] = await Promise.all([
+    get(`${BOT_ORIGIN}/api/kols`) as Promise<{ kols?: { followers: number }[] } | null>,
+    get(`${origin}/api/tokens`) as Promise<{ tokens?: { pad?: string }[] } | null>,
+    get(`${BOT_ORIGIN}/api/chain-status`) as Promise<{ down?: boolean; since?: number; last_block?: number } | null>,
+    get(`${BOT_ORIGIN}/api/status`) as Promise<{ state?: string } | null>,
+  ]);
+  const lines: string[] = [`Date now: ${new Date().toISOString().slice(0, 16)} UTC.`];
+  const t = (kols as { totals?: { kols: number; followers: number; over_100k: number; following_edges: number; mentions: number; mentioned_tokens: number } } | null)?.totals;
+  if (t) lines.push(`KOL tracking: ${t.kols} Arc KOL accounts tracked (${(t.followers / 1e6).toFixed(1)}M combined followers, ${t.over_100k} with 100k+), following graph ${(t.following_edges / 1e6).toFixed(2)}M edges, ${t.mentions} token mentions on ${t.mentioned_tokens} tokens.`);
+  else if (kols?.kols?.length) lines.push(`KOL tracking: ${kols.kols.length}+ Arc KOL accounts tracked.`);
+  if (tokens?.tokens?.length) { const pads = [...new Set(tokens.tokens.map((t) => t.pad).filter(Boolean))]; lines.push(`Terminal lists ${tokens.tokens.length} tokens right now across launchpads: ${pads.join(", ")}.`); }
+  if (chain) lines.push(chain.down ? `Arc chain status: DOWN (no new blocks since ${chain.since ? new Date(chain.since * 1000).toISOString().slice(11, 16) + " UTC" : "a while"}, last block ${chain.last_block}).` : `Arc chain status: live (last block ${chain.last_block}).`);
+  if (status?.state) lines.push(`ArcTools system status: ${status.state}.`);
+  _facts = { ts: Date.now(), text: lines.join("\n") };
+  return _facts.text;
+}
+
+const UNKNOWN_RE = /do not know|don't know|not in my materials|nie wiem|nie mam tego|не знаю|нет в материалах|no sé|no tengo|不知道|没有/i;
+
 const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}\s/@.-]/gu, " ");
 
 function retrieve(q: string, history: string, k = 5) {
@@ -80,6 +104,20 @@ async function chat(key: string, model: string, messages: unknown[], tools: unkn
 export const Route = createFileRoute("/api/help")({
   server: {
     handlers: {
+      // GET /api/help?unknown=1&k=<WARM_AUTH>&days=7 → questions Archy could not answer (feed for new KB articles)
+      GET: async ({ request }) => {
+        const u = new URL(request.url);
+        const env = bindings() as { WARM_AUTH?: string; KV?: { get(k: string): Promise<string | null> } };
+        if (!u.searchParams.get("unknown") || (env.WARM_AUTH && u.searchParams.get("k") !== env.WARM_AUTH)) return new Response("forbidden", { status: 403 });
+        const days = Math.min(30, Number(u.searchParams.get("days") || 7));
+        const out: Record<string, string[]> = {};
+        for (let i = 0; i < days; i++) {
+          const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+          const v = await env.KV?.get(`help:unknown:${d}`);
+          if (v) out[d] = JSON.parse(v);
+        }
+        return Response.json(out, { headers: { "Cache-Control": "no-store" } });
+      },
       POST: async ({ request }) => {
         const env = bindings() as { OPENROUTER_API_KEY?: string; KV?: { get(k: string): Promise<string | null>; put(k: string, v: string, o?: { expirationTtl?: number }): Promise<void> } };
         if (!env.OPENROUTER_API_KEY) return Response.json({ error: "help agent not configured" }, { status: 503 });
@@ -100,8 +138,9 @@ export const Route = createFileRoute("/api/help")({
         const articles = retrieve(last.content, msgs.slice(-4).map((m) => m.content).join(" "));
         const context = articles.map((a) => `### ${a.title}${a.url ? ` (${a.url})` : ""}\n${a.body}`).join("\n\n");
         const origin = new URL(request.url).origin;
+        const facts = await liveFacts(origin);
         const convo: unknown[] = [
-          { role: "system", content: SYSTEM + "\n\nARTICLES:\n" + context },
+          { role: "system", content: SYSTEM + "\n\nLIVE FACTS (refreshed every 10 min):\n" + facts + "\n\nARTICLES:\n" + context },
           ...msgs,
         ];
         let reply = ""; let model = MODEL;
@@ -123,6 +162,15 @@ export const Route = createFileRoute("/api/help")({
           }
         } catch (e) {
           return Response.json({ reply: `The help agent is unavailable right now (${(e as Error).message.slice(0, 80)}). Ask in Telegram @arctoolsportal.`, sources: [] }, { headers: { "Cache-Control": "no-store" } });
+        }
+        // learning loop: questions Archy could not answer are logged for the team → new KB articles
+        if (!reply || UNKNOWN_RE.test(reply)) {
+          try {
+            const k = `help:unknown:${new Date().toISOString().slice(0, 10)}`;
+            const prev = JSON.parse((await env.KV?.get(k)) ?? "[]") as string[];
+            prev.push(last.content.slice(0, 300));
+            await env.KV?.put(k, JSON.stringify(prev.slice(-300)), { expirationTtl: 60 * 86400 });
+          } catch { /* ignore */ }
         }
         return Response.json({ reply: reply || "I do not have that in my materials — ask in Telegram @arctoolsportal.", sources: articles.filter((a) => a.url && reply.includes(a.url.split(" ")[0].replace(/<.*/, ""))).slice(0, 3).map((a) => ({ title: a.title, url: a.url })), model },
           { headers: { "Cache-Control": "no-store" } });

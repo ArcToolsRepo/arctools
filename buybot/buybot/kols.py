@@ -485,7 +485,12 @@ async def api_kol_follows(req: web.Request):
 
 async def api_kols(req: web.Request):
     rows = await db.fetchall(text("SELECT handle, name, followers, avatar, category, synced, full_sync FROM kols WHERE active = 1 ORDER BY followers DESC LIMIT 300"))
-    return web.json_response({"enabled": enabled(), "min_followers": KOL_MIN_FOLLOWERS, "calls": _spent["calls"], "kols": [dict(r) for r in rows]}, headers={**CORS, "Cache-Control": "public, max-age=300"})
+    tot = await db.fetchone(text("SELECT COUNT(*) n, COALESCE(SUM(followers),0) f, COUNT(*) FILTER (WHERE followers >= 100000) big, COUNT(*) FILTER (WHERE followers >= 1000000) mega FROM kols WHERE active = 1"))
+    edges = await db.fetchone(text("SELECT COUNT(*) n, COUNT(DISTINCT kol) k FROM kol_following"))
+    men = await db.fetchone(text("SELECT COUNT(*) n, COUNT(DISTINCT token) t, COALESCE(SUM(views),0) v FROM kol_mentions"))
+    totals = {"kols": int(tot["n"]), "followers": int(tot["f"]), "over_100k": int(tot["big"]), "over_1m": int(tot["mega"]),
+              "following_edges": int(edges["n"]), "graph_kols": int(edges["k"]), "mentions": int(men["n"]), "mentioned_tokens": int(men["t"]), "mention_views": int(men["v"])}
+    return web.json_response({"enabled": enabled(), "min_followers": KOL_MIN_FOLLOWERS, "calls": _spent["calls"], "totals": totals, "kols": [dict(r) for r in rows]}, headers={**CORS, "Cache-Control": "public, max-age=300"})
 
 
 async def api_kols_admin(req: web.Request):
