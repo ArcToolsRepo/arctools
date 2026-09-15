@@ -179,8 +179,13 @@ async def chk_display(s):
     _healed["_pad_nologo"] = min(len(nologo), prev_nl if prev_nl is not None else len(nologo))
     st = await _json(s, f"{SITE}/api/stocks", timeout=60) or {}
     stocks = st.get("stocks") or []
-    if len(stocks) < 10 or not any(x.get("usdcPool") for x in stocks):
-        problems.append(f"stocks list {len(stocks)} / pools {sum(1 for x in stocks if x.get('usdcPool'))}")
+    stock_pools = sum(1 for x in stocks if x.get("usdcPool"))
+    if len(stocks) < 10:
+        problems.append(f"stocks list only {len(stocks)}")
+    elif stock_pools == 0:
+        # long.supply's own domain is down (NXDOMAIN) — the list still serves from our snapshots and every stock
+        # keeps trading through the aggregator. Upstream outage, not our breakage: note it, do not fail the round.
+        _healed["_stock_pools_note"] = 1
     if rows:
         t = rows[-1]["token"]
         pg = await _json(s, f"{SITE}/api/tokenpage?ca={t}", timeout=60) or {}
@@ -198,7 +203,7 @@ async def chk_display(s):
     if problems:
         _healed["display"] = _healed.get("display", 0) + 1
         return False, " · ".join(problems)[:300]
-    return True, f"pad {n} tokens, {n - len(nologo)} logos · stocks {len(stocks)} · page+route ok"
+    return True, f"pad {n} tokens, {n - len(nologo)} logos · stocks {len(stocks)}" + (" (long.supply pools unreachable)" if _healed.get("_stock_pools_note") else "") + " · page+route ok"
 
 
 async def chk_cells(s):

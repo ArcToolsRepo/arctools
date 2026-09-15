@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
 import { getPortfolio, type Holding } from "@/lib/arc-api";
@@ -29,6 +29,8 @@ export const Route = createFileRoute("/portfolio")({
 
 function PortfolioPage() {
   const [wallet, setWallet] = useState("");
+  // deep link from Intel / Insiders / the bots: /portfolio?w=0x… loads that wallet straight away
+  const autoRan = useRef(false);
   const [holdings, setHoldings] = useState<Holding[] | null>(null);
   const [usdc, setUsdc] = useState(0);
   const [total, setTotal] = useState(0);
@@ -48,8 +50,9 @@ function PortfolioPage() {
     }
   }, []);
 
-  const run = async () => {
-    if (!wallet) return;
+  const run = async (override?: string) => {
+    const addr = (override ?? wallet).trim();
+    if (!addr) return;
     setBusy(true);
     setError(null);
     setHoldings(null);
@@ -60,7 +63,7 @@ function PortfolioPage() {
     const stepTimer = setInterval(() => setStep((i) => Math.min(STEPS.length - 1, i + 1)), 3500);
     let res: Awaited<ReturnType<typeof getPortfolio>>;
     try {
-      res = await getPortfolio({ data: { wallet } });
+      res = await getPortfolio({ data: { wallet: addr } });
       clearInterval(tick); clearInterval(stepTimer); setProgress(100); setTimeout(() => setProgress(0), 600);
       void t0;
     } catch {
@@ -78,6 +81,23 @@ function PortfolioPage() {
     setUsdc(res.usdc);
     setTotal(res.total);
   };
+
+
+  useEffect(() => {
+
+    if (autoRan.current) return;
+
+    const w = new URLSearchParams(window.location.search).get("w");
+
+    if (!w || !/^0x[0-9a-fA-F]{40}$/.test(w)) return;
+
+    autoRan.current = true;
+
+    setWallet(w);
+
+    void run(w);
+
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <main className="arc-site" style={{ minHeight: "100dvh" }}>
