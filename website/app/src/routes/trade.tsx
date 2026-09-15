@@ -627,13 +627,30 @@ function Trade() {
                     <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: "8px 10px 0" }}>
                       Score 0–100 from our own index: top-100 wallets buying, insider clusters, unique-buyer acceleration, buy flow, KOL mentions, clean dev/bundle. Screener, not advice — most memecoins go to zero. Every pick shows <b>why</b>.
                     </p>
+                    {!alphaUnlocked && rows.length > 3 && (
+                      <div className="arc-mono" style={{ background: "rgba(46,124,255,0.08)", border: "1px solid var(--arc-cobalt)", borderRadius: 10, margin: "10px 10px 0", padding: "14px 16px", textAlign: "center" }}>
+                        <div style={{ color: "var(--arc-ink)", fontSize: 14, fontWeight: 700 }}>🔒 {rows.length - 3} more picks for ARCT stakers</div>
+                        <div style={{ color: "var(--arc-muted)", fontSize: 12, marginTop: 4 }}>Top 3 are free for everyone. Stake {ALPHA_GATE.toLocaleString()} ARCT to see the full list, all three modes, 45 s refresh.</div>
+                        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 10 }}>
+                          <a className="arc-cta" href="/rewards" style={{ fontSize: 12, padding: "8px 14px" }}>Stake ARCT →</a>
+                          {!(browserAddr ?? hotAddr) && <button className="arc-mono" onClick={() => void connectWallet().then(setBrowserAddr).catch(() => null)} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 8, color: "var(--arc-ink)", cursor: "pointer", fontSize: 12, padding: "8px 14px" }} type="button">Connect wallet to check stake</button>}
+                        </div>
+                      </div>
+                    )}
                     {rows.length === 0 && !alphaLoading && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: "18px 10px" }}>Nothing qualifies right now — the gate is strict on purpose (dev ≤ 25 %, bundle ≤ 20 %, no dev selling, real volume).</p>}
                     <div style={{ display: "grid", gap: 8, padding: 10 }}>
                       {rows.map((a, i) => {
                         const gated = !alphaUnlocked && i >= 3;
                         const t = byToken.get(a.token.toLowerCase());
                         const col = a.score >= 75 ? "var(--arc-up)" : a.score >= 55 ? "#f5c542" : "var(--arc-muted)";
-                        return (
+                        const strip = !alphaUnlocked && i === 3 ? (
+                          <div className="arc-mono" key="strip" style={{ alignItems: "center", background: "rgba(46,124,255,0.10)", border: "1px dashed var(--arc-cobalt)", borderRadius: 8, display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", padding: "8px 12px" }}>
+                            <span style={{ color: "var(--arc-ink)", fontSize: 12 }}>🔒 {rows.length - 3} more picks below are for ARCT stakers</span>
+                            <a className="arc-cta" href="/rewards" style={{ fontSize: 11, padding: "4px 10px" }}>Stake 10,000 ARCT →</a>
+                          </div>
+                        ) : null;
+                        return (<>
+                          {strip}
                           <div key={a.token} style={{ alignItems: "center", background: i < 3 ? "rgba(46,124,255,0.06)" : "transparent", border: "1px solid var(--arc-line)", borderRadius: 10, display: "grid", filter: gated ? "blur(6px)" : "none", gap: 12, gridTemplateColumns: "64px minmax(0, 1fr) auto", padding: "10px 12px", pointerEvents: gated ? "none" : "auto", userSelect: gated ? "none" : "auto" }}>
                             <div className="arc-mono" style={{ textAlign: "center" }}>
                               <div style={{ color: col, fontSize: 22, fontWeight: 700, lineHeight: 1 }}>{a.score}</div>
@@ -644,7 +661,7 @@ function Trade() {
                                 <Link params={{ ca: a.token }} preload="intent" style={{ alignItems: "center", color: "var(--arc-ink)", display: "inline-flex", fontWeight: 700, gap: 8, textDecoration: "none" }} to="/token/$ca">
                                   <TokenLogo fallback={xAvatar(t?.twitter)} src={t?.logo ?? null} symbol={a.symbol ?? t?.symbol ?? "?"} />{a.symbol ?? t?.symbol ?? a.token.slice(0, 8)}
                                 </Link>
-                                <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{t?.pad ?? ""} · age {ageS(a.age_s)} · <b style={{ color: "var(--arc-ink)" }}>MC {usd(a.mcap ?? t?.mcap ?? null)}</b> · vol 6h {usd(a.vol_6h)}{a.liq != null ? ` · liq ${usd(a.liq)}` : ""}</span>
+                                <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{t?.pad ?? ""} · age {ageS(a.age_s)} · <b style={{ color: "var(--arc-ink)" }}>MC {usd(a.mcap ?? toRow(a.token).mcap)}</b> · vol 6h {usd(a.vol_6h)}{a.liq != null ? ` · liq ${usd(a.liq)}` : ""}</span>
                                 {a.first_mcap != null && a.first_ts != null && (() => {
                                   const agoS = Math.max(0, Math.floor(Date.now() / 1000) - a.first_ts);
                                   const ago = agoS < 120 ? "just now" : agoS < 3600 ? `${Math.floor(agoS / 60)}m ago` : agoS < 86400 ? `${Math.floor(agoS / 3600)}h ago` : `${Math.floor(agoS / 86400)}d ago`;
@@ -665,19 +682,9 @@ function Trade() {
                               <a className="arc-mono" href={`https://t.me/ArcSniper_bot?start=ca_${a.token.slice(2)}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)", fontSize: 11, textAlign: "center", textDecoration: "none" }} target="_blank">snipe ↗</a>
                             </div>
                           </div>
-                        );
+                        </>);
                       })}
                     </div>
-                    {!alphaUnlocked && rows.length > 3 && (
-                      <div className="arc-mono" style={{ background: "rgba(46,124,255,0.08)", border: "1px solid var(--arc-cobalt)", borderRadius: 10, margin: "0 10px 12px", padding: "14px 16px", textAlign: "center" }}>
-                        <div style={{ color: "var(--arc-ink)", fontSize: 14, fontWeight: 700 }}>🔒 {rows.length - 3} more picks for ARCT stakers</div>
-                        <div style={{ color: "var(--arc-muted)", fontSize: 12, marginTop: 4 }}>Top 3 are free for everyone. Stake {ALPHA_GATE.toLocaleString()} ARCT to see the full list, all three modes, 45 s refresh.</div>
-                        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 10 }}>
-                          <a className="arc-cta" href="/rewards" style={{ fontSize: 12, padding: "8px 14px" }}>Stake ARCT →</a>
-                          {!(browserAddr ?? hotAddr) && <button className="arc-mono" onClick={() => void connectWallet().then(setBrowserAddr).catch(() => null)} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 8, color: "var(--arc-ink)", cursor: "pointer", fontSize: 12, padding: "8px 14px" }} type="button">Connect wallet to check stake</button>}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 );
               })()}
