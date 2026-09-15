@@ -355,6 +355,13 @@ async def chk_minara(s):
         mainnet = bool(_re.search(r"chainId:\s*5042\b(?!002)", js)) or "rpc.arc.network" in js.replace("rpc.testnet.arc.network", "") \
             or "arcscan.app" in js.replace("testnet.arcscan.app", "") or "rpc.arc-scan.org" in js
         testnet = "5042002" in js or "rpc.testnet.arc.network" in js
+        # strongest signal: their API accepting mainnet chainId
+        try:
+            async with s.get("https://api.minara.fun/minara-fun/contracts?chainId=5042", timeout=aiohttp.ClientTimeout(total=15)) as r:
+                if r.status == 200:
+                    mainnet = True
+        except Exception:  # noqa
+            pass
         if mainnet and not _MINARA_SEEN["mainnet"]:
             _MINARA_SEEN["mainnet"] = True
             await _tg("🟢 minara.fun now ships an Arc MAINNET config — time to wire the pad (PENDING_FACTORIES['minara'])")

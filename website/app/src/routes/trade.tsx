@@ -622,7 +622,10 @@ function Trade() {
                         <button className="arc-mono" key={m} onClick={() => { alphaTouched.current = true; setAlphaMode(m); }} style={{ background: alphaMode === m ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (alphaMode === m ? "var(--arc-cobalt)" : "var(--arc-line)"), borderRadius: 8, color: alphaMode === m ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "5px 11px" }} type="button">{modeCopy[m][0]}</button>
                       ))}
                       <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 8 }}>{modeCopy[alphaMode][1]}</span>
-                      <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: "auto" }}>{alphaLoading ? "scoring…" : `${rows.length} candidates · refresh 45 s`}</span>
+                      <span className="arc-mono" style={{ alignItems: "center", color: "var(--arc-muted)", display: "inline-flex", fontSize: 11, gap: 8, marginLeft: "auto" }}>
+                        {alphaLoading && <span aria-label="loading" className="arc-alpha-bar" />}
+                        {rows.length ? `${rows.length} candidates · refresh 45 s` : alphaLoading ? "" : "0 candidates"}
+                      </span>
                     </div>
                     <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: "8px 10px 0" }}>
                       Score 0–100 from our own index: top-100 wallets buying, insider clusters, unique-buyer acceleration, buy flow, KOL mentions, clean dev/bundle. Screener, not advice — most memecoins go to zero. Every pick shows <b>why</b>.
