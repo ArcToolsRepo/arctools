@@ -48,7 +48,7 @@ def score_token(token: str, sw: list[dict], now: int, insiders: dict[str, float]
     last = sw[-1]["ts"]
     buys = [s for s in sw if s["side"] == "buy"]; sells = [s for s in sw if s["side"] == "sell"]
     vol = sum(s["usdc"] for s in sw); vb = sum(s["usdc"] for s in buys); vs = sum(s["usdc"] for s in sells)
-    if vol < (50 if mode == "fresh" else 150):
+    if vol < (2000 if mode == "fresh" else 150):
         return None
 
     # ---- hard risk gate
@@ -64,7 +64,8 @@ def score_token(token: str, sw: list[dict], now: int, insiders: dict[str, float]
     reasons: list[str] = []; pts = 0.0
 
     # ---- smart money (0-30): distinct top wallets buying, weighted by their rank and recency
-    sm_buys = [s for s in buys if s["wallet"] in insiders]
+    sm_buys = [s for s in buys if s["wallet"] in insiders and s["usdc"] >= 25]      # $1 spray-bots are not a signal
+    sm_sellers = {s["wallet"] for s in sells if s["wallet"] in insiders and s["usdc"] >= 25}
     sm_wallets = {}
     for s in sm_buys:
         w = s["wallet"]; rec = math.exp(-(now - s["ts"]) / 5400)          # 90 min half-ish life
@@ -75,6 +76,11 @@ def score_token(token: str, sw: list[dict], now: int, insiders: dict[str, float]
         pts += p
         newest = now - max(s["ts"] for s in sm_buys)
         reasons.append(f"{sm_n} top-100 wallet{'s' if sm_n > 1 else ''} bought ${sm_usd:,.0f} · last {int(newest // 60)}m ago")
+    exits = len(sm_sellers & set(sm_wallets)) if sm_wallets else len(sm_sellers)
+    if exits:
+        if exits >= 2 or (sm_n and exits >= sm_n):
+            return None                                             # smart money already left
+        pts -= 12; reasons.append(f"⚠ {exits} insider already sold")
     # ---- cluster (0-20): ≥2 insiders inside 15 min
     best_cluster = 0
     ts_sm = sorted(set(s["ts"] for s in sm_buys)); wl = sorted((s["ts"], s["wallet"]) for s in sm_buys)
@@ -126,6 +132,20 @@ def score_token(token: str, sw: list[dict], now: int, insiders: dict[str, float]
     if mode == "fresh":
         if age is None or age > 3600:
             return None
+        if now - last > 600:
+            return None                                             # no trade for 10 min on a < 1 h token = dead
+        if len({s["wallet"] for s in buys}) < 8:
+            return None                                             # fewer than 8 distinct buyers = nobody is here
+        if vs >= 0.7 * vb:
+            return None                                             # round-trip / dump flow, not entry
+        peak = max((s["price1m"] or 0) for s in sw); lastp = sw[-1].get("price1m") or 0
+        if peak and lastp and lastp / peak < 0.6:
+            return None                                             # already down > 40% from its high
+        if liq is not None and liq < MIN_LIQ_FRESH:
+            return None
+        net = vb - vs
+        if net >= 1000:
+            pts += min(10.0, net / 1000); reasons.append(f"net inflow ${net:,.0f}")
         pts *= 1.0 + max(0.0, (3600 - age) / 3600) * 0.25          # earlier = better
         if sm_n == 0 and best_cluster == 0 and kp == 0:
             return None                                            # fresh needs at least one smart/social signal
