@@ -18,11 +18,15 @@ const QUANTA_ICONS_SHIM = fileURLToPath(
   new URL("./src/lib/quanta-icons.ts", import.meta.url),
 );
 
+// one id per `vite build` — the config function runs once per environment (client, ssr), Date.now() inside it gave
+// two different ids and every client thought it was stale
+const BUILD_ID = process.env.ARC_BUILD_ID || String(Date.now());
+
 export default defineConfig(({ command, mode }) => {
   const designInspectorEnabled = process.env.HF_DESIGN_INSPECTOR === "1" || mode === "design";
 
   return {
-    define: { __BUILD_ID__: JSON.stringify(String(Date.now())) },
+    define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
     // fsevents can miss edits under some setups (bun-launched dev, synced/virtual
     // dirs), leaving HMR dead so changes only appear after a manual restart.
     // Polling the watcher makes file changes reliably trigger HMR / SSR reload.

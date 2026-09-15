@@ -171,23 +171,17 @@ function RootShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (st) => st.location.pathname });
   // real-user render check → watchdog (see lib/ui-beacon.ts)
   useEffect(() => { void import("@/lib/ui-beacon").then((m) => m.scheduleBeacon()); }, [pathname]);
-  // stale-tab guard: a Terminal left open for hours keeps running yesterday's bundle. Every 5 min compare the
-  // deployed build id with ours; when it changed, reload — immediately if the tab is hidden, otherwise on the next
-  // navigation (never mid-trade).
+  // stale-tab guard (soft): a Terminal left open for hours keeps running yesterday's bundle. Every 10 min compare the
+  // deployed build id with ours; when it differs, reload ONCE and only while the tab is hidden — never on navigation,
+  // never twice (a mismatch that survives one reload means server/client ids legitimately differ → stop).
   useEffect(() => {
-    let stale = false;
+    if (sessionStorage.getItem("arc_reloaded_for") === __BUILD_ID__) return;
     const check = () => fetch("/api/version", { cache: "no-store" }).then((r) => r.json()).then((j: { build?: string }) => {
-      if (j.build && j.build !== __BUILD_ID__) { stale = true; if (document.hidden) location.reload(); }
+      if (j.build && j.build !== __BUILD_ID__ && document.hidden) { sessionStorage.setItem("arc_reloaded_for", __BUILD_ID__); location.reload(); }
     }).catch(() => null);
-    const id = setInterval(check, 300_000);
-    const onVis = () => { if (stale && document.hidden) location.reload(); };
-    document.addEventListener("visibilitychange", onVis);
-    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
+    const id = setInterval(check, 600_000);
+    return () => clearInterval(id);
   }, []);
-  useEffect(() => {
-    // stale bundle + user navigates → reload into the new one (SPA navigation keeps the old code otherwise)
-    void fetch("/api/version", { cache: "no-store" }).then((r) => r.json()).then((j: { build?: string }) => { if (j.build && j.build !== __BUILD_ID__) location.reload(); }).catch(() => null);
-  }, [pathname]);
   return (
     <html lang="en" data-theme="default-dark" style={{ colorScheme: "dark" }}>
       {/* Marketplace apps are permanently dark: data-theme is pinned on <html>
