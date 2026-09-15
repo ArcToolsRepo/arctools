@@ -171,6 +171,23 @@ function RootShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (st) => st.location.pathname });
   // real-user render check → watchdog (see lib/ui-beacon.ts)
   useEffect(() => { void import("@/lib/ui-beacon").then((m) => m.scheduleBeacon()); }, [pathname]);
+  // stale-tab guard: a Terminal left open for hours keeps running yesterday's bundle. Every 5 min compare the
+  // deployed build id with ours; when it changed, reload — immediately if the tab is hidden, otherwise on the next
+  // navigation (never mid-trade).
+  useEffect(() => {
+    let stale = false;
+    const check = () => fetch("/api/version", { cache: "no-store" }).then((r) => r.json()).then((j: { build?: string }) => {
+      if (j.build && j.build !== __BUILD_ID__) { stale = true; if (document.hidden) location.reload(); }
+    }).catch(() => null);
+    const id = setInterval(check, 300_000);
+    const onVis = () => { if (stale && document.hidden) location.reload(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
+  }, []);
+  useEffect(() => {
+    // stale bundle + user navigates → reload into the new one (SPA navigation keeps the old code otherwise)
+    void fetch("/api/version", { cache: "no-store" }).then((r) => r.json()).then((j: { build?: string }) => { if (j.build && j.build !== __BUILD_ID__) location.reload(); }).catch(() => null);
+  }, [pathname]);
   return (
     <html lang="en" data-theme="default-dark" style={{ colorScheme: "dark" }}>
       {/* Marketplace apps are permanently dark: data-theme is pinned on <html>

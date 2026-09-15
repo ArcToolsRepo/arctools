@@ -440,7 +440,9 @@ function Trade() {
     // dev / bundle sells must show up while you watch: refresh the visible rows' risk every 60 s
     const id = setInterval(() => { if (document.hidden) return; for (let i = 0; i < vis.length; i += 20) void riskDirect(vis.slice(i, i + 20)).then((m) => { if (Object.keys(m).length) setRisk((o) => { const n = { ...o, ...m }; riskRef.current = n; return n; }); }); }, 60_000);
     return () => { alive = false; clearInterval(id); clearInterval(liqId); };
-  }, [pageRows]); // eslint-disable-line react-hooks/exhaustive-deps
+    // keyed on the visible TOKEN LIST, not on the pageRows array identity: liq/logo/trend updates rebuild pageRows every
+    // few seconds, and re-running this effect cancelled every in-flight risk pull (alive=false) → endless "…"
+  }, [pageRows.map((r) => r.token).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <main className="arc-site" style={{ minHeight: "100dvh" }}>
