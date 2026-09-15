@@ -42,16 +42,19 @@ export function useMyOrders(token: string, addr: string | null) {
 type Props = {
   token: string; symbol: string; price: number | null; supply: number | null; balUsdc: number | null; balTok: number | null;
   onOrdersChange?: (o: OrderRow[]) => void;
+  /** which form to show; "list" = only the open-orders list (used under the market form) */
+  kind: "limit" | "tp" | "sl" | "list";
 };
 
-export function OrdersPanel({ token, symbol, price, supply, balUsdc, balTok, onOrdersChange }: Props) {
+export function OrdersPanel({ token, symbol, price, supply, balUsdc, balTok, onOrdersChange, kind: kindProp }: Props) {
   const [addr, setAddr] = useState<string | null>(null);
   useEffect(() => { const f = () => setAddr(hotAddress()); f(); const off = onHotChange(f); return () => { off(); }; }, []);
   const { orders, events, reload, dismiss } = useMyOrders(token, addr);
   useEffect(() => { onOrdersChange?.(orders); }, [orders]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [kind, setKind] = useState<"limit" | "tp" | "sl">("limit");
-  const [mode, setMode] = useState<"mcap" | "price" | "pct">("mcap");
+  const kind: "limit" | "tp" | "sl" = kindProp === "list" ? "limit" : kindProp;
+  const [mode, setMode] = useState<"mcap" | "price" | "pct">(kind === "limit" ? "mcap" : "pct");
+  useEffect(() => { setMode(kind === "limit" ? "mcap" : "pct"); setTrig(""); setMsg(null); }, [kind]);
   const [trig, setTrig] = useState("");
   const [amt, setAmt] = useState("");
   const [ttl, setTtl] = useState(7);
@@ -136,6 +139,7 @@ export function OrdersPanel({ token, symbol, price, supply, balUsdc, balTok, onO
   };
 
   const open = orders.filter((o) => o.status === "open");
+  if (kindProp === "list" && orders.length === 0 && events.length === 0) return null;
   const done = orders.filter((o) => o.status !== "open").slice(0, 6);
   const inp: React.CSSProperties = { background: "rgba(255,255,255,0.04)", border: "1px solid var(--arc-line)", borderRadius: 6, color: "var(--arc-ink)", fontSize: 13, padding: "7px 9px", width: "100%" };
   const chip = (on: boolean, col = "var(--arc-cobalt)"): React.CSSProperties => ({ background: on ? `${col}22` : "transparent", border: `1px solid ${on ? col : "var(--arc-line)"}`, borderRadius: 6, color: on ? col : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "4px 9px" });
@@ -149,15 +153,7 @@ export function OrdersPanel({ token, symbol, price, supply, balUsdc, balTok, onO
           <button onClick={() => dismiss(e.hash)} style={{ background: "none", border: "none", color: "var(--arc-muted)", cursor: "pointer" }} type="button">✕</button>
         </div>
       ))}
-      <div style={{ alignItems: "center", display: "flex", gap: 6, marginBottom: 8 }}>
-        {(["limit", "tp", "sl"] as const).map((k) => (
-          <button className="arc-mono" key={k} onClick={() => { setKind(k); setMsg(null); if (k !== "limit" && mode === "mcap") setMode("pct"); if (k === "limit" && mode === "pct") setMode("mcap"); }} style={chip(kind === k, ORDER_COLORS[k])} type="button">
-            {k === "limit" ? "Limit buy" : k === "tp" ? "Take profit" : "Stop loss"}
-          </button>
-        ))}
-        <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, marginLeft: "auto" }} title="Your funds stay in your wallet. The order is a signature; ArcOrders can only fill it at your price or better.">non-custodial</span>
-      </div>
-      {!addr ? (
+      {kindProp === "list" ? null : !addr ? (
         <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, margin: 0 }}>Create or unlock the trading wallet above to place orders. Orders run 24/7 from our keeper — no tab needed.</p>
       ) : (
         <>

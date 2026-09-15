@@ -17,7 +17,7 @@ const ago = (ts: number | null) => {
 
 /** Chain-wide token search shown under the filter box when the query matches nothing (or few rows) in the loaded lists.
  *  Every ERC-20 on Arc: our swap index (with 24 h stats) + arc-scan's chain-wide search. Click → token page (probes on-chain). */
-export function ChainSearch({ q, hide, renderBuy }: { q: string; hide: Set<string>; renderBuy?: (hit: SearchHit) => React.ReactNode }) {
+export function ChainSearch({ q, hide, renderBuy, autoOpen }: { q: string; hide: Set<string>; renderBuy?: (hit: SearchHit) => React.ReactNode; autoOpen?: boolean }) {
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [busy, setBusy] = useState(false);
   const seq = useRef(0);
@@ -30,8 +30,11 @@ export function ChainSearch({ q, hide, renderBuy }: { q: string; hide: Set<strin
     const t = setTimeout(() => {
       fetch(`/api/search?q=${encodeURIComponent(query)}`).then((r) => r.json()).then((j) => {
         if (my !== seq.current) return;
-        setHits((j.rows ?? []) as SearchHit[]);
+        const rows = (j.rows ?? []) as SearchHit[];
+        setHits(rows);
         setBusy(false);
+        // a pasted contract address with exactly one match → go straight to its page (what every terminal does)
+        if (autoOpen && rows.length === 1 && rows[0].token.toLowerCase() === query.toLowerCase()) window.location.href = `/token/${rows[0].token}`;
       }).catch(() => { if (my === seq.current) { setHits([]); setBusy(false); } });
     }, 350);
     return () => clearTimeout(t);
@@ -39,7 +42,7 @@ export function ChainSearch({ q, hide, renderBuy }: { q: string; hide: Set<strin
 
   if (query.length < 2) return null;
   const rows = (hits ?? []).filter((h) => !hide.has(h.token));
-  if (!busy && rows.length === 0 && hits !== null && hide.size > 0) return null; // everything already visible in the table
+  if (!busy && rows.length === 0 && hits !== null && hide.size > 0 && (hits ?? []).length > 0) return null; // everything already visible in the table
   return (
     <div style={{ background: "var(--arc-paper)", border: "1px solid var(--arc-line)", marginBottom: 8 }}>
       <div className="arc-mono" style={{ alignItems: "center", borderBottom: "1px solid var(--arc-line)", color: "var(--arc-muted)", display: "flex", fontSize: 11, gap: 8, padding: "6px 12px" }}>

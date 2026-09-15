@@ -347,6 +347,23 @@ V4_POOL_MANAGER = "0x8366a39cc670b4001a1121b8f6a443a643e40951"
 V4_SWAP_TOPIC = "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f"
 V4_INIT_TOPIC = "0xdd466e674ea557f56295e2d0218a125ea4b4f0f6f3307b95f85e6110838d6438"
 NATIVE = "0x0000000000000000000000000000000000000000"          # natywne USDC jako currency0
+# V4 pools quoted in a token instead of USDC (Arguspad launches pair with ARGUS). Amounts are converted to USDC with
+# the quote's own USDC price (from our index, refreshed by quote_price_loop) so these tokens get price / MC / trades.
+QUOTE_TOKENS = {"0xece5ca8bf9220718e5727754026757512212cb3c": "ARGUS"}
+_quote_px: dict[str, float] = {}      # quote token -> USDC per token
+
+
+async def quote_price_loop():
+    from sqlalchemy import text as _t
+    while True:
+        for q in QUOTE_TOKENS:
+            try:
+                r = await db.fetchone(_t("SELECT price1m FROM swaps WHERE token = :t AND price1m > 0 AND usdc >= 1 ORDER BY ts DESC LIMIT 1").bindparams(t=q))
+                if r:
+                    _quote_px[q] = float(r["price1m"]) / 1e6
+            except Exception:  # noqa
+                pass
+        await asyncio.sleep(30)
 _v4_cache: dict[str, dict | None] = {}
 
 
@@ -363,11 +380,15 @@ async def _v4_register_init(lg):
     pid = topics[1].lower()
     c0 = ("0x" + topics[2][-40:]).lower()
     c1 = ("0x" + topics[3][-40:]).lower()
-    token, is0 = None, False
+    token, is0, quote = None, False, None
     if c0 in (NATIVE, USDC):
         token, is0 = c1, True
     elif c1 in (NATIVE, USDC):
         token, is0 = c0, False
+    elif c0 in QUOTE_TOKENS:
+        token, is0, quote = c1, True, c0
+    elif c1 in QUOTE_TOKENS:
+        token, is0, quote = c0, False, c1
     # data: fee uint24, tickSpacing int24, hooks address, sqrtPriceX96, tick  -> full PoolKey for routers/snipers
     body = (lg["data"].hex() if hasattr(lg["data"], "hex") else str(lg["data"])).replace("0x", "")
     fee = int(body[0:64], 16) if len(body) >= 64 else None
@@ -382,16 +403,16 @@ async def _v4_register_init(lg):
         "tick_spacing = EXCLUDED.tick_spacing, hooks = EXCLUDED.hooks, block = COALESCE(v4_pools.block, EXCLUDED.block)"
     ).bindparams(i=pid, t=token, z=1 if is0 else 0, c0=c0, c1=c1, f=fee, ts=ts, h=hooks, b=blk))
     usdc_dec = 6 if (c0 == USDC or c1 == USDC) else 18      # facade ERC-20 = 6 dec, native = 18
-    await db.execute(text("UPDATE v4_pools SET usdc_dec = :d WHERE id = :i").bindparams(d=usdc_dec, i=pid))
-    _v4_cache[pid] = {"is0": is0, "token": token, "usdc_dec": usdc_dec} if token else None
+    await db.execute(text("UPDATE v4_pools SET usdc_dec = :d, quote = :q WHERE id = :i").bindparams(d=usdc_dec, q=quote, i=pid))
+    _v4_cache[pid] = {"is0": is0, "token": token, "usdc_dec": usdc_dec, "quote": quote} if token else None
 
 
 async def _v4_pool(pid: str) -> dict | None:
     pid = pid.lower()
     if pid in _v4_cache:
         return _v4_cache[pid]
-    row = await db.fetchone(text("SELECT token, is0, usdc_dec FROM v4_pools WHERE id = :i").bindparams(i=pid))
-    info = ({"is0": bool(row["is0"]), "token": row["token"], "usdc_dec": int(row["usdc_dec"] or 18)}
+    row = await db.fetchone(text("SELECT token, is0, usdc_dec, quote FROM v4_pools WHERE id = :i").bindparams(i=pid))
+    info = ({"is0": bool(row["is0"]), "token": row["token"], "usdc_dec": int(row["usdc_dec"] or 18), "quote": row["quote"]}
             if row and row["token"] else None)
     if row:
         _v4_cache[pid] = info
@@ -410,6 +431,12 @@ def _decode_v4(lg, info: dict | None) -> dict | None:
         return None
     usdc_amt, tok_amt = (a0, a1) if info["is0"] else (a1, a0)
     scale = 10 ** int(info.get("usdc_dec") or 18)
+    q = info.get("quote")
+    if q:
+        px = _quote_px.get(q)
+        if not px:
+            return None                      # quote price unknown yet — skip rather than write garbage
+        scale = scale / px                   # quote units → USDC
     if usdc_amt < 0 and tok_amt > 0:      # zaplacil USDC, dostal token
         return {"side": "buy", "token": info["token"], "tokens": tok_amt / 1e18, "usdc": -usdc_amt / scale}
     if usdc_amt > 0 and tok_amt < 0:
@@ -417,13 +444,74 @@ def _decode_v4(lg, info: dict | None) -> dict | None:
     return None
 
 
+async def v4_quote_backfill():
+    """Pools paired with a quote token (ARGUS) were stored with token=NULL: assign token/quote, then index their swaps."""
+    await asyncio.sleep(40)                  # let quote_price_loop fill _quote_px first
+    fixed = []
+    for q in QUOTE_TOKENS:
+        rows = await db.fetchall(text("SELECT id, currency0, currency1, block FROM v4_pools WHERE token IS NULL AND (currency0 = :q OR currency1 = :q)").bindparams(q=q))
+        for r in rows:
+            is0 = r["currency0"] == q
+            token = r["currency1"] if is0 else r["currency0"]
+            await db.execute(text("UPDATE v4_pools SET token = :t, is0 = :z, quote = :q, usdc_dec = 18 WHERE id = :i")
+                             .bindparams(t=token, z=1 if is0 else 0, q=q, i=r["id"]))
+            _v4_cache.pop(r["id"].lower(), None)
+            fixed.append((r["id"], r["block"]))
+    # resumable: every quote pool without a done-flag gets (re)scanned from its Initialize block
+    fixed = []
+    for r in await db.fetchall(text("SELECT id, block FROM v4_pools WHERE quote IS NOT NULL AND token IS NOT NULL")):
+        if not await db.kv_get(f"v4q_done:{r['id']}"):
+            fixed.append((r["id"], r["block"]))
+    if not fixed:
+        return
+    log.info("v4 quote backfill: %s pools", len(fixed))
+    pm = V4_POOL_MANAGER
+    head = await CHAIN.block_number()
+    ins = text(
+        "INSERT INTO swaps (tx, log_index, block, ts, wallet, token, side, usdc, tokens, price1m, venue) "
+        "VALUES (:tx, :log_index, :block, :ts, :wallet, :token, :side, :usdc, :tokens, :price1m, :venue) "
+        "ON CONFLICT (tx, log_index) DO NOTHING")
+    total = 0
+    for pid, blk in fixed:
+        frm = int(blk or (head - 300_000))
+        ok = True
+        for a in range(frm, head, 10_000):
+            b = min(head, a + 9_999)
+            try:
+                logs = await CHAIN.get_logs({"address": pm, "topics": [V4_SWAP_TOPIC, pid], "fromBlock": a, "toBlock": b})
+            except Exception as e:  # noqa
+                log.warning("v4 quote scan %s %s: %s", pid[:10], a, str(e)[:80]); ok = False; await asyncio.sleep(1); continue
+            decoded = []
+            for lg in logs:
+                dec = _decode_v4(lg, await _v4_pool(pid))
+                if dec and dec["usdc"] > 0 and dec["tokens"] > 0:
+                    decoded.append((lg, dec))
+            if not decoded:
+                continue
+            senders, (t0, slope) = await asyncio.gather(_tx_senders(list({lg["transactionHash"] for lg, _ in decoded})), _window_clock(a, b))
+            rows = []
+            for lg, dec in decoded:
+                txh = _topic_hex(lg["transactionHash"])
+                rows.append({"block": lg["blockNumber"], "log_index": lg["logIndex"], "price1m": dec["usdc"] / dec["tokens"] * 1e6, "side": dec["side"],
+                             "token": dec["token"], "tokens": dec["tokens"], "ts": int(t0 + (lg["blockNumber"] - a) * slope), "tx": txh,
+                             "usdc": dec["usdc"], "venue": "v4", "wallet": senders.get(txh, "")})
+            await db.execute_many(ins, rows)
+            total += len(rows)
+            await asyncio.sleep(0.05)
+        if ok:
+            await db.kv_set(f"v4q_done:{pid}", "1")
+    log.info("v4 quote backfill: +%s swaps", total)
+
+
 async def v4_bootstrap():
     """Jednorazowo: tabela, mapowanie wszystkich puli V4 z 30 dni, backfill swapow V4 (filtr po adresie)."""
     await db.execute(text("CREATE TABLE IF NOT EXISTS v4_pools (id VARCHAR(70) PRIMARY KEY, token VARCHAR(64), is0 INTEGER)"))
     for col, typ in (("currency0", "VARCHAR(64)"), ("currency1", "VARCHAR(64)"), ("fee", "INTEGER"),
-                     ("tick_spacing", "INTEGER"), ("hooks", "VARCHAR(64)"), ("block", "BIGINT"), ("usdc_dec", "INTEGER")):
+                     ("tick_spacing", "INTEGER"), ("hooks", "VARCHAR(64)"), ("block", "BIGINT"), ("usdc_dec", "INTEGER"), ("quote", "VARCHAR(64)")):
         await db.execute(text(f"ALTER TABLE v4_pools ADD COLUMN IF NOT EXISTS {col} {typ}"))
     _v4_cache.clear()
+    asyncio.create_task(quote_price_loop(), name="quote-price")
+    asyncio.create_task(v4_quote_backfill(), name="v4-quote-backfill")
     asyncio.create_task(v4_keys_backfill(), name="v4-keys-backfill")
     await warm_supply_cache()
     from .warm import warm_loop

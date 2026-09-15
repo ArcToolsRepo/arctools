@@ -439,6 +439,7 @@ export const ARC_V4_ROUTER = "0x05a0158EF87E8E7bFE4E0242e11dda75f83954e1";
 export type V4Key = { id: string; currency0: string; currency1: string; fee: number; tick_spacing: number; hooks: string; usdc_dec: number; venueName: string };
 const V4_HOOK_NAMES: Record<string, string> = {
   "0xa368005ad249fbebcd5baa7396c9e3b3e44e6044": "Arguspad",
+  "0xfea9dfe2a20e11f7c4d4b30c6c96a06e42e6e044": "Arguspad",
   "0x465af15c85ac291d5cffb8d02d8c8e23102fe6e3": "act.fun",
   "0x20eead6db6b3d0a4491e9073119dd0ebff166acc": "UBI.fun",
 };
@@ -1444,6 +1445,7 @@ function headBlockGuess(): number { return _headBlock || 20_340_000 + Math.floor
 const INSIDER_API = "https://bot-production-4200.up.railway.app";
 const V4_HOOK_PADS: Record<string, string> = {
   "0xa368005ad249fbebcd5baa7396c9e3b3e44e6044": "Arguspad",
+  "0xfea9dfe2a20e11f7c4d4b30c6c96a06e42e6e044": "Arguspad",
   "0x465af15c85ac291d5cffb8d02d8c8e23102fe6e3": "act.fun",
   "0x20eead6db6b3d0a4491e9073119dd0ebff166acc": "UBI.fun",
 };

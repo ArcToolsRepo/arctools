@@ -270,6 +270,7 @@ function TokenPage() {
   const useAgg = !!info && ((info.venue === "v3" && !info.quoteToken) || info.venue === "v4" || info.venue === "curve" || info.venue === "pad" || viaHop);
   const [route, setRoute] = useState<RouteResult | null>(null);
   const [myOrders, setMyOrders] = useState<OrderRow[]>([]);
+  const [tradeMode, setTradeMode] = useState<"market" | "limit" | "tp" | "sl">("market");
   const orderLines = useMemo(() => myOrders.filter((o) => o.status === "open").map((o) => ({ price: o.trigger_price, color: ORDER_COLORS[o.kind], title: `${o.kind === "limit" ? "LIMIT BUY" : o.kind === "tp" ? "TP" : "SL"} ${o.is_buy ? `${(Number(o.amount_in) / 1e18).toFixed(0)} USDC` : `${Math.round(Number(o.amount_in) / 1e18).toLocaleString()}`}` })), [myOrders]);
   const [hot, setHot] = useState(false);          // sign with the in-browser trading wallet instead of the connected wallet
   const [hotOk, setHotOk] = useState(false);
@@ -759,13 +760,22 @@ function TokenPage() {
               <div style={{ background: "#22c580", height: "100%", width: `${buyPct}%` }} />
             </div>
 
-            {canTrade ? (
+            {canTrade && (
+              <div className="arc-mono" style={{ borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 2, margin: "14px 0 0" }}>
+                {([["market", "Market"], ["limit", "Limit"], ["tp", "Take profit"], ["sl", "Stop loss"]] as const).map(([k, label]) => (
+                  <button className="arc-mono" key={k} onClick={() => setTradeMode(k)} style={{ background: "transparent", border: "none", borderBottom: tradeMode === k ? `2px solid ${k === "market" ? "var(--arc-cobalt)" : ORDER_COLORS[k]}` : "2px solid transparent", color: tradeMode === k ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "7px 10px" }} type="button">{label}</button>
+                ))}
+                <span style={{ color: "var(--arc-muted)", fontSize: 10, marginLeft: "auto", padding: "9px 4px 0" }} title="Orders are a signature + an allowance; funds stay in your wallet and the contract can only fill at your price or better.">{tradeMode === "market" ? "" : "non-custodial"}</span>
+              </div>
+            )}
+            {canTrade && tradeMode !== "market" ? (
+              <OrdersPanel balTok={balTok} balUsdc={balUsdc} kind={tradeMode} onOrdersChange={setMyOrders} price={price} supply={info.supply ?? null} symbol={info.symbol} token={ca} />
+            ) : canTrade ? (
               <>
                 <div style={{ display: "flex", gap: 8, margin: "16px 0 10px" }}>
                   {(["buy", "sell"] as const).map((s) => (
                     <button className="arc-mono" key={s} onClick={() => { setSide(s); setAmount(""); }} style={{ background: side === s ? (s === "buy" ? "#22c580" : "#f0534f") : "transparent", border: `1px solid ${s === "buy" ? "#22c580" : "#f0534f"}`, color: side === s ? "#06090f" : (s === "buy" ? "#22c580" : "#f0534f"), cursor: "pointer", flex: 1, fontSize: 12, fontWeight: 700, padding: "8px 0", textTransform: "uppercase" }} type="button">{s}</button>
                   ))}
-                  <button className="arc-mono" onClick={() => document.querySelector(".arc-orders")?.scrollIntoView({ behavior: "smooth", block: "center" })} style={{ alignSelf: "center", background: "none", border: "none", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 11, marginLeft: "auto", padding: 0 }} title="Limit buy / take profit / stop loss — below" type="button">Limit / TP / SL ↓</button>
                 </div>
                 <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, margin: "0 0 4px" }}>{tr_("YOU PAY")}</p>
                 <div style={{ alignItems: "center", background: "#0e1118", border: "1px solid var(--arc-line)", display: "flex", gap: 8, padding: "8px 10px" }}>
@@ -843,7 +853,7 @@ function TokenPage() {
                 {info.venueUrl && <a className="arc-mono" href={info.venueUrl} rel="noreferrer" style={{ color: "var(--arc-muted)", display: "block", fontSize: 12, marginTop: 10, textAlign: "center" }} target="_blank">open on {info.launchpad ?? "venue"} ↗</a>}
               </div>
             )}
-            <OrdersPanel balTok={balTok} balUsdc={balUsdc} onOrdersChange={setMyOrders} price={price} supply={info.supply ?? null} symbol={info.symbol} token={ca} />
+            {tradeMode === "market" && <OrdersPanel balTok={balTok} balUsdc={balUsdc} kind="list" onOrdersChange={setMyOrders} price={price} supply={info.supply ?? null} symbol={info.symbol} token={ca} />}
           </aside>
         </div>
 

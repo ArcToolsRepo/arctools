@@ -73,6 +73,7 @@ async function call(to: string, data: string): Promise<string | null> {
 
 const V4_NAMES: Record<string, string> = {
   "0xa368005ad249fbebcd5baa7396c9e3b3e44e6044": "Arguspad",
+  "0xfea9dfe2a20e11f7c4d4b30c6c96a06e42e6e044": "Arguspad",
   "0x465af15c85ac291d5cffb8d02d8c8e23102fe6e3": "act.fun",
   "0x20eead6db6b3d0a4491e9073119dd0ebff166acc": "UBI.fun",
 };

@@ -537,8 +537,8 @@ function Trade() {
               </span>
             </div>
             {/* chain-wide search: every ERC-20 on Arc by name / symbol / address (shows when the query is not an address; addresses use the quick action below) */}
-            {q.trim().length >= 2 && !/^0x[0-9a-fA-F]{40}$/.test(q.trim()) && (
-              <ChainSearch q={q} hide={new Set(tableRows.map((r) => r.token.toLowerCase()))} renderBuy={(h) => <BuyBtn symbol={h.symbol ?? short(h.token)} token={h.token} />} />
+            {q.trim().length >= 2 && (
+              <ChainSearch autoOpen={/^0x[0-9a-fA-F]{40}$/.test(q.trim())} q={q} hide={new Set(tableRows.map((r) => r.token.toLowerCase()))} renderBuy={(h) => <BuyBtn symbol={h.symbol ?? short(h.token)} token={h.token} />} />
             )}
             {/* paste CA quick action */}
             {/^0x[0-9a-fA-F]{40}$/.test(q.trim()) && !byToken.has(q.trim().toLowerCase()) && (
@@ -570,7 +570,7 @@ function Trade() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tableRows.length === 0 && <tr><td className="arc-mono" colSpan={11} style={{ ...cell, color: "var(--arc-muted)" }}>{tab === "favs" ? "No favourites yet — click ☆ on any row." : tab === "new15" ? "No launch younger than 15 minutes right now — watch New pair." : (padF !== "all" || minMc || maxMc || minVol) ? "Nothing matches these filters."  : tab === "insiders" ? "No token with 2+ insiders in the last 24h." : "Loading…"}</td></tr>}
+                    {tableRows.length === 0 && <tr><td className="arc-mono" colSpan={11} style={{ ...cell, color: "var(--arc-muted)" }}>{q.trim() ? `Nothing in the ${tab} list matches “${q.trim()}” — see “Search all of Arc” above.` : tab === "favs" ? "No favourites yet — click ☆ on any row." : tab === "new15" ? "No launch younger than 15 minutes right now — watch New pair." : (padF !== "all" || minMc || maxMc || minVol) ? "Nothing matches these filters."  : tab === "insiders" ? "No token with 2+ insiders in the last 24h." : "Loading…"}</td></tr>}
                     {pageRows.map((r) => (
                       <tr className="arc-row-link" key={r.token} onClick={rowClick(r.token)} onMouseEnter={() => { void import("@/lib/arc-api").then((m) => m.tokenPage({ data: { token: r.token } })).catch(() => null); }} style={{ background: r.token.toLowerCase() === OFFICIAL_TOKEN ? "rgba(46,124,255,0.09)" : favs.has(r.token) ? "rgba(46,124,255,0.05)" : undefined, cursor: "pointer" }}>
                         <td style={{ ...cell, paddingRight: 4 }}><button onClick={() => toggleFav(r.token)} style={{ background: "none", border: "none", color: favs.has(r.token) ? "#f5c542" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, padding: 0 }} title="favourite" type="button">{favs.has(r.token) ? "★" : "☆"}</button></td>
