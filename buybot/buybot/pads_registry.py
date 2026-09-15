@@ -39,6 +39,17 @@ FACTORIES: dict[str, dict] = {
     "arcane":   {"label": "Arcane",      "url": "https://arcane.fi",     "twitter": "Arcanedotfi",     "factories": ["0x2dca1c5acdcf362c6b61d91ec4661a410fe4e178", "0x86dfced95ad9231f3cbe0c73d4cb9d555357301c"], "model": "AMM"},
 }
 
+# Launchpads we have already reverse-engineered but that are NOT on Arc mainnet yet. Kept out of FACTORIES so the
+# Terminal never lists tokens nobody can buy. Going live = move the entry into FACTORIES and fill "factories".
+PENDING_FACTORIES: dict[str, dict] = {
+    # minara.fun — verified 2026-09-15: bundle has chainId 5042002 (Arc Testnet), rpc.testnet.arc.network only.
+    # Mechanics: uerc20Factory emits TokenCreated (topic 0x4ef8284ecf42d4cd19686572ffd87f630858c82398911e776cb831de35eddbf4),
+    # bonding curve graduates into Uniswap V4 (poolManager Initialize 0xdd466e674ea557f56295e2d0218a125ea4b4f0f6f3307b95f85e6110838d6438),
+    # metadata API https://api.minara.fun. After graduation tokens fall into our existing V4 path automatically.
+    "minara":   {"label": "Minara",      "url": "https://minara.fun",    "twitter": "minarafun",       "factories": [], "model": "curve -> V4 pool",
+                 "token_created_topic": "0x4ef8284ecf42d4cd19686572ffd87f630858c82398911e776cb831de35eddbf4", "status": "testnet only (chainId 5042002)"},
+}
+
 
 async def init():
     await db.execute(text("CREATE TABLE IF NOT EXISTS pad_tokens (token VARCHAR(64) PRIMARY KEY, pad VARCHAR(24), factory VARCHAR(64), tx VARCHAR(80), ts BIGINT, symbol VARCHAR(64))"))

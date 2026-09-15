@@ -337,7 +337,35 @@ async def chk_ui(s):
     return True, note
 
 
-CHECKS = [("bots", chk_bots), ("ui", chk_ui), ("terminal", chk_terminal), ("pages", chk_pages), ("cells", chk_cells), ("tokens", chk_tokens_api), ("relay", chk_relay), ("index", chk_index), ("api", chk_own_api), ("display", chk_display)]
+_MINARA_SEEN = {"mainnet": False}
+
+
+async def chk_minara(s):
+    """Note-only check: flips to FAIL (= loud Telegram line) the moment minara.fun ships an Arc MAINNET config,
+    so we can wire the pad within minutes. Looks at their live JS bundle for chainId 5042 / mainnet RPC."""
+    try:
+        async with s.get("https://minara.fun/", headers={"User-Agent": "Mozilla/5.0"}, timeout=aiohttp.ClientTimeout(total=20)) as r:
+            html = await r.text()
+        import re as _re
+        m = _re.search(r'src="(/assets/index-[^"]+\.js)"', html)
+        if not m:
+            return True, "minara: bundle not found (site changed?)"
+        async with s.get("https://minara.fun" + m.group(1), headers={"User-Agent": "Mozilla/5.0"}, timeout=aiohttp.ClientTimeout(total=30)) as r:
+            js = await r.text()
+        mainnet = bool(_re.search(r"chainId:\s*5042\b(?!002)", js)) or "rpc.arc.network" in js.replace("rpc.testnet.arc.network", "") \
+            or "arcscan.app" in js.replace("testnet.arcscan.app", "") or "rpc.arc-scan.org" in js
+        testnet = "5042002" in js or "rpc.testnet.arc.network" in js
+        if mainnet and not _MINARA_SEEN["mainnet"]:
+            _MINARA_SEEN["mainnet"] = True
+            await _tg("🟢 minara.fun now ships an Arc MAINNET config — time to wire the pad (PENDING_FACTORIES['minara'])")
+        if mainnet:
+            return False, "minara.fun: MAINNET config detected — wire the pad"
+        return True, f"minara.fun still testnet-only ({'5042002' if testnet else 'no chain id found'})"
+    except Exception as e:  # noqa
+        return True, f"minara probe: {str(e)[:60]}"
+
+
+CHECKS = [("bots", chk_bots), ("ui", chk_ui), ("terminal", chk_terminal), ("pages", chk_pages), ("cells", chk_cells), ("tokens", chk_tokens_api), ("relay", chk_relay), ("minara", chk_minara), ("index", chk_index), ("api", chk_own_api), ("display", chk_display)]
 REPORT_EVERY = int(os.getenv("WATCHDOG_REPORT_EVERY", "1800"))   # hourly "all good" summary to the admin
 _last_report = 0.0
 
