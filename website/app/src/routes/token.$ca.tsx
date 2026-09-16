@@ -764,7 +764,7 @@ function TokenPage() {
             {adv ? (
               <TvAdvanced height={Math.max(460, Number((typeof localStorage !== "undefined" && localStorage.getItem("arc_chart_h")) || 520))} interval={tf} light={typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light"} mode={mode} onFail={() => setAdv(false)} token={params.ca.toLowerCase()} />
             ) : (
-              <div id="chart" style={{ scrollMarginTop: 70 }} /><TvChart avatars={chartAvatars} candles={effCandles} interval={tf} markers={chartMarkers} mode={effMode} onVisible={setMarkersVisible} orderLines={orderLines} scale={scale} storageKey={params.ca} symbol={info ? `${info.symbol}/${pairSym}` : undefined} />
+              <><div id="chart" style={{ scrollMarginTop: 70 }} /><TvChart avatars={chartAvatars} candles={effCandles} interval={tf} markers={chartMarkers} mode={effMode} onVisible={setMarkersVisible} orderLines={orderLines} scale={scale} storageKey={params.ca} symbol={info ? `${info.symbol}/${pairSym}` : undefined} /></>
             )}
             <MarkerLegend data={eventsData} visible={markersVisible} />
           </div>
