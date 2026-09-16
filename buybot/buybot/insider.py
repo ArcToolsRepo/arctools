@@ -9,6 +9,7 @@ import json
 import logging
 import time
 
+import aiohttp
 import aiohttp as _aiohttp
 from aiohttp import web
 from web3 import Web3
@@ -24,8 +25,18 @@ log = logging.getLogger("insider")
 USDC = "0x3600000000000000000000000000000000000000"
 BACKFILL_BLOCKS = 5_200_000          # ~30 dni przy 0.5 s/blok
 LIVE_WINDOW = 2_000
-BACKFILL_WINDOW = 10_000
-PARALLEL_WINDOWS = 4                  # okna backfillu skanowane jednocześnie
+BACKFILL_WINDOW = 5_000
+PARALLEL_WINDOWS = 1                  # okna backfillu skanowane jednocześnie
+_lag = {"blocks": 0, "phase": "init", "since": 0.0, "window": ""}                  # live ingest lag + phase (debug via /api/tasks); background scans yield while it is large (RPC budget goes to live data first)
+
+
+async def _yield_to_live(tag: str):
+    """Background scanners call this before each RPC-heavy window: sleep while the live ingest is far behind."""
+    waited = 0
+    while _lag["blocks"] > 5_000 and waited < 3600:
+        await asyncio.sleep(15); waited += 15
+    if waited:
+        log.info("%s resumed after %ss (ingest lag %s)", tag, waited, _lag["blocks"])
 MIN_CLOSED = 3                        # min. zamknietych pozycji do rankingu
 MIN_VOLUME = 200.0                    # min. wolumen $ do rankingu
 BOT_TRADES_PER_DAY = 500
@@ -476,6 +487,7 @@ async def v4_quote_backfill():
         frm = int(blk or (head - 300_000))
         ok = True
         for a in range(frm, head, 10_000):
+            await _yield_to_live("v4 quote backfill")
             b = min(head, a + 9_999)
             try:
                 logs = await CHAIN.get_logs({"address": pm, "topics": [V4_SWAP_TOPIC, pid], "fromBlock": a, "toBlock": b})
@@ -488,7 +500,7 @@ async def v4_quote_backfill():
                     decoded.append((lg, dec))
             if not decoded:
                 continue
-            senders, (t0, slope) = await asyncio.gather(_tx_senders(list({lg["transactionHash"] for lg, _ in decoded})), _window_clock(a, b))
+            senders, (t0, slope) = await asyncio.gather(_tx_senders(list({lg["transactionHash"] for lg, _ in decoded}), {lg["transactionHash"]: lg["blockNumber"] for lg, _ in decoded}), _window_clock(a, b))
             rows = []
             for lg, dec in decoded:
                 txh = _topic_hex(lg["transactionHash"])
@@ -568,7 +580,7 @@ async def v4_bootstrap():
         if not decoded:
             continue
         senders, (t0, slope) = await asyncio.gather(
-            _tx_senders(list({lg["transactionHash"] for lg, _ in decoded})), _window_clock(a + 1, b))
+            _tx_senders(list({lg["transactionHash"] for lg, _ in decoded}), {lg["transactionHash"]: lg["blockNumber"] for lg, _ in decoded}), _window_clock(a + 1, b))
         rows = []
         for lg, dec in decoded:
             txh = _topic_hex(lg["transactionHash"])
@@ -903,13 +915,14 @@ _index_inflight: set[str] = set()
 async def backfill_pool(pool: str, blocks: int = BACKFILL_BLOCKS) -> int:
     """Historia swapow JEDNEJ puli (filtr po adresie) — odzyskanie wolumenu pominietej puli."""
     head = await CHAIN._bn()
-    frm = max(0, head - blocks)
+    frm = max(0, head - min(blocks, 300_000))   # public RPCs answer -32600 "Invalid request" for older ranges — don't burn calls
     ins = text(
         "INSERT INTO swaps (tx, log_index, block, ts, wallet, token, side, usdc, tokens, price1m, venue) "
         "VALUES (:tx, :log_index, :block, :ts, :wallet, :token, :side, :usdc, :tokens, :price1m, :venue) "
         "ON CONFLICT (tx, log_index) DO NOTHING")
     total = 0
     for a in range(frm, head, 10_000):          # arc-scan: max 10k blokow na getLogs
+        await _yield_to_live("backfill_pool")
         b = min(head, a + 10_000)
         info = _pool_cache.get(pool)
         try:
@@ -930,7 +943,7 @@ async def backfill_pool(pool: str, blocks: int = BACKFILL_BLOCKS) -> int:
         if not decoded:
             continue
         senders, (t0, slope) = await asyncio.gather(
-            _tx_senders(list({lg["transactionHash"] for _, lg, _ in decoded})), _window_clock(a + 1, b))
+            _tx_senders(list({lg["transactionHash"] for _, lg, _ in decoded}), {lg["transactionHash"]: lg["blockNumber"] for _, lg, _ in decoded}), _window_clock(a + 1, b))
         rows = []
         for topic, lg, dec in decoded:
             txh = lg["transactionHash"].hex()
@@ -1078,22 +1091,46 @@ def _decode(topic: str, lg, pool_info: dict | None) -> dict | None:
 
 # ---------------- ingest loop (backfill -> live tail) ----------------
 
-async def _tx_senders(hashes: list) -> dict[str, str]:
-    """Rownolegle pobranie tx.from dla unikalnych transakcji."""
+def _hx(h) -> str:
+    key = h.hex() if hasattr(h, "hex") else str(h)
+    return key if key.startswith("0x") else "0x" + key
+
+
+async def _tx_senders(hashes: list, blocks: dict | None = None) -> dict[str, str]:
+    """tx.from for unique transactions. With `blocks` (hash -> block number) we fetch whole blocks with full txs
+    (one call per block instead of one per tx — a 2k-block window with 230 swaps went from ~80 s to a few seconds)."""
     out: dict[str, str] = {}
-    sem = asyncio.Semaphore(12)
+    want = {_hx(h) for h in hashes}
+    sem = asyncio.Semaphore(5)
+    if blocks:
+        by_block: dict[int, set[str]] = {}
+        for h, b in blocks.items():
+            k = _hx(h)
+            if k in want:
+                by_block.setdefault(int(b), set()).add(k)
+
+        async def one_block(b: int, keys: set[str]):
+            async with sem:
+                try:
+                    blk = await CHAIN.w3.eth.get_block(b, full_transactions=True)
+                    for tx in blk["transactions"]:
+                        k = _hx(tx["hash"])
+                        if k in keys:
+                            out[k] = (tx["from"] or "").lower()
+                except Exception:  # noqa
+                    pass
+        await asyncio.gather(*[one_block(b, ks) for b, ks in by_block.items()])
+    missing = [k for k in want if k not in out]
 
     async def one(h):
-        key = h.hex() if hasattr(h, "hex") else str(h)
-        key = key if key.startswith("0x") else "0x" + key
         async with sem:
             try:
                 t = await CHAIN.get_tx(h)
-                out[key] = (t["from"] or "").lower()
+                out[h] = (t["from"] or "").lower()
             except Exception:  # noqa
-                out[key] = ""
-
-    await asyncio.gather(*[one(h) for h in hashes])
+                out[h] = ""
+    if missing:
+        await asyncio.gather(*[one(h) for h in missing])
     return out
 
 
@@ -1170,7 +1207,7 @@ async def _scan_window(frm: int, to: int) -> list[dict] | None:
         return []
 
     senders, clock = await asyncio.gather(
-        _tx_senders(list({lg["transactionHash"] for _, lg, _ in decoded})),
+        _tx_senders(list({lg["transactionHash"] for _, lg, _ in decoded}), {lg["transactionHash"]: lg["blockNumber"] for _, lg, _ in decoded}),
         _window_clock(frm, to))
     t0, slope = clock
     rows = []
@@ -1198,9 +1235,15 @@ async def ingest_loop():
         "INSERT INTO swaps (tx, log_index, block, ts, wallet, token, side, usdc, tokens, price1m, venue) "
         "VALUES (:tx, :log_index, :block, :ts, :wallet, :token, :side, :usdc, :tokens, :price1m, :venue) "
         "ON CONFLICT (tx, log_index) DO NOTHING")
+    _last_progress = time.time()
     while True:
         try:
-            head = await CHAIN._bn()
+            _lag.update(phase="head", since=time.time())
+            head = await asyncio.wait_for(CHAIN._bn(), timeout=30)
+            _lag["blocks"] = max(0, head - cursor)
+            if time.time() - _last_progress > 900:
+                log.warning("insider ingest: no progress for %ss (cursor %s, head %s) — continuing", int(time.time() - _last_progress), cursor, head)
+                _last_progress = time.time()
             if cursor >= head:
                 await db.kv_set("insider_synced", "1")
                 await asyncio.sleep(CFG.poll_interval)
@@ -1217,7 +1260,9 @@ async def ingest_loop():
                     frm, to = c + 1, min(head, c + BACKFILL_WINDOW)
                     spans.append((frm, to))
                     c = to
-                scans = await asyncio.gather(*[_scan_window(f, t) for f, t in spans])
+                _lag.update(phase="scan", since=time.time(), window=f"{spans[0][0]}-{spans[-1][1]}")
+                scans = await asyncio.wait_for(asyncio.gather(*[_scan_window(f, t) for f, t in spans]), timeout=600)
+                _lag.update(phase="write", since=time.time())
                 rows, advanced = [], cursor
                 for (frm, to), res in zip(spans, scans):
                     if res is None:
@@ -1226,7 +1271,7 @@ async def ingest_loop():
                     advanced = to
                 await db.execute_many(ins, rows)
                 if advanced > cursor:
-                    cursor = advanced
+                    cursor = advanced; _last_progress = time.time()
                     await db.kv_set("insider_cursor", str(cursor))
                     log.info("insider backfill -> %s: +%s swaps (%s okien, do head %s blokow)",
                              cursor, len(rows), len(spans), head - cursor)
@@ -1235,16 +1280,17 @@ async def ingest_loop():
                 await asyncio.sleep(0.1)
             else:
                 frm, to = cursor + 1, min(head, cursor + LIVE_WINDOW)
-                res = await _scan_window(frm, to)
+                res = await asyncio.wait_for(_scan_window(frm, to), timeout=300)
                 if res is None:
                     await asyncio.sleep(3)
                     continue
                 await db.execute_many(ins, res)
-                cursor = to
+                cursor = to; _last_progress = time.time()
                 await db.kv_set("insider_cursor", str(cursor))
                 await asyncio.sleep(CFG.poll_interval)
         except Exception as e:  # noqa
-            log.warning("insider ingest: %s", e)
+            log.warning("insider ingest [%s %s]: %r", _lag.get("phase"), _lag.get("window"), e)
+            _lag.update(phase="error:" + type(e).__name__, since=time.time())
             await asyncio.sleep(5)
 
 
@@ -1715,6 +1761,20 @@ async def start_api():
     app.router.add_options("/api/ui-beacon", lambda r: web.Response(headers={"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "POST"}))
     from .alpha import api_alpha
     app.router.add_get("/api/alpha", api_alpha)
+    async def api_tasks(request):
+        out = []
+        for t in asyncio.all_tasks():
+            n = t.get_name()
+            if n.startswith("Task-"):
+                continue
+            st = "done" if t.done() else "running"
+            exc = None
+            if t.done() and not t.cancelled():
+                try: exc = repr(t.exception())[:200]
+                except Exception: pass  # noqa
+            out.append({"name": n, "state": st, "exc": exc})
+        return web.json_response({"tasks": sorted(out, key=lambda x: x["name"]), "ingest_lag": _lag["blocks"], "ingest": {**_lag, "for_s": int(time.time() - float(_lag.get("since") or time.time()))}}, headers={"Access-Control-Allow-Origin": "*"})
+    app.router.add_get("/api/tasks", api_tasks)
     from . import orders as _orders
     _orders.register(app)
     from . import bubbles as _bubbles
