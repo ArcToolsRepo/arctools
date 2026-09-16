@@ -142,10 +142,10 @@ export async function selfHeal(env: HealEnv): Promise<HealReport> {
   if (lagNow >= 0) {
     const lagPrev = await kvNum(env, "heal:lag:prev");
     await kvSet(env, "heal:lag:prev", lagNow, 86400);
-    const stuck = lagNow > 20_000 && lagPrev > 0 && lagNow >= lagPrev;
+    const stuck = lagNow > 6_000 && lagPrev > 0 && lagNow >= lagPrev;
     const ns = await bump(env, "indexstuck", !stuck);
     if (ns >= 2) { const a = await railwayRestart(env, "buybot"); actions.push(a); await telegram(env, "index", `index lag ${lagNow} not shrinking (prev ${lagPrev}) → ${a}`, alerts); }
-    else if (lagNow > 20_000) await telegram(env, "indexlag", `index lag ${lagNow} blocks (prev ${lagPrev})`, alerts);
+    else if (lagNow > 1_500) await telegram(env, "indexlag", `index lag ${lagNow} blocks (prev ${lagPrev}) — swaps on the site are late`, alerts);
   }
 
   // --- relay down → restart after 2 misses

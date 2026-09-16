@@ -138,6 +138,9 @@ async def chk_relay(s):
 async def chk_index(s):
     """Swap index cursor must move: > 600 s without a new swap while the chain has blocks = stuck ingest."""
     try:
+        from .insider import _lag
+        if (_lag.get("blocks") or 0) > 900:
+            return False, f"index {_lag.get('blocks')} blocks behind head (phase {_lag.get('phase')}, window {_lag.get('window')})"
         r = await db.fetchone(__import__("sqlalchemy").text("SELECT MAX(ts) AS t FROM swaps"))
         last = int(r["t"] or 0)
         lag = int(time.time()) - last

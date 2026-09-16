@@ -1155,18 +1155,74 @@ async def _window_clock(frm: int, to: int) -> tuple[int, float]:
         return int(time.time()), 0.5
 
 
+_RECEIPT_TOPICS = (V3_SWAP_TOPIC, V2_SWAP_TOPIC, ARCPAD_TRADE_TOPIC, V4_SWAP_TOPIC, V4_INIT_TOPIC)
+_NODE_RPC = os.getenv("PRIMARY_RPC", "http://89.68.166.52:8545")
+
+
+async def _fetch_receipt_logs(frm: int, to: int) -> tuple[list, dict] | None:
+    """All logs of blocks frm..to via eth_getBlockReceipts on our own node (one call per block, batched 25 per HTTP
+    request): no 20 000-result cap, no window sizing, and every tx sender comes for free. Returns
+    ([(topic, [log, …]), …] in the same shape web3.get_logs gives, {tx_hash: from}) or None on any failure
+    (the caller falls back to the getLogs path)."""
+    from hexbytes import HexBytes
+    blocks = list(range(frm, to + 1))
+    by_topic: dict[str, list] = {t: [] for t in _RECEIPT_TOPICS}
+    senders: dict[str, str] = {}
+    want = set(_RECEIPT_TOPICS)
+    try:
+        async with aiohttp.ClientSession() as s:
+            for i in range(0, len(blocks), 25):
+                chunk = blocks[i:i + 25]
+                body = [{"jsonrpc": "2.0", "id": b, "method": "eth_getBlockReceipts", "params": [hex(b)]} for b in chunk]
+                async with s.post(_NODE_RPC, json=body, headers={"Content-Type": "application/json"}, timeout=aiohttp.ClientTimeout(total=30)) as r:
+                    res = await r.json(content_type=None)
+                if not isinstance(res, list) or len(res) != len(chunk):
+                    return None
+                for x in res:
+                    rcs = x.get("result")
+                    if rcs is None:
+                        return None                      # block not available yet / pruned → let getLogs handle it
+                    for rc in rcs:
+                        if rc.get("status") not in ("0x1", 1, True):
+                            continue
+                        frm_addr = (rc.get("from") or "").lower()
+                        txh = (rc.get("transactionHash") or "").lower()
+                        if frm_addr and txh:
+                            senders[txh] = frm_addr
+                        for lg in rc.get("logs") or []:
+                            tps = lg.get("topics") or []
+                            if not tps or tps[0].lower() not in want:
+                                continue
+                            by_topic[tps[0].lower()].append({
+                                "address": lg["address"], "topics": [HexBytes(t) for t in tps], "data": HexBytes(lg.get("data") or "0x"),
+                                "transactionHash": HexBytes(lg["transactionHash"]), "blockNumber": int(lg["blockNumber"], 16),
+                                "logIndex": int(lg["logIndex"], 16), "blockHash": lg.get("blockHash"),
+                            })
+    except Exception as e:  # noqa
+        log.warning("receipt logs %s-%s: %s", frm, to, str(e)[:80])
+        return None
+    return [(t, by_topic[t]) for t in _RECEIPT_TOPICS], senders
+
+
 async def _scan_window(frm: int, to: int, senders: bool = True) -> list[dict] | None:
     """Skan jednego okna blokow -> wiersze swapow (None = blad RPC, powtorzyc)."""
-    async def fetch(topic):
-        try:
-            return topic, await CHAIN.get_logs({"topics": [topic], "fromBlock": frm, "toBlock": to})
-        except Exception as e:  # noqa
-            log.warning("insider get_logs %s %s-%s: %s", topic[:10], frm, to, str(e)[:70])
-            return topic, None
+    rsend: dict[str, str] | None = None
+    results = None
+    if to - frm + 1 <= 600:
+        got = await _fetch_receipt_logs(frm, to)
+        if got:
+            results, rsend = got
+    if results is None:
+        async def fetch(topic):
+            try:
+                return topic, await CHAIN.get_logs({"topics": [topic], "fromBlock": frm, "toBlock": to})
+            except Exception as e:  # noqa
+                log.warning("insider get_logs %s %s-%s: %s", topic[:10], frm, to, str(e)[:70])
+                return topic, None
 
-    results = await asyncio.gather(*[fetch(t) for t in (V3_SWAP_TOPIC, V2_SWAP_TOPIC, ARCPAD_TRADE_TOPIC, V4_SWAP_TOPIC, V4_INIT_TOPIC)])
-    if any(logs is None for _, logs in results):
-        return None
+        results = await asyncio.gather(*[fetch(t) for t in (V3_SWAP_TOPIC, V2_SWAP_TOPIC, ARCPAD_TRADE_TOPIC, V4_SWAP_TOPIC, V4_INIT_TOPIC)])
+        if any(logs is None for _, logs in results):
+            return None
 
     # nowe pule V4 rejestrujemy PRZED dekodowaniem ich swapow z tego samego okna
     for topic, logs in results:
@@ -1212,7 +1268,9 @@ async def _scan_window(frm: int, to: int, senders: bool = True) -> list[dict] | 
     if not decoded:
         return []
 
-    if senders:
+    if rsend is not None:
+        senders, clock = rsend, await _window_clock(frm, to)   # senders came with the receipts
+    elif senders:
         senders, clock = await asyncio.gather(
             _tx_senders(list({lg["transactionHash"] for _, lg, _ in decoded}), {lg["transactionHash"]: lg["blockNumber"] for _, lg, _ in decoded}),
             _window_clock(frm, to))
