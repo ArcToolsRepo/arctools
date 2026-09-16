@@ -262,16 +262,27 @@ async function relay(method: string, params: unknown[]): Promise<unknown> {
   return j.result;
 }
 
-export async function waitReceipt(hash: string, timeoutMs = 60_000): Promise<{ status: string; logs: { address: string; topics: string[] }[] }> {
+/** Receipt polling: our own Arc node first (no per-IP limit — a browser doing 1 poll/s got 429s from the public relay
+ *  and the swap button hung on "Waiting for confirmation…" long after the transaction was mined), relay as backup.
+ *  `onTick` reports elapsed seconds so the UI can say "still pending". */
+export async function waitReceipt(hash: string, timeoutMs = 180_000, onTick?: (s: number) => void):
+Promise<{ status: string; logs: { address: string; topics: string[] }[] }> {
   const t0 = Date.now();
+  const fromNode = async () => {
+    try {
+      const j = (await fetch(`/bot/api/receipt?hash=${hash}`, { signal: AbortSignal.timeout(6000) }).then((r) => r.json())) as
+        { receipt?: { status: string; logs: { address: string; topics: string[] }[] } | null };
+      return j.receipt ?? null;
+    } catch { return null; }
+  };
   while (Date.now() - t0 < timeoutMs) {
-    const r = (await relay("eth_getTransactionReceipt", [hash]).catch(() => null)) as
-      | { status: string; logs: { address: string; topics: string[] }[] }
-      | null;
+    const r = (await fromNode()) ?? ((await relay("eth_getTransactionReceipt", [hash]).catch(() => null)) as
+      { status: string; logs: { address: string; topics: string[] }[] } | null);
     if (r) return r;
-    await new Promise((res) => setTimeout(res, 1200));
+    onTick?.(Math.round((Date.now() - t0) / 1000));
+    await new Promise((res) => setTimeout(res, 1500));
   }
-  throw new Error("timeout waiting for receipt");
+  throw new Error("not confirmed within 3 min — check the explorer, the transaction may still land");
 }
 
 export async function ethCall(to: string, data: string): Promise<string> {

@@ -439,6 +439,7 @@ async def _api_stats_impl(request: web.Request) -> web.Response:
                     d["supply"] = have[d["token"]]
         except Exception:  # noqa
             pass
+    for d in out:                      # own loop: MC must be computed for EVERY row (this was nested in `if miss:`)
         px = float(d["p1"] or 0) / 1e6
         d["mcap"] = (px * d["supply"]) if (d["supply"] and px > 0) else None
         d["ath_mcap"] = (float(d["ath"]) / 1e6 * d["supply"]) if (d["supply"] and d.get("ath")) else None
@@ -494,6 +495,7 @@ async def _api_trending_impl(request: web.Request) -> web.Response:
                     d["supply"] = have[d["token"]]
         except Exception:  # noqa
             pass
+    for d in out:                      # own loop: MC must be computed for EVERY row (this was nested in `if miss:`)
         px = float(d["p1"] or 0) / 1e6
         d["mcap"] = (px * d["supply"]) if (d["supply"] and px > 0) else None
         d["ath_mcap"] = (float(d["ath"]) / 1e6 * d["supply"]) if (d["supply"] and d.get("ath")) else None

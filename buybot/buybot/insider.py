@@ -167,6 +167,11 @@ async def init_tables():
     ]
     for s in stmts:
         await db.execute(text(s))
+    for _stmt in ("ALTER TABLE insider_pools ADD COLUMN IF NOT EXISTS usdc_dec SMALLINT DEFAULT 6",):
+        try:
+            await db.execute(text(_stmt))
+        except Exception:  # noqa
+            pass
     # migracje kolumn (bezpieczne przy restarcie)
     for alter in [
         "ALTER TABLE wallet_stats ADD COLUMN IF NOT EXISTS open_positions INTEGER DEFAULT 0",
@@ -186,13 +191,19 @@ async def init_tables():
 
 # ---------------- pool -> token resolution ----------------
 
+_pool_neg: dict[str, float] = {}
+
+
 async def _resolve_pool(pool: str) -> dict | None:
     key = pool.lower()
     if key in _pool_cache:
         return _pool_cache[key]
-    row = await db.fetchone(text("SELECT token, is0 FROM insider_pools WHERE pool = :p").bindparams(p=key))
+    neg = _pool_neg.get(key)
+    if neg and time.time() - neg < 1800:
+        return None
+    row = await db.fetchone(text("SELECT token, is0, usdc_dec FROM insider_pools WHERE pool = :p").bindparams(p=key))
     if row:
-        info = {"is0": bool(row["is0"]), "token": row["token"]} if row["token"] else None
+        info = {"is0": bool(row["is0"]), "token": row["token"], "usdc_dec": int(row["usdc_dec"] or 6)} if row["token"] else None
         if info is None:
             q = await db.fetchone(text("SELECT token, quote, is0 FROM quote_pools WHERE pool = :p").bindparams(p=key))
             if q:
@@ -230,10 +241,11 @@ async def _resolve_pool(pool: str) -> dict | None:
             info = {"is0": bool(q["is0"]), "token": q["token"], "quote": q["quote"]}
             _pool_cache[key] = info
             return info
+    udec = 6          # verified (and fakes removed) by pool_audit_loop in the background — never in the live path
     await db.execute(text(
-        "INSERT INTO insider_pools (pool, token, is0) VALUES (:p, :t, :i) ON CONFLICT (pool) DO NOTHING"
-    ).bindparams(p=key, t=token, i=1 if is0 else 0))
-    info = {"is0": is0, "token": token} if token else None
+        "INSERT INTO insider_pools (pool, token, is0, usdc_dec) VALUES (:p, :t, :i, :d) ON CONFLICT (pool) DO NOTHING"
+    ).bindparams(p=key, t=token, i=1 if is0 else 0, d=udec))
+    info = {"is0": is0, "token": token, "usdc_dec": udec} if token else None
     _pool_cache[key] = info
     return info
 
@@ -976,7 +988,8 @@ async def backfill_pool(pool: str, blocks: int = BACKFILL_BLOCKS) -> int:
             topic = lg["topics"][0].hex()
             topic = topic if topic.startswith("0x") else "0x" + topic
             dec = _decode(topic, lg, info)
-            if dec and dec["usdc"] > 0 and dec["tokens"] > 0:
+            # sanity: no single swap on Arc moves > $5M; anything above is a decimals/decode artefact
+            if dec and 0 < dec["usdc"] <= 5_000_000 and dec["tokens"] > 0:
                 decoded.append((topic, lg, dec))
         if not decoded:
             continue
@@ -1092,6 +1105,7 @@ def _decode(topic: str, lg, pool_info: dict | None) -> dict | None:
             return None
         token = pool_info["token"]
         tok_is0 = pool_info["is0"]
+        udec = int(pool_info.get("usdc_dec") or 6)      # some pools hold the USDC side in 18-dec (native wei) units
         if topic == V3_SWAP_TOPIC:
             a0 = int.from_bytes(bytes.fromhex(body[0:64]), "big", signed=True)
             a1 = int.from_bytes(bytes.fromhex(body[64:128]), "big", signed=True)
@@ -1108,9 +1122,9 @@ def _decode(topic: str, lg, pool_info: dict | None) -> dict | None:
                     return {"side": "sell", "token": token, "tokens": tok_amt / 1e18, "usdc": usd}
                 return None
             if usdc_amt > 0 and tok_amt < 0:
-                return {"side": "buy", "token": token, "tokens": -tok_amt / 1e18, "usdc": usdc_amt / 1e6}
+                return {"side": "buy", "token": token, "tokens": -tok_amt / 1e18, "usdc": usdc_amt / 10 ** udec}
             if usdc_amt < 0 and tok_amt > 0:
-                return {"side": "sell", "token": token, "tokens": tok_amt / 1e18, "usdc": -usdc_amt / 1e6}
+                return {"side": "sell", "token": token, "tokens": tok_amt / 1e18, "usdc": -usdc_amt / 10 ** udec}
             return None
         # V2: amount0In amount1In amount0Out amount1Out
         a0i, a1i = int(body[0:64], 16), int(body[64:128], 16)
@@ -1120,9 +1134,9 @@ def _decode(topic: str, lg, pool_info: dict | None) -> dict | None:
         tok_in = a0i if tok_is0 else a1i
         tok_out = a0o if tok_is0 else a1o
         if usdc_in > 0 and tok_out > 0:
-            return {"side": "buy", "token": token, "tokens": tok_out / 1e18, "usdc": usdc_in / 1e6}
+            return {"side": "buy", "token": token, "tokens": tok_out / 1e18, "usdc": usdc_in / 10 ** udec}
         if tok_in > 0 and usdc_out > 0:
-            return {"side": "sell", "token": token, "tokens": tok_in / 1e18, "usdc": usdc_out / 1e6}
+            return {"side": "sell", "token": token, "tokens": tok_in / 1e18, "usdc": usdc_out / 10 ** udec}
         return None
     except Exception:  # noqa
         return None
@@ -1282,11 +1296,11 @@ async def _scan_window(frm: int, to: int, senders: bool = True, prefetched: tupl
     await asyncio.gather(*[_resolve_pool(p) for p in pools])
     # a pool whose token0/token1 read failed (RPC 429/503) is not in the cache at all (a genuine non-USDC pool IS cached
     # as None) → this window must be retried, otherwise the first swaps of a brand-new pool vanish for good
-    unresolved = [p for p in pools if p not in _pool_cache]
+    unresolved = [p for p in pools if p not in _pool_cache and p not in _pool_neg]   # liquidity-less (fake) pools are settled, not pending
     if unresolved:
         if len(unresolved) <= 3:
             await asyncio.gather(*[_resolve_pool(p) for p in unresolved])
-            unresolved = [p for p in unresolved if p not in _pool_cache]
+            unresolved = [p for p in unresolved if p not in _pool_cache and p not in _pool_neg]
         if unresolved:
             log.warning("insider window %s-%s: %d pools unresolved (RPC) → retry", frm, to, len(unresolved))
             return None
@@ -1337,6 +1351,57 @@ async def _scan_window(frm: int, to: int, senders: bool = True, prefetched: tupl
             "wallet": senders.get(txh, ""),
         })
     return rows
+
+
+async def pool_audit_loop():
+    """Every 45 s: verify that recently indexed pools really hold USDC. Spam contracts emit fake Swap events and lie in
+    getReserves() — with zero liquidity they produced $10¹⁶ volumes and 10²⁸ market caps. Fakes get their token unset
+    and their swaps deleted. Runs OUT of the ingest path, so it can never delay a block."""
+    await asyncio.sleep(120)
+    seen: set[str] = set()
+    while True:
+        try:
+            rows = await db.fetchall(text("""
+                SELECT p.pool, p.token FROM insider_pools p
+                WHERE p.token IS NOT NULL AND EXISTS (
+                    SELECT 1 FROM swaps s WHERE s.token = p.token AND s.ts > :since) LIMIT 300"""
+            ).bindparams(since=int(time.time()) - 3600))
+            todo = [r for r in rows if r["pool"] not in seen]
+            if not todo:
+                await asyncio.sleep(60); continue
+            dead, alive = [], set()
+            async with aiohttp.ClientSession() as s_:
+                for k in range(0, len(todo), 20):
+                    chunk = todo[k:k + 20]
+                    body = []
+                    for n, r in enumerate(chunk):
+                        body.append({"jsonrpc": "2.0", "id": n * 2, "method": "eth_call", "params": [{"to": USDC, "data": "0x70a08231" + r["pool"][2:].rjust(64, "0")}, "latest"]})
+                        body.append({"jsonrpc": "2.0", "id": n * 2 + 1, "method": "eth_getBalance", "params": [r["pool"], "latest"]})
+                    try:
+                        async with s_.post(_NODE_RPC, json=body, headers={"Content-Type": "application/json"}, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                            res = await resp.json(content_type=None)
+                    except Exception:  # noqa
+                        continue
+                    d = {x.get("id"): (x.get("result") or "0x0") for x in res} if isinstance(res, list) else {}
+                    for n, r in enumerate(chunk):
+                        seen.add(r["pool"])
+                        f = int(d.get(n * 2, "0x0") or "0x0", 16); nat = int(d.get(n * 2 + 1, "0x0") or "0x0", 16)
+                        (alive.add(r["token"]) if max(f / 1e6, nat / 1e18) >= 1 else dead.append(r))
+                    await asyncio.sleep(0.2)
+            if dead:
+                await db.execute(text("UPDATE insider_pools SET token = NULL WHERE pool = ANY(:p)").bindparams(p=[r["pool"] for r in dead]))
+                for r in dead:
+                    _pool_cache[r["pool"]] = None
+                fake = sorted({r["token"] for r in dead} - alive)
+                if fake:
+                    await db.execute(text("DELETE FROM swaps WHERE token = ANY(:t)").bindparams(t=fake))
+                    await db.execute(text("DELETE FROM token_supply WHERE token = ANY(:t)").bindparams(t=fake))
+                log.warning("pool audit: %s pools without liquidity, %s fake tokens purged", len(dead), len(fake))
+            if len(seen) > 20000:
+                seen.clear()
+        except Exception as e:  # noqa
+            log.warning("pool audit: %s", e)
+        await asyncio.sleep(45)
 
 
 async def gap_fill_loop():
@@ -1860,6 +1925,32 @@ def _tok(request: web.Request) -> str | None:
     return t if t.startswith("0x") and len(t) == 42 else None
 
 
+
+async def api_receipt(request: web.Request) -> web.Response:
+    """GET /api/receipt?hash=0x… — transaction receipt straight from our own Arc node. The site polls this while a
+    swap is pending: the public relay rate-limits a browser doing 1 poll/s (the sell button hung on
+    "Waiting for confirmation…" while the transaction was already mined)."""
+    h = (request.query.get("hash") or "").strip().lower()
+    if not (h.startswith("0x") and len(h) == 66):
+        return web.json_response({"error": "bad hash"}, status=400, headers=API_CORS)
+    out = {"hash": h, "receipt": None, "tx": None}
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.post(_NODE_RPC, headers={"Content-Type": "application/json"}, json=[
+                {"jsonrpc": "2.0", "id": 1, "method": "eth_getTransactionReceipt", "params": [h]},
+                {"jsonrpc": "2.0", "id": 2, "method": "eth_getTransactionByHash", "params": [h]},
+            ], timeout=aiohttp.ClientTimeout(total=6)) as r:
+                res = await r.json(content_type=None)
+        byid = {x.get("id"): x.get("result") for x in res} if isinstance(res, list) else {}
+        rc = byid.get(1)
+        out["receipt"] = ({"status": rc.get("status"), "blockNumber": rc.get("blockNumber"), "gasUsed": rc.get("gasUsed"),
+                           "logs": [{"address": l.get("address"), "topics": l.get("topics"), "data": l.get("data")} for l in (rc.get("logs") or [])]}
+                          if rc else None)
+        out["tx"] = {"pending": True} if (byid.get(2) and not rc) else ({"pending": False} if rc else None)
+    except Exception as e:  # noqa
+        out["error"] = str(e)[:100]
+    return web.json_response(out, headers={**API_CORS, "Cache-Control": "no-store"})
+
 async def api_ohlc(request: web.Request) -> web.Response:
     """Swiece z wlasnego indeksu swapow (caly Arc). price1m = USDC za 1M tokenow."""
     token = _tok(request)
@@ -2146,6 +2237,7 @@ async def start_api():
     app.router.add_get("/api/insiders", api_board)
     app.router.add_get("/api/insider/{wallet}", api_wallet)
     app.router.add_get("/api/ohlc", api_ohlc)
+    app.router.add_get("/api/receipt", api_receipt)
     app.router.add_get("/udf/config", udf_config); app.router.add_get("/udf/time", udf_time); app.router.add_get("/udf/symbols", udf_symbols)
     app.router.add_get("/udf/search", udf_search); app.router.add_get("/udf/history", udf_history)
     app.router.add_get("/api/trades", api_trades)

@@ -135,7 +135,7 @@ def decode_v4_swap(token_is_0: bool, lg, usdc_dec: int = 18) -> dict | None:
         return None
 
 
-def decode_swap(kind: str, token: str, lg) -> dict | None:
+def decode_swap(kind: str, token: str, lg, usdc_dec: int = 6) -> dict | None:
     """Returns {usdc, tokens} for a BUY (USDC in -> token out), else None."""
     data = lg["data"]
     body = (data.hex() if hasattr(data, "hex") else str(data)).replace("0x", "")
@@ -161,7 +161,7 @@ def decode_swap(kind: str, token: str, lg) -> dict | None:
             a1 = int.from_bytes(bytes.fromhex(body[64:128]), "big", signed=True)
             tok_amt, usdc_amt = (a0, a1) if token_is_0 else (a1, a0)
             if usdc_amt > 0 and tok_amt < 0:  # USDC into pool, token out => buy
-                return {"usdc": usdc_amt / 1e6, "tokens": -tok_amt / 1e18}
+                return {"usdc": usdc_amt / 10 ** usdc_dec, "tokens": -tok_amt / 1e18}
             return None
         # v2: amount0In amount1In amount0Out amount1Out
         a0i = int(body[0:64], 16)
@@ -171,7 +171,7 @@ def decode_swap(kind: str, token: str, lg) -> dict | None:
         usdc_in = a1i if token_is_0 else a0i
         tok_out = a0o if token_is_0 else a1o
         if usdc_in > 0 and tok_out > 0:
-            return {"usdc": usdc_in / 1e6, "tokens": tok_out / 1e18}
+            return {"usdc": usdc_in / 10 ** usdc_dec, "tokens": tok_out / 1e18}
         return None
     except Exception:  # noqa
         return None

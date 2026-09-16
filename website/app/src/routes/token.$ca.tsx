@@ -246,6 +246,8 @@ function TokenPage() {
   const [slippage, setSlippage] = useState(5);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [txToast, setTxToast] = useState<{ kind: "pending" | "ok" | "error"; hash: string; text: string } | null>(null);
+  useEffect(() => { if (txToast && txToast.kind !== "pending") { const t = setTimeout(() => setTxToast(null), 12_000); return () => clearTimeout(t); } }, [txToast]);
   const [err, setErr] = useState<string | null>(null);
   const [balUsdc, setBalUsdc] = useState<number | null>(null);
   const [balTok, setBalTok] = useState<number | null>(null);
@@ -597,16 +599,23 @@ function TokenPage() {
           hash = await sendTx({ data: SEL.routerSell + p32(ca) + pnum(fee) + pnum(tokIn) + pnum(minOut) + pnum(deadline), from, to: SWAP_FEE_ROUTER });
         }
       }
+      // pop a notification the moment the transaction is broadcast, then keep the user informed while it confirms
+      setTxToast({ kind: "pending", hash, text: `${side === "buy" ? "Buy" : "Sell"} sent — waiting for the block…` });
       setBusy("Waiting for confirmation...");
-      const r = await waitReceipt(hash);
-      if (Number(r.status) !== 1) throw new Error("Transaction reverted (slippage?).");
+      const r = await waitReceipt(hash, 180_000, (secs) => {
+        if (secs >= 15) setTxToast({ kind: "pending", hash, text: `Still pending (${secs}s) — the network is slow, the order is live` });
+      });
+      if (Number(r.status) !== 1) { setTxToast({ kind: "error", hash, text: "Transaction reverted — try a higher slippage" }); throw new Error("Transaction reverted (slippage?)."); }
+      setTxToast({ kind: "ok", hash, text: `${side === "buy" ? "Bought" : "Sold"} ${info.symbol} — confirmed` });
       setMsg(`${side === "buy" ? "Bought" : "Sold"} ${info.symbol} — confirmed.`);
       if (feeUsdForRef > 0) creditRef(from, hash, feeUsdForRef);
       setAmount("");
       void refreshBalances(from);
       setTimeout(() => { void loadSide(); void loadCandles(); }, 2500);
     } catch (e) {
-      setErr((e as Error).message.slice(0, 200));
+      const m = (e as Error).message.slice(0, 200);
+      setErr(m);
+      setTxToast((t) => (t?.kind === "pending" ? { kind: "error", hash: t.hash, text: m } : t));
     } finally {
       setBusy(null);
     }
@@ -992,6 +1001,22 @@ function TokenPage() {
           )}
         </div>
       </section>
-    </main>
+          {txToast && (
+        <div className="arc-mono" role="status" style={{
+          position: "fixed", right: 14, bottom: 14, zIndex: 1200, maxWidth: 360, padding: "12px 14px", borderRadius: 12,
+          background: txToast.kind === "ok" ? "rgba(16,42,30,0.97)" : txToast.kind === "error" ? "rgba(48,18,18,0.97)" : "rgba(16,22,34,0.97)",
+          border: "1px solid " + (txToast.kind === "ok" ? "#22c580" : txToast.kind === "error" ? "#f0534f" : "var(--arc-cobalt)"),
+          boxShadow: "0 10px 30px rgba(0,0,0,0.45)", fontSize: 12, lineHeight: 1.45,
+        }}>
+          <div style={{ color: txToast.kind === "ok" ? "#22c580" : txToast.kind === "error" ? "#f0534f" : "var(--arc-ink)", fontWeight: 700 }}>
+            {txToast.kind === "ok" ? "✓ " : txToast.kind === "error" ? "✕ " : "⏳ "}{txToast.text}
+          </div>
+          <div style={{ marginTop: 6, display: "flex", gap: 10, alignItems: "center" }}>
+            <a href={`https://arc-scan.org/tx/${txToast.hash}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)" }} target="_blank">explorer ↗</a>
+            <button onClick={() => setTxToast(null)} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 6, color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "2px 8px" }} type="button">dismiss</button>
+          </div>
+        </div>
+      )}
+</main>
   );
 }
