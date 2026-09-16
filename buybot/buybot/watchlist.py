@@ -191,7 +191,51 @@ async def _send_alert(tg_id: int, sw: dict):
 
 # ---------------- intel API ----------------
 
+# ---- single-flight response cache -------------------------------------------------------------------------------
+# /api/trending, /api/stats, /api/movers run window functions over the whole swaps table. Uncached, every Terminal
+# load (plus warmers, plus the self-heal) ran them again → 40+ concurrent 60 s queries, COMMITs waiting 45 s, 502s
+# everywhere. One computation per key per TTL; concurrent callers await the same future.
+_rc: dict[str, tuple[float, object]] = {}
+_rc_inflight: dict[str, asyncio.Future] = {}
+
+
+async def _resp_body(coro) -> bytes:
+    r = await coro
+    return r.body if isinstance(r.body, (bytes, bytearray)) else bytes(r.body)
+
+
+async def _cached(key: str, ttl: float, fn):
+    now = time.time()
+    hit = _rc.get(key)
+    if hit and now - hit[0] < ttl:
+        return hit[1]
+    fut = _rc_inflight.get(key)
+    if fut is None:
+        fut = asyncio.get_event_loop().create_future(); _rc_inflight[key] = fut
+        try:
+            val = await fn()
+            _rc[key] = (time.time(), val); fut.set_result(val)
+        except Exception as e:  # noqa
+            fut.set_exception(e)
+            if hit:                                   # stale-while-error: serve the last good value
+                return hit[1]
+            raise
+        finally:
+            _rc_inflight.pop(key, None)
+        if len(_rc) > 500:
+            for k in sorted(_rc, key=lambda k: _rc[k][0])[:100]:
+                _rc.pop(k, None)
+        return val
+    return await fut
+
+
 async def api_whales(request: web.Request) -> web.Response:
+    key = "whales:" + request.query_string
+    body = await _cached(key, 15, lambda: _resp_body(_api_whales_impl(request)))
+    return web.Response(body=body, content_type="application/json", headers=API_CORS)
+
+
+async def _api_whales_impl(request: web.Request) -> web.Response:
     """Largest swaps chain-wide in the last N minutes, with insider rank when the wallet is ranked."""
     mins = min(1440, int(request.query.get("minutes", "60")))
     min_usd = float(request.query.get("min_usd", "250"))
@@ -214,6 +258,12 @@ async def api_whales(request: web.Request) -> web.Response:
 
 
 async def api_movers(request: web.Request) -> web.Response:
+    key = "movers:" + request.query_string
+    body = await _cached(key, 30, lambda: _resp_body(_api_movers_impl(request)))
+    return web.Response(body=body, content_type="application/json", headers=API_CORS)
+
+
+async def _api_movers_impl(request: web.Request) -> web.Response:
     """Tokens with the biggest price change over the window (needs >= 3 trades and >= $50 volume in window)."""
     mins = min(1440, int(request.query.get("minutes", "60")))
     now = int(time.time())
@@ -320,6 +370,12 @@ async def api_wallet_trades(request: web.Request) -> web.Response:
 
 
 async def api_stats(request: web.Request) -> web.Response:
+    key = "stats:" + request.query_string
+    body = await _cached(key, 20, lambda: _resp_body(_api_stats_impl(request)))
+    return web.Response(body=body, content_type="application/json", headers=API_CORS)
+
+
+async def _api_stats_impl(request: web.Request) -> web.Response:
     """GET /api/stats?tokens=a,b,…&minutes=60 — trending-shaped stats for the GIVEN tokens (≤100), so every Terminal row
     gets vol / txs / chg / ATH regardless of whether it made the top-N by volume. Lifetime ATH + first trade always filled."""
     from sqlalchemy import bindparam
@@ -364,6 +420,12 @@ async def api_stats(request: web.Request) -> web.Response:
 
 
 async def api_trending(request: web.Request) -> web.Response:
+    key = "trending:" + request.query_string
+    body = await _cached(key, 20, lambda: _resp_body(_api_trending_impl(request)))
+    return web.Response(body=body, content_type="application/json", headers=API_CORS)
+
+
+async def _api_trending_impl(request: web.Request) -> web.Response:
     """GMGN-style trending: per token in the window — volume, buys/sells, traders, price change, last price, ATH price,
     first trade time, supply (for MC). Sorted by window volume."""
     from .insider import total_supply_nowait

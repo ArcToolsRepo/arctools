@@ -1102,7 +1102,7 @@ async def _tx_senders(hashes: list, blocks: dict | None = None) -> dict[str, str
     (one call per block instead of one per tx — a 2k-block window with 230 swaps went from ~80 s to a few seconds)."""
     out: dict[str, str] = {}
     want = {_hx(h) for h in hashes}
-    sem = asyncio.Semaphore(12)
+    sem = asyncio.Semaphore(32)
     if blocks:
         by_block: dict[int, set[str]] = {}
         for h, b in blocks.items():
@@ -1282,7 +1282,7 @@ async def sender_fill_loop():
             by_block: dict[int, list[str]] = {}
             for r in rows:
                 by_block.setdefault(int(r["block"]), []).append(r["tx"].lower())
-            sem = asyncio.Semaphore(12); done = 0
+            sem = asyncio.Semaphore(4); done = 0
 
             async def one(b: int, txs: list[str]):
                 nonlocal done
@@ -1292,13 +1292,9 @@ async def sender_fill_loop():
                     except Exception:  # noqa
                         return
                     found = {(_hx(t["hash"])).lower(): (t["from"] or "").lower() for t in blk["transactions"]}
-                    for h in txs:
-                        w = found.get(h)
-                        if w:
-                            await db.execute(text("UPDATE swaps SET wallet = :w WHERE tx = :h AND wallet = ''").bindparams(w=w, h=h)); done += 1
-                        else:
-                            # tx not in this block (reorg / wrong block) → mark so we don't loop on it forever
-                            await db.execute(text("UPDATE swaps SET wallet = '0x' WHERE tx = :h AND wallet = ''").bindparams(h=h))
+                    rows_ = [{"w": found.get(h) or "0x", "h": h} for h in txs]     # '0x' = tx not in block (reorg) → never retried
+                    await db.execute_many(text("UPDATE swaps SET wallet = :w WHERE tx = :h AND wallet = ''"), rows_)
+                    done += sum(1 for r_ in rows_ if r_["w"] != "0x")
             await asyncio.gather(*[one(b, t) for b, t in by_block.items()])
             log.info("sender fill: %s wallets from %s blocks (%s rows pending)", done, len(by_block), len(rows))
         except Exception as e:  # noqa
@@ -1391,6 +1387,7 @@ async def ingest_loop():
                 await asyncio.sleep(0.1)
             else:
                 frm, to = cursor + 1, min(head, cursor + LIVE_WINDOW)
+                _lag.update(phase="scan", since=time.time(), window=f"{frm}-{to}")
                 res = await asyncio.wait_for(_scan_window(frm, to, senders=(head - cursor) < 3_000), timeout=300)
                 if res is None:
                     await asyncio.sleep(3)
@@ -1639,11 +1636,14 @@ async def api_wallet(request: web.Request) -> web.Response:
 
 
 async def api_health(_):
-    n = await db.fetchone(text("SELECT COUNT(*) AS n FROM swaps"))
-    p = await db.fetchone(text("SELECT COUNT(*) AS all_, COUNT(token) AS usdc FROM insider_pools"))
-    cur = await db.kv_get("insider_cursor")
-    return web.json_response({"ok": True, "swaps": n["n"], "pools": p["all_"], "usdc_pools": p["usdc"],
-                              "null_pools": p["all_"] - p["usdc"], "cursor": cur}, headers=API_CORS)
+    # Railway healthcheck + self-heal probe: must be cheap. COUNT(*) on a multi-million-row swaps table took 15 s+
+    # under ingest load and blocked the DB pool for everyone — use the planner estimate instead.
+    try:
+        n = await asyncio.wait_for(db.fetchone(text("SELECT reltuples::bigint AS n FROM pg_class WHERE relname = 'swaps'")), 3)
+        cur = await asyncio.wait_for(db.kv_get("insider_cursor"), 3)
+        return web.json_response({"ok": True, "swaps_est": int(n["n"]) if n else None, "cursor": cur, "lag": _lag.get("blocks")}, headers=API_CORS)
+    except Exception as e:  # noqa
+        return web.json_response({"ok": False, "error": str(e)[:120]}, status=503, headers=API_CORS)
 
 
 # ---------------- token page API: OHLC / trades / stats ----------------

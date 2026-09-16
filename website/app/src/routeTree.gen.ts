@@ -43,6 +43,7 @@ import { Route as ApiRefCreditRouteImport } from './routes/api/ref-credit'
 import { Route as ApiPadlistRouteImport } from './routes/api/padlist'
 import { Route as ApiPadMetaRouteImport } from './routes/api/pad-meta'
 import { Route as ApiHelpRouteImport } from './routes/api/help'
+import { Route as ApiHealRouteImport } from './routes/api/heal'
 import { Route as ApiPadLogoCaRouteImport } from './routes/api/pad-logo.$ca'
 import { Route as ApiLogoIpfsCidRouteImport } from './routes/api/logo.ipfs.$cid'
 
@@ -216,6 +217,11 @@ const ApiHelpRoute = ApiHelpRouteImport.update({
   path: '/api/help',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiHealRoute = ApiHealRouteImport.update({
+  id: '/api/heal',
+  path: '/api/heal',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPadLogoCaRoute = ApiPadLogoCaRouteImport.update({
   id: '/api/pad-logo/$ca',
   path: '/api/pad-logo/$ca',
@@ -245,6 +251,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/trade': typeof TradeRoute
   '/wallets': typeof WalletsRoute
+  '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
   '/api/pad-meta': typeof ApiPadMetaRoute
   '/api/padlist': typeof ApiPadlistRoute
@@ -283,6 +290,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/trade': typeof TradeRoute
   '/wallets': typeof WalletsRoute
+  '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
   '/api/pad-meta': typeof ApiPadMetaRoute
   '/api/padlist': typeof ApiPadlistRoute
@@ -322,6 +330,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/trade': typeof TradeRoute
   '/wallets': typeof WalletsRoute
+  '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
   '/api/pad-meta': typeof ApiPadMetaRoute
   '/api/padlist': typeof ApiPadlistRoute
@@ -362,6 +371,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/trade'
     | '/wallets'
+    | '/api/heal'
     | '/api/help'
     | '/api/pad-meta'
     | '/api/padlist'
@@ -400,6 +410,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/trade'
     | '/wallets'
+    | '/api/heal'
     | '/api/help'
     | '/api/pad-meta'
     | '/api/padlist'
@@ -438,6 +449,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/trade'
     | '/wallets'
+    | '/api/heal'
     | '/api/help'
     | '/api/pad-meta'
     | '/api/padlist'
@@ -477,6 +489,7 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TradeRoute: typeof TradeRoute
   WalletsRoute: typeof WalletsRoute
+  ApiHealRoute: typeof ApiHealRoute
   ApiHelpRoute: typeof ApiHelpRoute
   ApiPadMetaRoute: typeof ApiPadMetaRoute
   ApiPadlistRoute: typeof ApiPadlistRoute
@@ -738,6 +751,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHelpRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/heal': {
+      id: '/api/heal'
+      path: '/api/heal'
+      fullPath: '/api/heal'
+      preLoaderRoute: typeof ApiHealRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/pad-logo/$ca': {
       id: '/api/pad-logo/$ca'
       path: '/api/pad-logo/$ca'
@@ -773,6 +793,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TradeRoute: TradeRoute,
   WalletsRoute: WalletsRoute,
+  ApiHealRoute: ApiHealRoute,
   ApiHelpRoute: ApiHelpRoute,
   ApiPadMetaRoute: ApiPadMetaRoute,
   ApiPadlistRoute: ApiPadlistRoute,

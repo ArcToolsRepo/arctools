@@ -23,6 +23,8 @@
   "compatibility_date": "2025-05-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  // self-heal: probe + repair every 20 min (src/lib/self-heal.ts, report at /api/heal)
+  "triggers": { "crons": ["*/20 * * * *"] },
 
   // SSR asset routing: static files in dist/client serve directly (asset-first);
   // any non-asset path — incl. "/" — falls through to the SSR Worker (no

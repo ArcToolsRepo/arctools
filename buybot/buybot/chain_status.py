@@ -148,10 +148,22 @@ async def loop():
         await asyncio.sleep(CHECK_S)
 
 
+_mem: dict | None = None
+
+
 async def api_status(request):
     """GET /api/chain-status — what the site banner reads (down flag, since, last block)."""
     from aiohttp import web
-    st = await _load()
+    # served from memory (the 30 s loop keeps _state fresh): the DB pool may be busy with ingest and this endpoint is
+    # read by every page load (SSR banner) — it must never wait on Postgres
+    global _mem
+    try:
+        if _mem and time.time() - _mem.get("_ts", 0) < 30:
+            st = _mem
+        else:
+            st = dict(await asyncio.wait_for(_load(), 3)); st["_ts"] = time.time(); _mem = st
+    except Exception:  # noqa
+        st = _mem or {}
     now = time.time()
     out = {"down": bool(st.get("down")), "since": st.get("since"), "last_block": st.get("last_block"),
            "stale_s": int(now - float(st.get("last_block_ts") or now)), "live_since": st.get("live_since"), "ts": int(now)}

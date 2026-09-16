@@ -1,1 +1,9 @@
-{"$schema":"https://railway.app/railway.schema.json","deploy":{"startCommand":"python main.py"}}
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "deploy": {
+    "startCommand": "python main.py",
+    "healthcheckPath": "/stats",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "ALWAYS"
+  }
+}

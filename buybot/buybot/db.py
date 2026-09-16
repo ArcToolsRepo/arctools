@@ -10,7 +10,7 @@ if _url.startswith("postgres://"):
 elif _url.startswith("postgresql://"):
     _url = _url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-engine = create_async_engine(_url, pool_pre_ping=True)
+engine = create_async_engine(_url, pool_pre_ping=True, pool_size=20, max_overflow=20, pool_timeout=20)
 meta = MetaData()
 
 tracks = Table("tracks", meta,

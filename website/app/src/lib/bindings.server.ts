@@ -30,6 +30,10 @@ type AppEnv = {
   RELAY_KEY?: string;
   OPENROUTER_API_KEY?: string;
   REF_AUTH?: string;
+  RAILWAY_TOKEN_BUYBOT?: string;
+  RAILWAY_TOKEN_ARCTOOLS?: string;
+  TG_ALERT_TOKEN?: string;
+  TG_ADMIN_ID?: string;
 };
 
 export function bindings(): AppEnv {
