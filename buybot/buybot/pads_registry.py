@@ -52,6 +52,7 @@ FACTORIES: dict[str, dict] = {
 # FACTORIES so the Terminal never lists tokens nobody can buy. Going live = move the entry into FACTORIES and fill "factories".
 PENDING_FACTORIES: dict[str, dict] = {
     "arcfun":   {"label": "Arcfun",      "url": "https://arcfun.app",    "twitter": None, "factories": [], "model": "USDC bonding curve → DEX", "status": "site shows placeholder tokens only (16.09)"},
+    "o1":       {"label": "o1 Launchpad", "url": "https://o1launchpad.com", "twitter": "o1_exchange", "factories": [], "model": "single-sided Uniswap v4 launch, crypto- and stock-paired markets", "status": "docs name Arc as a creation target, but the public API needs an x-api-key and lists only Base 8453 / Monad 143 / Robinhood 4663; no Arc factory confirmed on-chain yet (16.09)"},
     "arclaunch":{"label": "ARCLaunch",   "url": "https://arclaunch.fun", "twitter": None, "factories": [], "model": "?", "status": "no tokens / contracts visible (16.09)"},
 }
 
