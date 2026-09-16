@@ -34,6 +34,7 @@ export function scheduleBeacon() {
       if (isNum) data++;
       else if (isPh) empty++;
     }
+    if (data + empty < 6) return;                    // prose pages (landing) have nothing to measure
     const body = JSON.stringify({ page: key, data, empty, lang: document.documentElement.lang || "en", w: window.innerWidth, ts: Math.floor(Date.now() / 1000) });
     try {
       if (!navigator.sendBeacon?.(`${BOT_API}/api/ui-beacon`, new Blob([body], { type: "application/json" }))) {

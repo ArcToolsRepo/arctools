@@ -88,8 +88,10 @@ async def api_ui_beacon(req: web.Request):
 def ui_summary(window_s: int = 1800) -> dict:
     now = time.time(); out = {}
     for page, d in UI.items():
-        rows = [r for r in d if now - r[0] < window_s]
-        if not rows:
+        # a view with fewer than 6 countable cells (the landing page is prose; the nav's "—" balance placeholder alone
+        # made "/" look 48 % empty) says nothing about data rendering → not a sample
+        rows = [r for r in d if now - r[0] < window_s and (r[1] + r[2]) >= 6]
+        if not rows or page == "/":
             continue
         data = sum(r[1] for r in rows); empty = sum(r[2] for r in rows)
         out[page] = {"views": len(rows), "data": data, "empty": empty, "empty_ratio": round(empty / max(1, data + empty), 3), "last_age_s": int(now - rows[-1][0])}
