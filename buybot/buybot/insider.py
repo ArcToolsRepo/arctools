@@ -538,7 +538,7 @@ async def v4_quote_backfill():
             decoded = []
             for lg in logs:
                 dec = _decode_v4(lg, await _v4_pool(pid))
-                if dec and dec["usdc"] > 0 and dec["tokens"] > 0:
+                if dec and _sane_print(dec):
                     decoded.append((lg, dec))
             if not decoded:
                 continue
@@ -618,7 +618,7 @@ async def v4_bootstrap():
         decoded = []
         for lg in logs:
             dec = _decode_v4(lg, await _v4_pool(_topic_hex(lg["topics"][1])))
-            if dec and dec["usdc"] > 0 and dec["tokens"] > 0:
+            if dec and _sane_print(dec):
                 decoded.append((lg, dec))
         if not decoded:
             continue
@@ -989,7 +989,7 @@ async def backfill_pool(pool: str, blocks: int = BACKFILL_BLOCKS) -> int:
             topic = topic if topic.startswith("0x") else "0x" + topic
             dec = _decode(topic, lg, info)
             # sanity: no single swap on Arc moves > $5M; anything above is a decimals/decode artefact
-            if dec and 0 < dec["usdc"] <= 5_000_000 and dec["tokens"] > 0:
+            if dec and _sane_print(dec):
                 decoded.append((topic, lg, dec))
         if not decoded:
             continue
@@ -1081,6 +1081,19 @@ async def repair_loop():
         except Exception as e:  # noqa
             log.warning("insider repair: %s", e)
         await asyncio.sleep(3600)
+
+
+def _sane_print(dec: dict | None) -> bool:
+    """One gate for every ingest path. A single Arc swap never moves more than $5M, and no token trades above
+    $10 000 each ($1e10 per 1M). Anything past that is a decode artefact — a pool whose quote side is an 18-dec
+    token read as 6-dec USDC inflates by exactly 1e12, and one such print poisons volume, market cap, the 24h
+    change and the top-10 ticker ($4.37e23M / +12 943 753 644 149 644%). The live receipts path had no guard at
+    all: only the getLogs path did, so garbage arrived precisely where it is most visible."""
+    if not dec or dec.get("usdc", 0) <= 0 or dec.get("tokens", 0) <= 0:
+        return False
+    if dec["usdc"] > 5_000_000:
+        return False
+    return dec["usdc"] / dec["tokens"] * 1e6 <= 1e10
 
 
 def _decode(topic: str, lg, pool_info: dict | None) -> dict | None:
@@ -1426,7 +1439,7 @@ async def _scan_window(frm: int, to: int, senders: bool = True, prefetched: tupl
             else:
                 info = None if topic == ARCPAD_TRADE_TOPIC else _pool_cache.get(lg["address"].lower())
                 dec = _decode(topic, lg, info)
-            if dec and dec["usdc"] > 0 and dec["tokens"] > 0:
+            if dec and _sane_print(dec):
                 decoded.append((topic, lg, dec))
     if not decoded:
         return []
