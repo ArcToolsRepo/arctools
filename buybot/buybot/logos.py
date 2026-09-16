@@ -290,7 +290,7 @@ async def init():
             pass
 
 
-async def hunt_once(limit: int = 150) -> tuple[int, int]:
+async def hunt_once(limit: int = 400) -> tuple[int, int]:
     """Tokens that traded in the last 7 days, no logo, not checked in the last 6 h — most volume first."""
     now = int(time.time())
     rows = await db.fetchall(text("""
@@ -303,12 +303,20 @@ async def hunt_once(limit: int = 150) -> tuple[int, int]:
     if not rows:
         return 0, 0
     found = 0
-    sem = asyncio.Semaphore(6)
+    sem = asyncio.Semaphore(12)
     async with aiohttp.ClientSession() as s:
         async def one(r):
             nonlocal found
             async with sem:
                 u, src = await resolve(s, r["token"], r["launchpad"], r["x_handle"])
+                if not u:
+                    try:        # last resort: the contract's own getters / a URL literal sitting in its bytecode
+                        from .contract_socials import read_contract
+                        got = await read_contract(s, r["token"])
+                        if got.get("logo") and await _verify(s, got["logo"]):
+                            u, src = got["logo"], "contract"
+                    except Exception:  # noqa
+                        pass
             stats["checked"] += 1
             if u:
                 found += 1; stats["found"] += 1; stats["by"][src] = stats["by"].get(src, 0) + 1
@@ -335,7 +343,7 @@ async def hunt_loop():
                 log.info("logos: %s/%s found (%s)", f, n, stats["by"])
         except Exception as e:  # noqa
             log.warning("logos: %s", e)
-        await asyncio.sleep(45)
+        await asyncio.sleep(25)
 
 
 async def api_logo_stats(_req):

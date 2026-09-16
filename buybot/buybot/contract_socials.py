@@ -27,6 +27,9 @@ from sqlalchemy import text
 from . import db
 from .logos import _decode_string, _ipfs_to_http, _rpc, _sel, _verify
 
+SYM_SEL = "0x95d89b41"      # symbol()
+NAME_SEL = "0x06fdde03"     # name()
+
 log = logging.getLogger("csocials")
 
 GETTERS = ["website()", "telegram()", "twitter()", "social()", "socials()", "links()",
@@ -108,6 +111,21 @@ async def sweep_once(limit: int = 60) -> tuple[int, int]:
                 got = await read_contract(s, tok)
             except Exception:  # noqa
                 got = {}
+            # the watchdog counts rows whose symbol is still a hex stub as "garbled" — the contract knows better
+            try:
+                sym = _decode_string(await _rpc(s, "eth_call", [{"data": SYM_SEL, "to": tok}, "latest"], 8))
+                nam = _decode_string(await _rpc(s, "eth_call", [{"data": NAME_SEL, "to": tok}, "latest"], 8))
+                if sym or nam:
+                    await db.execute(text(
+                        "UPDATE social_tokens SET symbol = COALESCE(NULLIF(symbol, ''), :s), name = COALESCE(NULLIF(name, ''), :n) WHERE token = :t"
+                    ).bindparams(t=tok, s=(sym or None) and sym[:32], n=(nam or None) and nam[:80]))
+                    if sym:
+                        await db.execute(text(
+                            "INSERT INTO token_symbols (token, symbol) VALUES (:t, :s) ON CONFLICT (token) DO UPDATE "
+                            "SET symbol = COALESCE(NULLIF(token_symbols.symbol, ''), EXCLUDED.symbol)"
+                        ).bindparams(t=tok, s=sym[:32]))
+            except Exception:  # noqa
+                pass
             logo = got.get("logo")
             if logo and not await _verify(s, logo):
                 logo = None

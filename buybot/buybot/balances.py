@@ -135,12 +135,22 @@ async def api_rich(request: web.Request) -> web.Response:
 
 
 async def api_balance_moves(request: web.Request) -> web.Response:
-    """Largest native-USDC balance changes between snapshots (deposits/withdrawals/CEX flows, not only DEX)."""
+    """Largest native-USDC balance changes between snapshots (deposits/withdrawals/CEX flows, not only DEX).
+
+    This is a whole-table scan with a correlated COUNT per row and took 14 s at hours=336 — the Profile page
+    waited on it before painting. Cached for 90 s behind a single flight, so one slow query serves everyone."""
+    from .watchlist import _cached, _resp_body
+    body = await _cached("balmoves:" + request.query_string, 90, lambda: _resp_body(_api_balance_moves_impl(request)))
+    return web.Response(body=body, content_type="application/json",
+                        headers={**API_CORS, "Cache-Control": "public, max-age=60, stale-while-revalidate=180"})
+
+
+async def _api_balance_moves_impl(request: web.Request) -> web.Response:
     hours = min(336, int(request.query.get("hours", "24")))
     min_abs = float(request.query.get("min_usd", "1000"))
     rows = await db.fetchall(text("""
         SELECT h.wallet, h.ts, h.balance, h.delta, ws.pnl_total,
-               (SELECT COUNT(*) FROM swaps s WHERE s.wallet = h.wallet) AS swaps
+               COALESCE(ws.trades, 0) AS swaps
         FROM balance_hist h LEFT JOIN wallet_stats ws ON ws.wallet = h.wallet AND ws.range = '30d'
         WHERE h.ts > :s AND ABS(h.delta) >= :m ORDER BY ABS(h.delta) DESC LIMIT 100""").bindparams(s=int(time.time()) - hours * 3600, m=min_abs))
     return web.json_response({"hours": hours, "rows": [dict(r) for r in rows]}, headers=API_CORS)

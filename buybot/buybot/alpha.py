@@ -96,9 +96,31 @@ def score_token(token: str, sw: list[dict], now: int, insiders: dict[str, float]
     b_prev = {s["wallet"] for s in buys if now - 3600 < s["ts"] <= now - 1800}
     if len(b_now) >= 4:
         ratio = len(b_now) / max(1, len(b_prev))
-        if ratio >= 1.5:
-            p = min(20.0, 6.0 * math.log2(ratio) + min(8.0, len(b_now) / 3)); pts += p
+        if ratio >= 1.3:
+            p = min(26.0, 7.0 * math.log2(max(1.01, ratio)) + min(12.0, len(b_now) / 2.5)); pts += p
             reasons.append(f"unique buyers ×{ratio:.1f} in 30 min ({len(b_now)} wallets)")
+    elif len(b_now) >= 8:                                   # broad participation even without acceleration
+        pts += min(10.0, len(b_now) / 2.0); reasons.append(f"{len(b_now)} distinct buyers in 30 min")
+
+    # ---- volume surge (0-18): this 6 h window against the previous one. The screener had no volume component at
+    # all, so a token doing 10x its usual turnover scored zero unless a tracked wallet happened to touch it.
+    half = now - LOOKBACK // 2
+    v_late = sum(s["usdc"] for s in sw if s["ts"] > half)
+    v_early = sum(s["usdc"] for s in sw if s["ts"] <= half)
+    if v_late > 0 and len(buys) >= 4:
+        surge = v_late / max(v_early, max(25.0, v_late / 40))
+        if surge >= 1.8:
+            p = min(18.0, 6.0 * math.log2(surge)); pts += p
+            reasons.append(f"volume ×{surge:.1f} vs the previous 3 h (${v_late:,.0f})")
+
+    # ---- fresh wallets (0-10): buyers that had never touched this token before this window
+    first_seen = {}
+    for s2 in sw:
+        first_seen.setdefault(s2["wallet"], s2["ts"])
+    newcomers = sum(1 for w2, t2 in first_seen.items() if t2 > now - 3600 and w2 in {s3["wallet"] for s3 in buys})
+    if newcomers >= 5:
+        pts += min(10.0, newcomers / 2.0)
+        reasons.append(f"{newcomers} first-time buyers in the last hour")
 
     # ---- flow (0-12): buy share of volume, only with enough participants
     if vol > 0 and len(buys) >= 5:
@@ -247,14 +269,21 @@ async def _rank_impl(mode: str) -> list[dict]:
         liq = await asyncio.wait_for(liquidity_for(toks[:300]), timeout=8)
     except Exception:  # noqa
         liq = {}
+    # "all" scores each token in every play during the same pass — running rank() three times meant loading six
+    # hours of swaps three times over and the request timed out before any of them answered.
+    modes = ("fresh", "accum", "revival") if mode == "all" else (mode,)
     out = []
     for t, sw in by_tok.items():
-        try:
-            r = score_token(t, sw, now, insiders, kols_by.get(t, []), risk.get(t), first.get(t), liq.get(t), mode)
-        except Exception as e:  # noqa
-            log.debug("score %s: %s", t, e); r = None
-        if r:
-            r["liq"] = liq.get(t); out.append(r)
+        best = None
+        for m in modes:
+            try:
+                r = score_token(t, sw, now, insiders, kols_by.get(t, []), risk.get(t), first.get(t), liq.get(t), m)
+            except Exception as e:  # noqa
+                log.debug("score %s: %s", t, e); r = None
+            if r and (best is None or r["score"] > best["score"]):
+                best = r
+        if best:
+            best["liq"] = liq.get(t); out.append(best)
     out.sort(key=lambda x: (-x["score"], -x["vol_6h"]))
     # market cap now (last price × cached total supply) + "first call": the moment this token first entered the list
     from .insider import total_supply_nowait
@@ -303,13 +332,17 @@ async def _record_calls(mode: str, rows: list[dict], now: int) -> None:
 
 
 async def api_alpha(request):
+    """Default view merges all three plays. Each mode answers a different question — fresh: a launch taking off in
+    its first hour; accum: insiders buying while the price sits still; revival: a dead token waking up — and each
+    one is deliberately narrow, so on its own it returns a handful of rows at best. The tab used to show `fresh`
+    only, which is why it looked empty for most of the day. Criteria are unchanged; all three now feed one list."""
     from aiohttp import web
-    mode = request.query.get("mode", "fresh")
-    if mode not in ("fresh", "accum", "revival"):
-        mode = "fresh"
+    mode = request.query.get("mode", "all")
+    if mode not in ("fresh", "accum", "revival", "all"):
+        mode = "all"
     limit = min(60, max(3, int(request.query.get("limit", "30") or 30)))
     try:
-        rows = await asyncio.wait_for(rank(mode, limit), timeout=20)
+        rows = await asyncio.wait_for(rank(mode, limit), timeout=40)
     except Exception as e:  # noqa
         log.warning("alpha %s: %s", mode, e); rows = []
     return web.json_response({"mode": mode, "ts": int(time.time()), "rows": rows, "cache_s": CACHE_S},

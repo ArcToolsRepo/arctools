@@ -2148,6 +2148,44 @@ async def api_faze(request: web.Request) -> web.Response:
                              headers={**API_CORS, "Cache-Control": "public, max-age=15, stale-while-revalidate=60"})
 
 
+
+_burn_cache: dict[str, object] = {"ts": 0.0, "data": None}
+ARCT = "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52"
+DEAD = "0x000000000000000000000000000000000000dead"
+
+
+async def api_arct_burn(request: web.Request) -> web.Response:
+    """GET /api/arct-burn — live ARCT burn counter for the site header.
+    burned = (initial 1B - current totalSupply)  +  whatever sits at the dead address, which stays inside
+    totalSupply but can never move again. Two eth_calls, cached 45 s."""
+    if _burn_cache["data"] and time.time() - float(_burn_cache["ts"]) < 45:
+        return web.json_response(_burn_cache["data"], headers={**API_CORS, "Cache-Control": "public, max-age=30"})
+    out = {"burned": None, "supply": None, "dead": None, "pct": None, "usd": None}
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.post(node_rpc(), headers={"Content-Type": "application/json"}, json=[
+                {"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [{"to": ARCT, "data": "0x18160ddd"}, "latest"]},
+                {"jsonrpc": "2.0", "id": 2, "method": "eth_call", "params": [{"to": ARCT, "data": "0x70a08231" + DEAD[2:].rjust(64, "0")}, "latest"]},
+            ], timeout=aiohttp.ClientTimeout(total=8)) as r:
+                res = await r.json(content_type=None)
+        by = {x.get("id"): x.get("result") for x in res} if isinstance(res, list) else {}
+        supply = int(by.get(1) or "0x0", 16) / 1e18
+        dead = int(by.get(2) or "0x0", 16) / 1e18
+        burned = max(0.0, 1e9 - supply) + dead
+        px = None
+        try:
+            row = await db.fetchone(text("SELECT price1m FROM swaps WHERE token = :t ORDER BY ts DESC LIMIT 1").bindparams(t=ARCT))
+            px = float(row["price1m"]) / 1e6 if row and row["price1m"] else None
+        except Exception:  # noqa
+            pass
+        out = {"burned": round(burned, 2), "supply": round(supply, 2), "dead": round(dead, 2),
+               "pct": round(burned / 1e9 * 100, 3), "usd": round(burned * px, 2) if px else None}
+        _burn_cache.update(ts=time.time(), data=out)
+    except Exception as e:  # noqa
+        out["error"] = str(e)[:80]
+    return web.json_response(out, headers={**API_CORS, "Cache-Control": "public, max-age=30"})
+
+
 async def api_ohlc(request: web.Request) -> web.Response:
     """Swiece z wlasnego indeksu swapow (caly Arc). price1m = USDC za 1M tokenow."""
     token = _tok(request)
@@ -2436,6 +2474,7 @@ async def start_api():
     app.router.add_get("/api/ohlc", api_ohlc)
     app.router.add_get("/api/receipt", api_receipt)
     app.router.add_get("/api/faze", api_faze)
+    app.router.add_get("/api/arct-burn", api_arct_burn)
     app.router.add_post("/api/ingest-blocks", api_ingest_blocks)
     app.router.add_get("/api/ingest-stats", api_ingest_stats)
     app.router.add_get("/udf/config", udf_config); app.router.add_get("/udf/time", udf_time); app.router.add_get("/udf/symbols", udf_symbols)

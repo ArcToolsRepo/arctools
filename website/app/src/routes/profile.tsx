@@ -40,6 +40,7 @@ function Profile() {
   const [pos, setPos] = useState<Position[]>([]);
   const [hist, setHist] = useState<Hist | null>(null);
   const [moves, setMoves] = useState<Move[]>([]);
+  const [closed, setClosed] = useState<Position[]>([]);
   const [tab, setTab] = useState<"holdings" | "trades" | "flows">("holdings");
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ ok: boolean; text: string; tx?: string } | null>(null);
@@ -51,11 +52,15 @@ function Profile() {
     setAddr(a);
     if (!a) { setPos([]); setHist(null); setBal(null); return; }
     const w = a.toLowerCase();
-    const [b, p, h, m, chain] = await Promise.all([
+    // deposits/withdrawals are a chain-wide query and nothing above the fold needs them — never block the page on it
+    void fetch(`${API}/api/balance-moves?hours=336&min_usd=1`)
+      .then((r) => r.json())
+      .then((mv: { rows?: Move[] }) => setMoves((mv?.rows ?? []).filter((x) => x.wallet.toLowerCase() === w)))
+      .catch(() => null);
+    const [b, p, h, chain] = await Promise.all([
       hotBalance(a).catch(() => null),
       fetch(`${API}/api/positions?wallet=${w}`).then((r) => r.json()).catch(() => null),
       fetch(`${API}/api/wallet-trades?wallet=${w}&limit=300`).then((r) => r.json()).catch(() => null),
-      fetch(`${API}/api/balance-moves?hours=336&min_usd=1`).then((r) => r.json()).catch(() => null),
       getPortfolio({ data: { wallet: a } }).catch(() => null),   // arc-scan indexer: EVERY erc20 the wallet holds
     ]);
     setBal(b);
@@ -85,17 +90,23 @@ function Profile() {
     merged.sort((x, y) => (y.value ?? 0) - (x.value ?? 0));
     setPos(merged.filter((x) => (x.value ?? 0) >= 0.005 || x.external));
     setHist(h);
-    setMoves(((m?.rows ?? []) as Move[]).filter((x) => x.wallet.toLowerCase() === w));
+    // every token the wallet ever traded — closed ones carry realized PnL even with nothing left to show as a holding
+    setClosed(((p?.positions ?? []) as Position[]).filter((x) => x.net <= 0.000001 && Math.abs(x.realized ?? 0) >= 0.01)
+      .sort((x, y) => Math.abs(y.realized ?? 0) - Math.abs(x.realized ?? 0)));
   }, []);
   useEffect(() => { void load(); const id = setInterval(load, 20_000); const off = onHotChange(() => void load()); return () => { clearInterval(id); off(); }; }, [load]);
 
   const totals = useMemo(() => {
     const value = pos.reduce((s, p) => s + (p.value ?? 0), 0);
     const unreal = pos.reduce((s, p) => s + (p.unrealized ?? 0), 0);
+    // realized PnL counts every token the wallet has ever closed, not only what it still holds
+    const realOpen = pos.reduce((s, p) => s + (p.realized ?? 0), 0);
+    const realClosed = closed.reduce((s, p) => s + (p.realized ?? 0), 0);
+    const realized = realOpen + realClosed;
     const s30 = hist?.stats.find((x) => x.range === "30d");
     const sAll = hist?.stats.find((x) => x.range === "all");
-    return { value, unreal, s30, sAll, equity: (bal ?? 0) + value };
-  }, [pos, hist, bal]);
+    return { value, unreal, realized, total: realized + unreal, s30, sAll, equity: (bal ?? 0) + value };
+  }, [pos, closed, hist, bal]);
 
   const sell = async (p: Position, pct: number) => {
     if (!addr) return;
@@ -158,6 +169,8 @@ function Profile() {
                 <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", marginBottom: 14 }}>
                   {[
                     ["Total equity", usd(totals.equity), "USDC + positions at last price"],
+                    ["PnL realized", usd(totals.realized), `${closed.length} closed position${closed.length === 1 ? "" : "s"} + partial sells`],
+                    ["PnL total", usd(totals.total), "realized + open, every token ever traded"],
                     ["USDC balance", bal !== null ? `${bal.toFixed(2)}` : "…", "available to trade or withdraw"],
                     ["Positions value", usd(totals.value), `${pos.length} tokens held`],
                     ["Unrealized PnL", usd(totals.unreal), "vs average entry", totals.unreal],
@@ -184,7 +197,8 @@ function Profile() {
                     <table style={{ borderCollapse: "collapse", width: "100%" }}>
                       <thead><tr><th style={th}>token</th><th style={th}>amount</th><th style={th}>avg entry</th><th style={th}>price</th><th style={th}>value</th><th style={th}>unrealized</th><th style={th}>realized</th><th style={th}>sell</th><th style={th}>withdraw</th></tr></thead>
                       <tbody>
-                        {pos.length === 0 && <tr><td className="arc-mono" colSpan={9} style={{ ...td, color: "var(--arc-muted)" }}>No open positions. Buy something in the <a href="/trade" style={{ color: "var(--arc-cobalt)" }}>Terminal</a>.</td></tr>}
+                        {pos.length === 0 && closed.length > 0 && <tr><td className="arc-mono" colSpan={9} style={{ ...td, color: "var(--arc-muted)" }}>Nothing open right now — realized PnL from closed positions is below.</td></tr>}
+                        {pos.length === 0 && closed.length === 0 && <tr><td className="arc-mono" colSpan={9} style={{ ...td, color: "var(--arc-muted)" }}>No open positions. Buy something in the <a href="/trade" style={{ color: "var(--arc-cobalt)" }}>Terminal</a>.</td></tr>}
                         {pos.map((p) => (
                           <tr key={p.token}>
                             <td style={td}><a href={`/token/${p.token}`} style={{ color: "var(--arc-ink)" }}><strong>{p.symbol ?? short(p.token)}</strong></a>{p.external && <span className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 3, color: "var(--arc-muted)", fontSize: 9, marginLeft: 6, padding: "0 4px" }} title="Held on-chain but not bought through a swap from this wallet (transferred in) — no entry price, so no PnL">transferred in</span>}</td>
@@ -200,6 +214,26 @@ function Profile() {
                         ))}
                       </tbody>
                     </table>
+                  )}
+                  {tab === "holdings" && closed.length > 0 && (
+                    <div style={{ marginTop: 14 }}>
+                      <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, letterSpacing: "0.08em", marginBottom: 6 }}>
+                        CLOSED · realized {usd(closed.reduce((acc, c) => acc + (c.realized ?? 0), 0))}
+                      </div>
+                      <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                        <tbody>
+                          {closed.slice(0, 20).map((c) => (
+                            <tr key={c.token}>
+                              <td style={td}><a href={`/token/${c.token}`} style={{ color: "var(--arc-ink)" }}>{c.symbol ?? short(c.token)}</a></td>
+                              <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{c.n} trades</td>
+                              <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>in {usd(c.cost ?? 0)}</td>
+                              <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>out {usd(c.proceeds ?? 0)}</td>
+                              <td className="arc-mono" style={{ ...td, color: (c.realized ?? 0) >= 0 ? UP : DOWN, fontWeight: 700, textAlign: "right" }}>{usd(c.realized ?? 0)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                   {tab === "trades" && (
                     <>

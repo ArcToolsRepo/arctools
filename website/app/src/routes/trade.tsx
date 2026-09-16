@@ -131,7 +131,7 @@ function Trade() {
   const [tab, setTab] = useState<"all" | "new" | "new15" | "trending" | "insiders" | "favs" | "holdings" | "alpha">("trending");
   // ---- ⚡ Alpha: composite screener from our own data (smart money, clusters, buyer acceleration, KOLs, clean risk).
   // Top 3 visible to everyone; the full list unlocks for ARCT stakers (same gate as /insiders).
-  type AlphaRow = { token: string; symbol: string | null; score: number; reasons: string[]; age_s: number | null; vol_6h: number; buyers_30m: number; sm_wallets: number; sm_usd: number; cluster: number; liq: number | null; price1m: number | null; mcap: number | null; first_ts: number | null; first_score: number | null; first_mcap: number | null; since_call: number | null };
+  type AlphaRow = { mode?: string; token: string; symbol: string | null; score: number; reasons: string[]; age_s: number | null; vol_6h: number; buyers_30m: number; sm_wallets: number; sm_usd: number; cluster: number; liq: number | null; price1m: number | null; mcap: number | null; first_ts: number | null; first_score: number | null; first_mcap: number | null; since_call: number | null };
   const [alphaMode, setAlphaMode] = useState<"fresh" | "accum" | "revival">("fresh");
   const [alpha, setAlpha] = useState<Record<string, AlphaRow[]>>({});
   const [alphaLoading, setAlphaLoading] = useState(false);
@@ -145,10 +145,12 @@ function Trade() {
       setAlphaLoading(true);
       // the other two modes are fetched in the background as well: on first open jump to whichever has picks
       // (fresh is empty most of the day by design — it only fires when smart money enters a < 1 h token)
-      void Promise.all((["fresh", "accum", "revival"] as const).map((m) => fetch(`${API}/api/alpha?mode=${m}&limit=30`).then((r) => r.json()).then((j: { rows?: AlphaRow[] }) => [m, j.rows ?? []] as const).catch(() => [m, [] as AlphaRow[]] as const)))
+      void Promise.all([fetch(`${API}/api/alpha?mode=all&limit=40`).then((r) => r.json()).then((j: { rows?: AlphaRow[] }) => { const by: Record<string, AlphaRow[]> = { accum: [], fresh: [], revival: [] }; for (const row of j.rows ?? []) (by[row.mode as string] ??= []).push(row); return ["all", by] as const; }).catch(() => ["all", { accum: [], fresh: [], revival: [] } as Record<string, AlphaRow[]>] as const)])
         .then((all) => {
           if (!alive) return;
-          const next: Record<string, AlphaRow[]> = {}; for (const [m, rows] of all) next[m] = rows;
+          // one request now scores every play in a single pass over the same six hours of swaps — three separate
+          // calls each re-loaded that window and the tab timed out into an empty state
+          const next: Record<string, AlphaRow[]> = all[0][1];
           setAlpha(next);
           if (!alphaTouched.current && !(next[alphaMode] ?? []).length) { const best = (["accum", "revival", "fresh"] as const).find((m) => (next[m] ?? []).length); if (best) setAlphaMode(best); }
         }).finally(() => { if (alive) setAlphaLoading(false); });
@@ -588,7 +590,9 @@ function Trade() {
               <input className="arc-mono" inputMode="decimal" onChange={(e) => setCustom(e.target.value)} placeholder="custom" style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", fontSize: 12, padding: "4px 8px", width: 80 }} value={custom} />
               <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 8 }}>{tr_("SLIPPAGE")}</span>
               {[1, 5, 15, 30].map((s) => <button key={s} className="arc-mono" onClick={() => setSlip(s)} style={{ background: slip === s ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (slip === s ? "var(--arc-cobalt)" : "var(--arc-line)"), color: slip === s ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "3px 8px" }} type="button">{s}%</button>)}
-              <input className="arc-mono" onChange={(e) => setQ(e.target.value)} placeholder={tr_("search any Arc token · name / symbol / CA")} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-ink)", flex: "1 1 160px", fontSize: 12, marginLeft: "auto", padding: "4px 8px" }} value={q} />
+              <div className={"arc-laser" + (q ? " is-typing" : "")}>
+                <input className="arc-mono" onChange={(e) => setQ(e.target.value)} placeholder={tr_("search any Arc token · name / symbol / CA")} style={{ background: "var(--arc-paper-deep)", color: "var(--arc-ink)", fontSize: 12, padding: "5px 9px" }} value={q} />
+              </div>
             </div>
             {/* tabs */}
             <button className="arc-mono arc-mobile-bar" onClick={() => setMobileOpen((o) => (o === "filters" ? "" : "filters"))} type="button">

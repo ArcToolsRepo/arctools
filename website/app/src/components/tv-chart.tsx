@@ -87,6 +87,8 @@ function themeColors() {
 export function TvChart({ candles, scale, mode, height = 440, markers, avatars, onVisible, symbol, interval, storageKey, orderLines }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [remount, setRemount] = useState(0);
   const chartRef = useRef<import("lightweight-charts").IChartApi | null>(null);
   const mainRef = useRef<import("lightweight-charts").ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area"> | null>(null);
   const volRef = useRef<import("lightweight-charts").ISeriesApi<"Histogram"> | null>(null);
@@ -159,7 +161,16 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
     let ro: ResizeObserver | null = null;
     let clickCleanup: (() => void) | null = null;
     void (async () => {
-      const lw = await import("lightweight-charts");
+      // Telegram's in-app webview (and older iOS Safari) can fail the dynamic import outright. Without this the
+      // component simply rendered an empty box — the "chart does not load" report from the insider-alert links.
+      let lw: typeof import("lightweight-charts");
+      try {
+        lw = await import("lightweight-charts");
+      } catch (e) {
+        if (!disposed) setLoadErr((e as Error)?.message?.slice(0, 80) || "chart engine failed to load");
+        try { navigator.sendBeacon?.("/bot/api/ui-beacon", new Blob([JSON.stringify({ page: "/token", data: 0, empty: 1, diag: `chart import failed: ${(e as Error)?.message?.slice(0, 60)}` })])); } catch { /* ignore */ }
+        return;
+      }
       if (disposed || !box.current) return;
       const th = themeColors();
       const chart = lw.createChart(box.current, {
@@ -183,6 +194,7 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
       const diag = setTimeout(() => {
         const el = box.current; if (!el) return;
         const cnv = el.querySelector("canvas") as HTMLCanvasElement | null;
+        if ((!cnv || cnv.width === 0) && remount < 1) setRemount((n) => n + 1);   // one clean rebuild, then give up quietly
         if (!cnv || cnv.width === 0 || el.clientWidth === 0) {
           try { navigator.sendBeacon?.("/bot/api/ui-beacon", new Blob([JSON.stringify({ page: "/token", data: 0, empty: 1, diag: `chart w=${el.clientWidth} h=${el.clientHeight} canvas=${cnv ? cnv.width + "x" + cnv.height : "none"} ua=${navigator.userAgent.slice(0, 60)}`, ts: Math.floor(Date.now() / 1000) })], { type: "application/json" })); } catch { /* ignore */ }
           fixSize();
@@ -259,7 +271,7 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
     })();
     return () => { disposed = true; ro?.disconnect(); clickCleanup?.(); chartRef.current?.remove(); chartRef.current = null; mainRef.current = null; volRef.current = null; markRef.current = null; indSeries.current = {}; drawSeries.current = { lines: [], priceLines: [] }; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [remount]);   // a failed/blank first build can be retried without leaving the page
   useEffect(() => { scaleRef.current = scale; modeRef.current = mode; stepRef.current = step; candlesRef.current = candles; drawingsRef.current = drawings; }, [scale, mode, step, candles, drawings]);
   const addDrawing = (d: Drawing) => saveDrawings([...drawingsRef.current, d]);
 
@@ -602,7 +614,14 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
               {tool === "level" ? "click a price to drop a level" : pending ? "click the second point" : `click the first point (${tool})`} · Esc to exit
             </div>
           )}
-          <div ref={box} style={{ height: fs ? "100%" : h, minHeight: fs ? 300 : undefined, width: "100%", cursor: tool !== "none" ? "crosshair" : undefined }} />
+          <div ref={box} style={{ height: fs ? "100%" : h, minHeight: fs ? 300 : Math.min(h, 260), width: "100%", cursor: tool !== "none" ? "crosshair" : undefined }} />
+          {loadErr && (
+            <div className="arc-mono" style={{ alignItems: "center", background: "rgba(10,13,20,0.9)", display: "flex", flexDirection: "column", gap: 10, inset: 0, justifyContent: "center", position: "absolute", zIndex: 5 }}>
+              <span style={{ color: "var(--arc-muted)", fontSize: 12, textAlign: "center" }}>Chart engine did not load here.<br />{loadErr}</span>
+              <button onClick={() => { setLoadErr(null); setRemount((n) => n + 1); }} style={{ background: "var(--arc-cobalt)", border: "none", borderRadius: 6, color: "#fff", cursor: "pointer", fontSize: 12, padding: "6px 14px" }} type="button">Retry</button>
+              <a href="https://arc-scan.org" rel="noreferrer" style={{ color: "var(--arc-cobalt)", fontSize: 11 }} target="_blank">open explorer instead ↗</a>
+            </div>
+          )}
           {measure && (
             <div className="arc-mono" onClick={() => setMeasure(null)} style={{ background: "rgba(14,17,24,0.95)", border: "1px solid #f5c542", borderRadius: 6, color: "#f5c542", fontSize: 11, left: Math.max(4, Math.min(measure.x + 12, (box.current?.clientWidth ?? 400) - 200)), lineHeight: "16px", padding: "6px 9px", position: "absolute", top: Math.max(4, measure.y - 60), zIndex: 5, whiteSpace: "nowrap" }}>
               {measure.text.map((t, i) => <div key={i} style={{ color: i ? "#c3cddc" : undefined, fontWeight: i ? 400 : 700 }}>{t}</div>)}
