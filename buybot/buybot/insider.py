@@ -4,6 +4,7 @@ Chain-wide swap ingest (every USDC pool on Arc, all venues), resumable
 backfill, average-cost PnL stats per wallet, and a small HTTP API that the
 arctools.fun /insiders page reads.
 """
+import os
 import asyncio
 import json
 import logging
@@ -1228,6 +1229,45 @@ async def _scan_window(frm: int, to: int, senders: bool = True) -> list[dict] | 
     return rows
 
 
+async def gap_fill_loop():
+    """Scans ranges the live ingest skipped (kv insider_gaps), oldest first, adaptive window, senders deferred.
+    Lowest priority: pauses while the live ingest is more than 3k blocks behind."""
+    await asyncio.sleep(90)
+    ins = text(
+        "INSERT INTO swaps (tx, log_index, block, ts, wallet, token, side, usdc, tokens, price1m, venue) "
+        "VALUES (:tx, :log_index, :block, :ts, :wallet, :token, :side, :usdc, :tokens, :price1m, :venue) "
+        "ON CONFLICT (tx, log_index) DO NOTHING")
+    win = 2_000
+    while True:
+        try:
+            gaps = json.loads(await db.kv_get("insider_gaps") or "[]")
+            gaps = [g for g in gaps if g[1] >= g[0]]
+            if not gaps:
+                await asyncio.sleep(60); continue
+            if _lag["blocks"] > 3_000:
+                await asyncio.sleep(20); continue
+            frm, to_all = gaps[0]
+            to = min(to_all, frm + win - 1)
+            t0 = time.time()
+            try:
+                res = await asyncio.wait_for(_scan_window(frm, to, senders=False), timeout=240)
+            except asyncio.TimeoutError:
+                res = None
+            if res is None:
+                win = max(250, win // 2); await asyncio.sleep(3); continue
+            await db.execute_many(ins, res)
+            if time.time() - t0 < 40:
+                win = min(5_000, int(win * 1.5))
+            gaps[0][0] = to + 1
+            gaps = [g for g in gaps if g[1] >= g[0]]
+            await db.kv_set("insider_gaps", json.dumps(gaps))
+            _lag["gap"] = sum(g[1] - g[0] + 1 for g in gaps)
+            log.info("gap fill %s-%s: +%s swaps (win %s, %s blocks left)", frm, to, len(res), win, _lag["gap"])
+            await asyncio.sleep(0.5)
+        except Exception as e:  # noqa
+            log.warning("gap fill: %s", e); await asyncio.sleep(10)
+
+
 async def sender_fill_loop():
     """Catch-up mode writes swaps with wallet='' (senders deferred). Fill them in the background, newest first,
     one getBlock per block (full transactions) — low priority, yields when the live ingest is far behind."""
@@ -1237,8 +1277,8 @@ async def sender_fill_loop():
             rows = await db.fetchall(text("SELECT tx, block FROM swaps WHERE wallet = '' ORDER BY block DESC LIMIT 400"))
             if not rows:
                 await asyncio.sleep(30); continue
-            if _lag["blocks"] > 40_000:
-                await asyncio.sleep(20)                     # let the catch-up have the RPC budget first
+            if _lag["blocks"] > 6_000:
+                await asyncio.sleep(20); continue           # live ingest first
             by_block: dict[int, list[str]] = {}
             for r in rows:
                 by_block.setdefault(int(r["block"]), []).append(r["tx"].lower())
@@ -1282,6 +1322,15 @@ async def ingest_loop():
             _lag.update(phase="head", since=time.time())
             head = await asyncio.wait_for(CHAIN._bn(), timeout=30)
             _lag["blocks"] = max(0, head - cursor)
+            if head - cursor > 20_000:
+                # far behind (outage): serve LIVE data first — jump to near-head and hand the gap to gap_fill_loop
+                gaps = json.loads(await db.kv_get("insider_gaps") or "[]")
+                gaps.append([cursor + 1, head - 2_000])
+                await db.kv_set("insider_gaps", json.dumps(gaps))
+                log.warning("insider ingest: %s blocks behind → jump to %s, gap %s-%s queued for background fill", head - cursor, head - 2_000, cursor + 1, head - 2_000)
+                cursor = head - 2_000
+                await db.kv_set("insider_cursor", str(cursor))
+                _lag["blocks"] = head - cursor
             if time.time() - _last_progress > 900:
                 log.warning("insider ingest: no progress for %ss (cursor %s, head %s) — continuing", int(time.time() - _last_progress), cursor, head)
                 _last_progress = time.time()
@@ -1306,7 +1355,7 @@ async def ingest_loop():
                 _lag.update(phase="scan", since=time.time(), window=f"{spans[0][0]}-{spans[-1][1]}", win=win)
                 t_scan = time.time()
                 try:
-                    defer = (head - cursor) > 10_000
+                    defer = (head - cursor) > 3_000
                     scans = await asyncio.wait_for(asyncio.gather(*[_scan_window(f, t, senders=not defer) for f, t in spans]), timeout=240)
                 except asyncio.TimeoutError:
                     _lag["win"] = max(250, win // 2)
@@ -1342,7 +1391,7 @@ async def ingest_loop():
                 await asyncio.sleep(0.1)
             else:
                 frm, to = cursor + 1, min(head, cursor + LIVE_WINDOW)
-                res = await asyncio.wait_for(_scan_window(frm, to), timeout=300)
+                res = await asyncio.wait_for(_scan_window(frm, to, senders=(head - cursor) < 3_000), timeout=300)
                 if res is None:
                     await asyncio.sleep(3)
                     continue
