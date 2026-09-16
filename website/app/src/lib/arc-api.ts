@@ -1993,7 +1993,7 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
     if (!r || !["UniswapV3", "UniswapV4", "RadarDex", "DYORSwap"].includes(t.pad)) return t;
     return { ...t, pad: r.pad, venueUrl: r.url ? `${r.url}` : t.venueUrl, createdAt: t.createdAt ?? (r.ts ? new Date(r.ts * 1000).toISOString() : null) };
   };
-  const all = [...pad, ...longs, ...lift, ...ellipse, ...order.filter((p) => p !== "RadarDex").flatMap((p) => byName.get(p as typeof ALL_PADS[number]) ?? []), ...v2, ...(byName.get("RadarDex") ?? []), ...screener]
+  const all = [...pad, ...longs, ...lift, ...ellipse, ...order.filter((p) => p !== "RadarDex").flatMap((p) => byName.get(p as typeof ALL_PADS[number]) ?? []), ...(byName.get("RadarDex") ?? []), ...screener, ...v2]
     .filter((t) => !(apiPads.has(t.token.toLowerCase()) && t.pad !== "Lift" && t.pad !== "Ellipse"))
     .map(relabel).filter((t) => { const k = t.token.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
   {

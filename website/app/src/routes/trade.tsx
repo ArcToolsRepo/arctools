@@ -649,7 +649,7 @@ function Trade() {
                             </div>
                           </div>
                         </td>
-                        <td className="arc-mono" style={cell}><div style={{ color: "var(--arc-cobalt)", fontWeight: 700 }}>{usd(r.mcap)}</div>{r.chg != null && <div style={{ color: r.chg >= 0 ? UP : DOWN, fontSize: 11 }}>{r.chg >= 0 ? "+" : ""}{r.chg.toFixed(1)}%</div>}</td>
+                        <td className="arc-mono" style={cell}><div style={{ color: "var(--arc-cobalt)", fontWeight: 700 }}>{usd(r.mcap)}</div>{r.chg != null && Math.abs(r.chg) <= 99_999 && <div style={{ color: r.chg >= 0 ? UP : DOWN, fontSize: 11 }}>{r.chg >= 0 ? "+" : ""}{r.chg.toFixed(1)}%</div>}</td>
                         <td className="arc-mono arc-col-ath" style={{ ...cell, color: "var(--arc-cobalt)" }}>{usd(r.athMcap)}</td>
                         <td className="arc-mono arc-col-liq" style={cell}>{r.liq != null && r.liq > 0 ? usd(r.liq) : "—"}</td>
                         <td className="arc-mono arc-col-vol" style={{ ...cell, color: "#f5c542" }}>{r.vol > 0 ? usd(r.vol) : "—"}</td>

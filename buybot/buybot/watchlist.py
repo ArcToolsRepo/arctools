@@ -429,6 +429,16 @@ async def _api_stats_impl(request: web.Request) -> web.Response:
     out = [dict(r) for r in rows]
     for d in out:
         d["supply"] = total_supply_nowait(d["token"])
+    # cold in-memory supply cache (fresh restart) → read what we already have in token_supply so MC never shows "—"
+    miss = [d["token"] for d in out if not d["supply"]]
+    if miss:
+        try:
+            have = {r["token"]: float(r["supply"]) for r in await db.fetchall(text("SELECT token, supply FROM token_supply WHERE token = ANY(:t)").bindparams(t=miss))}
+            for d in out:
+                if not d["supply"] and have.get(d["token"]):
+                    d["supply"] = have[d["token"]]
+        except Exception:  # noqa
+            pass
         px = float(d["p1"] or 0) / 1e6
         d["mcap"] = (px * d["supply"]) if (d["supply"] and px > 0) else None
         d["ath_mcap"] = (float(d["ath"]) / 1e6 * d["supply"]) if (d["supply"] and d.get("ath")) else None
@@ -474,6 +484,16 @@ async def _api_trending_impl(request: web.Request) -> web.Response:
     out = [dict(r) for r in rows]
     for d in out:
         d["supply"] = total_supply_nowait(d["token"])
+    # cold in-memory supply cache (fresh restart) → read what we already have in token_supply so MC never shows "—"
+    miss = [d["token"] for d in out if not d["supply"]]
+    if miss:
+        try:
+            have = {r["token"]: float(r["supply"]) for r in await db.fetchall(text("SELECT token, supply FROM token_supply WHERE token = ANY(:t)").bindparams(t=miss))}
+            for d in out:
+                if not d["supply"] and have.get(d["token"]):
+                    d["supply"] = have[d["token"]]
+        except Exception:  # noqa
+            pass
         px = float(d["p1"] or 0) / 1e6
         d["mcap"] = (px * d["supply"]) if (d["supply"] and px > 0) else None
         d["ath_mcap"] = (float(d["ath"]) / 1e6 * d["supply"]) if (d["supply"] and d.get("ath")) else None

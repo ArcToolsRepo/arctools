@@ -231,7 +231,7 @@ def _keyboard(token: str, wallet: str, symbol: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="Copy insider", url=f"{SNIPER}?start=copy_{wallet[2:]}"),
         ],
         [
-            InlineKeyboardButton(text="Chart", url=f"{SITE}/token/{token}"),
+            InlineKeyboardButton(text="Chart", url=f"{SITE}/token/{token}#chart"),
             InlineKeyboardButton(text="Insider profile", url=f"{SITE}/insiders"),
         ],
     ])
@@ -278,7 +278,7 @@ async def _build_alert(sw: dict, ins: dict) -> tuple[str, InlineKeyboardMarkup]:
     lines += [
         "",
         f"<a href='{CFG.explorer}/tx/{sw['tx']}'>tx</a> · "
-        f"<a href='{SITE}/token/{token}'>chart</a> · "
+        f"<a href='{SITE}/token/{token}#chart'>chart</a> · "
         f"<a href='{CFG.explorer}/address/{wallet}'>wallet</a>",
         f"<i>Not financial advice. Insiders are ranked by realized PnL on Arc — they can be wrong.</i>",
     ]
@@ -297,7 +297,7 @@ async def _build_cluster(token: str, wallets: dict[str, float]) -> tuple[str, In
         f"{len(wallets)} insiders bought ${sym} in the last {CLUSTER_SEC // 60} min"
         + (f" (ranks {', '.join('#' + str(x) for x in ranks)})" if ranks else "") + f" · total {_fmt_usd(usd)}",
         "",
-        f"<a href='{SITE}/token/{token}'>chart</a> · <a href='{SITE}/insiders'>leaderboard</a>",
+        f"<a href='{SITE}/token/{token}#chart'>chart</a> · <a href='{SITE}/insiders'>leaderboard</a>",
         "<i>Several ranked wallets entering together is the strongest signal this channel emits. Still not advice.</i>",
     ])
     best = min(wallets, key=lambda w: _rank.get(w, {}).get("rank", 999))

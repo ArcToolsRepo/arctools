@@ -116,7 +116,7 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
   const [typeOpen, setTypeOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [theme, setTheme] = useState(() => themeColors());
-  const [h, setH] = useState<number>(() => { try { const v = Number(localStorage.getItem("arc_chart_h")); return v >= 260 && v <= 1400 ? v : height; } catch { return height; } });
+  const [h, setH] = useState<number>(() => { try { if (typeof window !== "undefined" && window.innerWidth < 760) return 320; const v = Number(localStorage.getItem("arc_chart_h")); return v >= 260 && v <= 1400 ? v : height; } catch { return height; } });
   const dragRef = useRef<{ y0: number; h0: number } | null>(null);
   const onHandleDown = (e: React.PointerEvent) => { dragRef.current = { y0: e.clientY, h0: h }; (e.target as HTMLElement).setPointerCapture(e.pointerId); };
   const onHandleMove = (e: React.PointerEvent) => { const d = dragRef.current; if (!d) return; setH(Math.max(260, Math.min(1400, d.h0 + (e.clientY - d.y0)))); };
@@ -171,6 +171,23 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
         timeScale: { borderColor: th.border, rightOffset: 6, secondsVisible: false, timeVisible: true },
         localization: { timeFormatter: (t: number) => new Date(t * 1000).toLocaleString(undefined, { day: "2-digit", hour: "2-digit", minute: "2-digit", month: "short" }) },
       });
+      // mobile webviews (Telegram in-app, iOS) sometimes hand autoSize a 0×0 container on first paint → blank chart.
+      // Force explicit dimensions from the box, and re-apply when the box becomes measurable.
+      const fixSize = () => {
+        const el = box.current; if (!el) return;
+        const w = el.clientWidth || el.parentElement?.clientWidth || window.innerWidth - 28; const hh = el.clientHeight || h;
+        if (w > 0 && hh > 0) { try { chart.applyOptions({ autoSize: false, width: w, height: hh }); chart.timeScale().fitContent(); } catch { /* ignore */ } }
+      };
+      fixSize(); setTimeout(fixSize, 300); setTimeout(fixSize, 1500);
+      window.addEventListener("resize", fixSize); window.addEventListener("orientationchange", fixSize);
+      const diag = setTimeout(() => {
+        const el = box.current; if (!el) return;
+        const cnv = el.querySelector("canvas") as HTMLCanvasElement | null;
+        if (!cnv || cnv.width === 0 || el.clientWidth === 0) {
+          try { navigator.sendBeacon?.("/bot/api/ui-beacon", new Blob([JSON.stringify({ page: "/token", data: 0, empty: 1, diag: `chart w=${el.clientWidth} h=${el.clientHeight} canvas=${cnv ? cnv.width + "x" + cnv.height : "none"} ua=${navigator.userAgent.slice(0, 60)}`, ts: Math.floor(Date.now() / 1000) })], { type: "application/json" })); } catch { /* ignore */ }
+          fixSize();
+        }
+      }, 4000);
       const vs = chart.addSeries(lw.HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "vol", lastValueVisible: false, priceLineVisible: false });
       chart.priceScale("vol").applyOptions({ scaleMargins: { bottom: 0, top: 0.82 } });
       chart.subscribeCrosshairMove((p) => {

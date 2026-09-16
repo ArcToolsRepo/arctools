@@ -304,6 +304,12 @@ function TokenPage() {
   //      safety net (30 s) while the stream is up, and speeds up to 5 s when it is not.
   const [live, setLive] = useState(false);
   const liveRef = useRef(false);
+  // deep link from Telegram alerts (…/token/<ca>#chart): bring the chart into view on phones, where the header pushes it below the fold
+  useEffect(() => {
+    if (typeof window === "undefined" || window.location.hash !== "#chart") return;
+    const t = setTimeout(() => document.getElementById("chart")?.scrollIntoView({ behavior: "smooth", block: "start" }), 400);
+    return () => clearTimeout(t);
+  }, []);
   useEffect(() => {
     if (!ca || typeof window === "undefined" || typeof EventSource === "undefined") return;
     let es: EventSource | null = null; let closed = false; let backoff = 1000;
@@ -758,7 +764,7 @@ function TokenPage() {
             {adv ? (
               <TvAdvanced height={Math.max(460, Number((typeof localStorage !== "undefined" && localStorage.getItem("arc_chart_h")) || 520))} interval={tf} light={typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light"} mode={mode} onFail={() => setAdv(false)} token={params.ca.toLowerCase()} />
             ) : (
-              <TvChart avatars={chartAvatars} candles={effCandles} interval={tf} markers={chartMarkers} mode={effMode} onVisible={setMarkersVisible} orderLines={orderLines} scale={scale} storageKey={params.ca} symbol={info ? `${info.symbol}/${pairSym}` : undefined} />
+              <div id="chart" style={{ scrollMarginTop: 70 }} /><TvChart avatars={chartAvatars} candles={effCandles} interval={tf} markers={chartMarkers} mode={effMode} onVisible={setMarkersVisible} orderLines={orderLines} scale={scale} storageKey={params.ca} symbol={info ? `${info.symbol}/${pairSym}` : undefined} />
             )}
             <MarkerLegend data={eventsData} visible={markersVisible} />
           </div>
