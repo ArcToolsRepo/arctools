@@ -270,7 +270,7 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
     const chart = chartRef.current; const lw = lwRef.current; const vs = volRef.current;
     if (!chart || !lw || !vs) return;
     const key = `${ctype}|${mode}|${scale}|${theme.light ? "l" : "d"}|${ready ? 1 : 0}`;
-    const src = ctype === "heikin" ? haData : candles;
+    const src = (ctype === "heikin" ? haData : candles).filter((k) => k.o > 0 && k.h > 0 && k.l > 0 && k.c > 0 && Number.isFinite(k.c));
     const prev = appliedRef.current;
     const T0 = (t: number) => t as UTC;
     if (mainRef.current && prev && prev.key === key && src.length >= prev.len && src.length - prev.len <= 3 && src.length > 0 && src[0].t === prev.first && src[src.length - 1].t >= prev.lastT) {

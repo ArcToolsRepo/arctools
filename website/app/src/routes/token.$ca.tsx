@@ -313,12 +313,16 @@ function TokenPage() {
       es = new EventSource(`${BOT_ORIGIN}/api/stream?token=${ca}`);
       es.addEventListener("hello", () => { backoff = 1000; liveRef.current = true; setLive(true); });
       const onTrade = (t: Trade & { log_index?: number }) => {
+          // a print with no/zero price (quote-token leg, decode miss) or a multi-hop outlier must never touch the candle:
+          // one such event drew a wick to $0 and "-100%" on the live chart
+          if (!(Number(t.price1m) > 0) || !(Number(t.usdc) > 0) || !(Number(t.ts) > 0)) return;
           setTrades((prev) => (prev.some((p) => p.tx === t.tx && p.ts === t.ts && p.usdc === t.usdc) ? prev : [{ ...t, insider_rank: null, insider_pnl: null }, ...prev].slice(0, 80)));
           setStats((prev) => (prev ? { ...prev, price1m: t.price1m, vol24: prev.vol24 + t.usdc, buys24: prev.buys24 + (t.side === "buy" ? 1 : 0), sells24: prev.sells24 + (t.side === "sell" ? 1 : 0), txns_all: prev.txns_all + 1, vol_all: prev.vol_all + t.usdc } : prev));
           const px = t.price1m / 1e6; const b = Math.floor(t.ts / step) * step;
           setCandles((prev) => {
             if (!prev.length) return prev;
             const last = prev[prev.length - 1];
+            if (last.c > 0 && (px > last.c * 5 || px < last.c / 5)) return prev;   // outlier vs last close: wait for the server candle
             if (last.t === b) return [...prev.slice(0, -1), { ...last, c: px, h: Math.max(last.h, px), l: Math.min(last.l, px), v: (last.v ?? 0) + t.usdc, vb: (last.vb ?? 0) + (t.side === "buy" ? t.usdc : 0), n: (last.n ?? 0) + 1 }];
             if (b > last.t) return [...prev, { t: b, o: last.c, h: Math.max(last.c, px), l: Math.min(last.c, px), c: px, v: t.usdc, vb: t.side === "buy" ? t.usdc : 0, n: 1 }];
             return prev;
