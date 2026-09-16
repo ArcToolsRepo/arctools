@@ -212,6 +212,36 @@ export function DevTokens({ dev, current }: { dev: string | null | undefined; cu
 
 // ---------------- KOL mentions ----------------
 type Mention = { tweet_id: string; kol: string; ts: number; text: string; url: string; likes: number; retweets: number; views: number; match: string; followers: number | null; name: string | null; avatar: string | null };
+/** Mention count for the page header. Chart markers only cover the candles currently loaded, so a tweet from two
+ *  days ago simply is not on screen — this pill states that mentions exist at all and jumps to the panel. */
+export function useKolCount(token: string | null | undefined): { n: number; handles: string[] } {
+  const [v, setV] = useState<{ n: number; handles: string[] }>({ n: 0, handles: [] });
+  useEffect(() => {
+    if (!token) return;
+    let alive = true;
+    fetch(`${API}/api/kol-mentions?token=${token}&limit=20`)
+      .then((r) => r.json())
+      .then((j: { mentions?: Mention[]; enabled?: boolean }) => {
+        if (!alive || !j.enabled || !j.mentions?.length) return;
+        setV({ n: j.mentions.length, handles: [...new Set(j.mentions.map((m) => m.kol))].slice(0, 6) });
+      })
+      .catch(() => null);
+    return () => { alive = false; };
+  }, [token]);
+  return v;
+}
+
+export function KolBadge({ token }: { token: string | null | undefined }) {
+  const { n, handles } = useKolCount(token);
+  if (!n) return null;
+  return (
+    <a className="arc-mono" href="#kols" style={{
+      alignItems: "center", background: "rgba(255,95,210,0.12)", border: "1px solid #ff5fd2", borderRadius: 6,
+      color: "#ff5fd2", display: "inline-flex", fontSize: 10, gap: 4, marginLeft: 6, padding: "1px 6px", textDecoration: "none",
+    }} title={`Mentioned by ${handles.map((h) => "@" + h).join(", ")}`}>K {n}</a>
+  );
+}
+
 export function KolMentions({ token }: { token: string }) {
   const [d, setD] = useState<{ mentions: Mention[]; enabled: boolean } | null>(null);
   useEffect(() => {
@@ -223,7 +253,7 @@ export function KolMentions({ token }: { token: string }) {
   }, [token]);
   if (!d || !d.enabled || d.mentions.length === 0) return null;
   return (
-    <section style={{ border: "1px solid #ff5fd2", marginTop: 14, padding: "12px 14px" }}>
+    <section id="kols" style={{ border: "1px solid #ff5fd2", marginTop: 14, padding: "12px 14px", scrollMarginTop: 80 }}>
       <div className="arc-mono" style={{ color: "#ff5fd2", fontSize: 11, letterSpacing: "0.08em" }}>KOL MENTIONS · {d.mentions.length}</div>
       <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
         {d.mentions.slice(0, 6).map((m) => (

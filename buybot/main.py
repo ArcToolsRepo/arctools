@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 
 from buybot.config import CFG
-from buybot import faze, balances, bridge_watch, insider_alerts, rules, watchlist, db, insider, social, watcher, trending, kols, rpc_monitor, logos
+from buybot import contract_socials, faze, padfeeds, balances, bridge_watch, insider_alerts, rules, watchlist, db, insider, social, watcher, trending, kols, rpc_monitor, logos
 from buybot.handlers import router
 
 logging.getLogger("web3.manager.RequestManager").setLevel(logging.CRITICAL)  # failover jest obslugiwany w chain.py; ERROR to szum
@@ -65,6 +65,8 @@ async def main():
         asyncio.create_task(insider.gap_fill_loop(), name="insider-gapfill"),
         asyncio.create_task(insider.pool_audit_loop(), name="pool-audit"),
         asyncio.create_task(faze.faze_loop(), name="faze-meta"),
+        asyncio.create_task(padfeeds.padfeeds_loop(), name="pad-feeds"),
+        asyncio.create_task(contract_socials.csocials_loop(), name="contract-socials"),
         asyncio.create_task(insider.stats_loop(), name="insider-stats"),
         asyncio.create_task(insider.repair_loop(), name="insider-repair"),
         asyncio.create_task(insider.supply_repair_loop(), name="supply-repair"),

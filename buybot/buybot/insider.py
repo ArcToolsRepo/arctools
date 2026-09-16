@@ -2093,9 +2093,12 @@ async def api_faze(request: web.Request) -> web.Response:
     """GET /api/faze — curve-stage coins on faze.fun with the numbers that only exist on their bonding curve
     (price, FDV, 24h volume, holders, curve progress) plus artwork. Tokens still on the curve have no Uniswap pool,
     so the Terminal has nothing of its own to show for them until they graduate; this fills that gap."""
-    from . import faze as _faze
+    from . import faze as _faze, padfeeds as _pf
     out = {}
-    for mint, c in _faze.live_rows().items():
+    for mint, c in {**_faze.live_rows(), **{k: v for k, v in _pf.live_rows().items()}}.items():
+        if "progress" in c and "priceUsd" not in c:            # already shaped by padfeeds (sharc)
+            out[mint] = c
+            continue
         try:
             price = float(c.get("priceUsd") or 0) or None
             out[mint] = {
