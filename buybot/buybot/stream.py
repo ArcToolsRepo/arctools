@@ -36,10 +36,10 @@ def publish(rows: list[dict]) -> None:
             qs = _subs.get(key)
             if not qs:
                 continue
-            if key == "*" and float(r.get("usdc") or 0) < 5:
+            if key == "*" and float(r.get("usdc") or 0) < 1:
                 continue
             if payload is None:
-                payload = json.dumps({k: r.get(k) for k in ("tx", "ts", "wallet", "side", "usdc", "tokens", "price1m", "venue", "block", "log_index")} | {"token": tok})
+                payload = json.dumps({k: r.get(k) for k in ("tx", "ts", "wallet", "side", "usdc", "tokens", "price1m", "venue", "block", "log_index")} | {"token": tok, "pub": round(time.time(), 2)})
             for q in list(qs):
                 if q.full():                           # slow client: drop the OLDEST event, keep the newest
                     try:
@@ -101,7 +101,8 @@ async def api_stream(request: web.Request) -> web.StreamResponse:
 
 
 async def api_stream_stats(_req):
-    return web.json_response({**stats, "topics": {k: len(v) for k, v in _subs.items()}}, headers={"Access-Control-Allow-Origin": "*"})
+    from . import live_candles
+    return web.json_response({**stats, "topics": {k: len(v) for k, v in _subs.items()}, "live_candles": live_candles.snapshot()}, headers={"Access-Control-Allow-Origin": "*"})
 
 
 def register(app: web.Application):

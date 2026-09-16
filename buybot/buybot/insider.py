@@ -34,8 +34,10 @@ _lag = {"blocks": 0, "phase": "init", "since": 0.0, "window": ""}               
 async def _yield_to_live(tag: str):
     """Background scanners call this before each RPC-heavy window: sleep while the live ingest is far behind."""
     waited = 0
-    while _lag["blocks"] > 5_000 and waited < 3600:
-        await asyncio.sleep(15); waited += 15
+    # the live path (block → stream) has absolute priority: background scanners pause whenever the ingest is more
+    # than 40 blocks (~15 s) behind, so their receipts/getLogs/DB writes never compete with it on the node or Postgres
+    while _lag["blocks"] > 40 and waited < 3600:
+        await asyncio.sleep(3); waited += 3
     if waited:
         log.info("%s resumed after %ss (ingest lag %s)", tag, waited, _lag["blocks"])
 MIN_CLOSED = 3                        # min. zamknietych pozycji do rankingu
@@ -198,12 +200,24 @@ async def _resolve_pool(pool: str) -> dict | None:
         _pool_cache[key] = info
         return info
     token, is0 = None, False
+    # one batched eth_call (token0 + token1) straight to our node, 4 s budget. A REVERT means the emitter is not a
+    # Uniswap-style pool (spam contracts reuse the Swap topic) → remember that, otherwise every window re-tried it through
+    # 5 RPCs × 10 s timeouts and stalled the live path for 10-15 s. A transport error is NOT persisted (retry next swap).
     try:
-        t0 = "0x" + (await CHAIN.eth_call(pool, SEL_TOKEN0)).hex()[-40:]
-        t1 = "0x" + (await CHAIN.eth_call(pool, SEL_TOKEN1)).hex()[-40:]
-    except Exception:  # noqa
-        # RPC padl (429/timeout): NIE utrwalamy — pula zostanie rozwiazana przy nastepnym swapie.
-        # Wczesniej taki blad zapisywal pule na stale jako "nie-USDC" i gubil jej caly wolumen.
+        async with aiohttp.ClientSession() as _s:
+            async with _s.post(_NODE_RPC, headers={"Content-Type": "application/json"}, json=[
+                {"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [{"to": pool, "data": SEL_TOKEN0 if isinstance(SEL_TOKEN0, str) else "0x" + SEL_TOKEN0.hex()}, "latest"]},
+                {"jsonrpc": "2.0", "id": 2, "method": "eth_call", "params": [{"to": pool, "data": SEL_TOKEN1 if isinstance(SEL_TOKEN1, str) else "0x" + SEL_TOKEN1.hex()}, "latest"]},
+            ], timeout=aiohttp.ClientTimeout(total=4)) as r:
+                res = await r.json(content_type=None)
+        byid = {x.get("id"): x for x in res} if isinstance(res, list) else {}
+        r0, r1 = byid.get(1, {}), byid.get(2, {})
+        if "error" in r0 or "error" in r1 or not (r0.get("result") or "").startswith("0x") or len(r0.get("result", "")) < 42 or len(r1.get("result", "")) < 42:
+            _pool_cache[key] = None                  # reverted / no token0-token1 → not a pool we can price
+            return None
+        t0 = "0x" + r0["result"][-40:]
+        t1 = "0x" + r1["result"][-40:]
+    except Exception:  # noqa - transport: do not persist, the next swap retries
         return None
     if t0.lower() == USDC:
         token, is0 = t1.lower(), False
@@ -410,26 +424,38 @@ async def _v4_register_init(lg):
     hooks = ("0x" + body[128:192][-40:]).lower() if len(body) >= 192 else None
     blk = lg.get("blockNumber")
     blk = int(blk, 16) if isinstance(blk, str) else (int(blk) if blk is not None else None)
-    await db.execute(text(
-        "INSERT INTO v4_pools (id, token, is0, currency0, currency1, fee, tick_spacing, hooks, block) "
-        "VALUES (:i, :t, :z, :c0, :c1, :f, :ts, :h, :b) ON CONFLICT (id) DO UPDATE SET "
-        "currency0 = EXCLUDED.currency0, currency1 = EXCLUDED.currency1, fee = EXCLUDED.fee, "
-        "tick_spacing = EXCLUDED.tick_spacing, hooks = EXCLUDED.hooks, block = COALESCE(v4_pools.block, EXCLUDED.block)"
-    ).bindparams(i=pid, t=token, z=1 if is0 else 0, c0=c0, c1=c1, f=fee, ts=ts, h=hooks, b=blk))
     usdc_dec = 6 if (c0 == USDC or c1 == USDC) else 18      # facade ERC-20 = 6 dec, native = 18
-    await db.execute(text("UPDATE v4_pools SET usdc_dec = :d, quote = :q WHERE id = :i").bindparams(d=usdc_dec, q=quote, i=pid))
+    # one INSERT, no ON CONFLICT UPDATE: a re-init of a known pool never happens on-chain, and an upsert waited on row
+    # locks held by the quote/backfill loops (3 s per pool inside the LIVE path)
+    await db.execute_ingest(text(
+        "INSERT INTO v4_pools (id, token, is0, currency0, currency1, fee, tick_spacing, hooks, block, usdc_dec, quote) "
+        "VALUES (:i, :t, :z, :c0, :c1, :f, :ts, :h, :b, :d, :q) ON CONFLICT (id) DO NOTHING"
+    ).bindparams(i=pid, t=token, z=1 if is0 else 0, c0=c0, c1=c1, f=fee, ts=ts, h=hooks, b=blk, d=usdc_dec, q=quote))
     _v4_cache[pid] = {"is0": is0, "token": token, "usdc_dec": usdc_dec, "quote": quote} if token else None
+    _v4_neg.pop(pid, None)
+
+
+_v4_neg: dict[str, float] = {}
 
 
 async def _v4_pool(pid: str) -> dict | None:
     pid = pid.lower()
     if pid in _v4_cache:
         return _v4_cache[pid]
+    neg = _v4_neg.get(pid)
+    if neg and time.time() - neg < 600:
+        return None
     row = await db.fetchone(text("SELECT token, is0, usdc_dec, quote FROM v4_pools WHERE id = :i").bindparams(i=pid))
     info = ({"is0": bool(row["is0"]), "token": row["token"], "usdc_dec": int(row["usdc_dec"] or 18), "quote": row["quote"]}
             if row and row["token"] else None)
     if row:
         _v4_cache[pid] = info
+    else:
+        # unknown pool (no USDC side / not ours): remember the miss — hot spam pools print hundreds of swaps per window and
+        # every one of them cost a DB round trip
+        _v4_neg[pid] = time.time()
+        if len(_v4_neg) > 20000:
+            _v4_neg.clear()
     return info
 
 
@@ -493,7 +519,8 @@ async def v4_quote_backfill():
             await _yield_to_live("v4 quote backfill")
             b = min(head, a + 9_999)
             try:
-                logs = await CHAIN.get_logs({"address": pm, "topics": [V4_SWAP_TOPIC, pid], "fromBlock": a, "toBlock": b})
+                from web3 import Web3 as _W3
+                logs = await CHAIN.get_logs({"address": _W3.to_checksum_address(pm), "topics": [V4_SWAP_TOPIC, pid], "fromBlock": a, "toBlock": b})
             except Exception as e:  # noqa
                 log.warning("v4 quote scan %s %s: %s", pid[:10], a, str(e)[:80]); ok = False; await asyncio.sleep(1); continue
             decoded = []
@@ -634,6 +661,12 @@ async def v4_keys_backfill():
 
 
 async def api_v4pool(request: web.Request) -> web.Response:
+    from .watchlist import _cached, _resp_body
+    body = await _cached("v4pool:" + request.query_string, 120, lambda: _resp_body(_api_v4pool_impl(request)))
+    return web.Response(body=body, content_type="application/json", headers=API_CORS)
+
+
+async def _api_v4pool_impl(request: web.Request) -> web.Response:
     """PoolKey(s) for a token on Uniswap V4 (USDC-paired) — used by the sniper to route buys."""
     token = _tok(request)
     if not token:
@@ -1140,8 +1173,15 @@ async def _tx_senders(hashes: list, blocks: dict | None = None) -> dict[str, str
     return out
 
 
+_head_ts: dict[str, float] = {"block": 0, "ts": 0}     # set by the ingest loop from the head block it already fetched
+
+
 async def _window_clock(frm: int, to: int) -> tuple[int, float]:
-    """Realny timestamp bloku `frm` + sekundy/blok w oknie (2 zapytania)."""
+    """Realny timestamp bloku `frm` + sekundy/blok w oknie (2 zapytania). At head (small windows) the timestamps are
+    derived from the head block the loop already holds — saves two round trips per block."""
+    if to - frm <= 12 and _head_ts["block"] and abs(_head_ts["block"] - to) <= 12:
+        slope = 0.4
+        return int(_head_ts["ts"] - (_head_ts["block"] - frm) * slope), slope
     try:
         b0 = await CHAIN.call_any("get_block", frm)
         t0 = int(b0["timestamp"])
@@ -1159,13 +1199,15 @@ _RECEIPT_TOPICS = (V3_SWAP_TOPIC, V2_SWAP_TOPIC, ARCPAD_TRADE_TOPIC, V4_SWAP_TOP
 _NODE_RPC = os.getenv("PRIMARY_RPC", "http://89.68.166.52:8545")
 
 
-async def _fetch_receipt_logs(frm: int, to: int) -> tuple[list, dict] | None:
+async def _fetch_receipt_logs(frm: int, to: int, _speculative: bool = False, _hi: list | None = None) -> tuple[list, dict] | None:
     """All logs of blocks frm..to via eth_getBlockReceipts on our own node (one call per block, batched 25 per HTTP
     request): no 20 000-result cap, no window sizing, and every tx sender comes for free. Returns
     ([(topic, [log, …]), …] in the same shape web3.get_logs gives, {tx_hash: from}) or None on any failure
     (the caller falls back to the getLogs path)."""
     from hexbytes import HexBytes
     blocks = list(range(frm, to + 1))
+    if _hi is None:
+        _hi = [to]
     by_topic: dict[str, list] = {t: [] for t in _RECEIPT_TOPICS}
     senders: dict[str, str] = {}
     want = set(_RECEIPT_TOPICS)
@@ -1178,9 +1220,12 @@ async def _fetch_receipt_logs(frm: int, to: int) -> tuple[list, dict] | None:
                     res = await r.json(content_type=None)
                 if not isinstance(res, list) or len(res) != len(chunk):
                     return None
-                for x in res:
+                for x in sorted(res, key=lambda y: int(y.get("id") or 0)):
                     rcs = x.get("result")
                     if rcs is None:
+                        if _speculative:
+                            _hi[0] = min(_hi[0], int(x.get("id") or 0) - 1)   # head not there yet: stop here, keep what we have
+                            break
                         return None                      # block not available yet / pruned → let getLogs handle it
                     for rc in rcs:
                         if rc.get("status") not in ("0x1", 1, True):
@@ -1204,11 +1249,13 @@ async def _fetch_receipt_logs(frm: int, to: int) -> tuple[list, dict] | None:
     return [(t, by_topic[t]) for t in _RECEIPT_TOPICS], senders
 
 
-async def _scan_window(frm: int, to: int, senders: bool = True) -> list[dict] | None:
+async def _scan_window(frm: int, to: int, senders: bool = True, prefetched: tuple | None = None) -> list[dict] | None:
     """Skan jednego okna blokow -> wiersze swapow (None = blad RPC, powtorzyc)."""
     rsend: dict[str, str] | None = None
     results = None
-    if to - frm + 1 <= 600:
+    if prefetched:
+        results, rsend = prefetched
+    elif to - frm + 1 <= 600:
         got = await _fetch_receipt_logs(frm, to)
         if got:
             results, rsend = got
@@ -1307,8 +1354,8 @@ async def gap_fill_loop():
             gaps = [g for g in gaps if g[1] >= g[0]]
             if not gaps:
                 await asyncio.sleep(60); continue
-            if _lag["blocks"] > 3_000:
-                await asyncio.sleep(20); continue
+            if _lag["blocks"] > 40:
+                await asyncio.sleep(5); continue
             frm, to_all = gaps[0]
             to = min(to_all, frm + win - 1)
             t0 = time.time()
@@ -1341,8 +1388,8 @@ async def sender_fill_loop():
             rows = await db.fetchall(text("SELECT tx, block FROM swaps WHERE wallet = '' AND block > :b ORDER BY block DESC LIMIT 400").bindparams(b=int(_lag.get("head") or 0) - 400_000))
             if not rows:
                 await asyncio.sleep(300); continue          # receipts ingest delivers wallets inline → this loop is idle
-            if _lag["blocks"] > 1_500:
-                await asyncio.sleep(20); continue           # live ingest first
+            if _lag["blocks"] > 40:
+                await asyncio.sleep(5); continue            # live ingest first
             by_block: dict[int, list[str]] = {}
             for r in rows:
                 by_block.setdefault(int(r["block"]), []).append(r["tx"].lower())
@@ -1366,6 +1413,17 @@ async def sender_fill_loop():
             await asyncio.sleep(10)
 
 
+def _publish_first(rows: list[dict]) -> None:
+    """Event path: stream + in-memory candles get the swaps BEFORE the Postgres write (the commit can take seconds
+    under load; the browser should not wait for it)."""
+    try:
+        from . import stream, live_candles
+        live_candles.ingest(rows)
+        stream.publish(rows)
+    except Exception as e:  # noqa
+        log.warning("publish: %s", e)
+
+
 def _prefetch_new_tokens(rows: list[dict]):
     try:
         _prefetch_new_tokens_impl(rows)
@@ -1381,11 +1439,6 @@ def _prefetch_new_tokens_impl(rows: list[dict]):
         c = _supply_cache.get(t)
         return c is not None and ((isinstance(c, tuple) and c[0] is not None) or (not isinstance(c, tuple) and c))
     fresh = [t for t in toks if not _has(t)]
-    try:
-        from . import stream
-        stream.publish(rows)
-    except Exception:  # noqa
-        pass
     for t in fresh[:60]:
         if t not in _supply_pending:
             _supply_pending.add(t)
@@ -1415,8 +1468,18 @@ async def ingest_loop():
     while True:
         try:
             _lag.update(phase="head", since=time.time())
-            head = await asyncio.wait_for(CHAIN._bn(), timeout=30)
-            _lag["head"] = head
+            _th = time.time()
+            if _head_ts.get("fetched", 0) and time.time() - _head_ts["fetched"] < 3 and 0 <= _head_ts["block"] - cursor <= 10:
+                # at head: the speculative receipts call below discovers new blocks itself; refresh the head block
+                # (timestamp source) only every 3 s instead of paying a node round trip every iteration
+                head = max(int(_head_ts["block"]), cursor)
+            else:
+                try:
+                    hb = await asyncio.wait_for(CHAIN.w3.eth.get_block("latest", full_transactions=False), timeout=30)
+                    head = int(hb["number"]); _head_ts["block"] = head; _head_ts["ts"] = int(hb["timestamp"]); _head_ts["fetched"] = time.time()
+                except Exception:  # noqa
+                    head = await asyncio.wait_for(CHAIN._bn(), timeout=30)
+            _lag["head"] = head; _lag["t_head"] = round(time.time() - _th, 2)
             _lag["blocks"] = max(0, head - cursor)
             if head - cursor > 20_000:
                 # far behind (outage): serve LIVE data first — jump to near-head and hand the gap to gap_fill_loop
@@ -1425,7 +1488,7 @@ async def ingest_loop():
                 await db.kv_set("insider_gaps", json.dumps(gaps))
                 log.warning("insider ingest: %s blocks behind → jump to %s, gap %s-%s queued for background fill", head - cursor, head - 2_000, cursor + 1, head - 2_000)
                 cursor = head - 2_000
-                await db.kv_set("insider_cursor", str(cursor))
+                _tk = time.time(); await db.kv_set_ingest("insider_cursor", str(cursor)); _lag["t_kv"] = round(time.time() - _tk, 2)
                 _lag["blocks"] = head - cursor
             if time.time() - _last_progress > 900:
                 log.warning("insider ingest: no progress for %ss (cursor %s, head %s) — continuing", int(time.time() - _last_progress), cursor, head)
@@ -1476,11 +1539,12 @@ async def ingest_loop():
                         break                     # dalsze okna powtorzymy w nastepnej iteracji
                     rows.extend(res)
                     advanced = to
+                _publish_first(rows)
                 await db.execute_many_ingest(ins, rows)
                 _prefetch_new_tokens(rows)
                 if advanced > cursor:
                     cursor = advanced; _last_progress = time.time()
-                    await db.kv_set("insider_cursor", str(cursor))
+                    _tk = time.time(); await db.kv_set_ingest("insider_cursor", str(cursor)); _lag["t_kv"] = round(time.time() - _tk, 2)
                     log.info("insider backfill -> %s: +%s swaps (%s okien, do head %s blokow)",
                              cursor, len(rows), len(spans), head - cursor)
                 else:
@@ -1491,10 +1555,27 @@ async def ingest_loop():
                 # 2 000-block window → the scan returned None forever and the cursor froze ~2 300 blocks behind
                 lwin = int(_lag.get("lwin") or LIVE_WINDOW)
                 frm, to = cursor + 1, min(head, cursor + lwin)
+                if head - cursor <= 10:
+                    # at head: one speculative receipts call for cursor+1..cursor+10 (missing blocks come back null) —
+                    # saves the separate head round trip (0.36 s Railway→node) on every block
+                    hi = [cursor + 6]
+                    _tf = time.time()
+                    got = await _fetch_receipt_logs(cursor + 1, cursor + 6, _speculative=True, _hi=hi)
+                    _lag["t_fetch"] = round(time.time() - _tf, 2)
+                    if got and hi[0] >= cursor + 1:
+                        _spec = (got, hi[0]); to = hi[0]
+                        if hi[0] >= _head_ts["block"]:
+                            _head_ts["block"] = hi[0]; _head_ts["ts"] = int(time.time()) - 2   # ~propagation delay
+                    else:
+                        _spec = None
+                        if got is not None and hi[0] < cursor + 1:
+                            await asyncio.sleep(0.25); continue     # no new block yet
+                else:
+                    _spec = None
                 _lag.update(phase="scan", since=time.time(), window=f"{frm}-{to}", lwin=lwin)
                 t_scan = time.time()
                 try:
-                    res = await asyncio.wait_for(_scan_window(frm, to, senders=(head - cursor) < 1_500), timeout=120)
+                    res = await asyncio.wait_for(_scan_window(frm, to, senders=(head - cursor) < 1_500, prefetched=(_spec[0] if _spec else None)), timeout=120)
                 except asyncio.TimeoutError:
                     res = None
                 if res is None:
@@ -1507,12 +1588,16 @@ async def ingest_loop():
                 _lag["lmiss"] = 0
                 if time.time() - t_scan < 20 and lwin < LIVE_WINDOW:
                     _lag["lwin"] = min(LIVE_WINDOW, int(lwin * 1.5))
+                _lag["t_scan"] = round(time.time() - t_scan, 2)
+                _publish_first(res)
+                _tw = time.time()
                 await db.execute_many_ingest(ins, res)
+                _lag["t_write"] = round(time.time() - _tw, 2); _lag["n_rows"] = len(res); _lag["blk_in_win"] = to - frm + 1
                 _prefetch_new_tokens(res)
                 cursor = to; _last_progress = time.time()
-                await db.kv_set("insider_cursor", str(cursor))
+                _tk = time.time(); await db.kv_set_ingest("insider_cursor", str(cursor)); _lag["t_kv"] = round(time.time() - _tk, 2)
                 # behind head → go straight on; at head → normal poll cadence
-                await asyncio.sleep(CFG.poll_interval if head - cursor < 50 else 0.2)
+                await asyncio.sleep(0.25 if head - cursor < 50 else 0.05)   # block-driven: a new block is ~0.4 s away
         except Exception as e:  # noqa
             log.warning("insider ingest [%s %s]: %r", _lag.get("phase"), _lag.get("window"), e)
             _lag.update(phase="error:" + type(e).__name__, since=time.time())
@@ -1809,6 +1894,20 @@ async def api_ohlc(request: web.Request) -> web.Response:
         SELECT * FROM agg ORDER BY bucket DESC LIMIT :lim
     """).bindparams(step=step, t=token, dust=0.1, lim=limit))
     rows.reverse()
+    # event path overlay: in-memory 1m ring (fed before the DB write) replaces/extends the newest buckets
+    try:
+        from . import live_candles
+        last_b = int(rows[-1]["bucket"]) if rows else 0
+        live = live_candles.candles(token, step, max(0, last_b - step))      # last DB bucket + anything newer
+        if live:
+            by = {int(r["bucket"]): r for r in rows}
+            for k in live:
+                cur = by.get(k["t"])
+                if cur is None or float(k["v"]) >= float(cur["v"] or 0):        # RAM has ≥ what the DB has → take RAM
+                    by[k["t"]] = {"bucket": k["t"], "o": k["o"], "h": k["h"], "l": k["l"], "c": k["c"], "v": k["v"], "vb": k["vb"], "n": k["n"]}
+            rows = [by[b] for b in sorted(by)][-limit:]
+    except Exception as e:  # noqa
+        log.debug("ohlc overlay: %s", e)
     # wypelnij luki: swieca bez transakcji = plaska na poprzednim close (jak na screenerach)
     out = []
     prev_c = None
@@ -1969,6 +2068,12 @@ async def _insider_map() -> dict:
 
 
 async def api_token_stats(request: web.Request) -> web.Response:
+    from .watchlist import _cached, _resp_body
+    body = await _cached("tstats:" + request.query_string, 20, lambda: _resp_body(_api_token_stats_impl(request)))
+    return web.Response(body=body, content_type="application/json", headers=API_CORS)
+
+
+async def _api_token_stats_impl(request: web.Request) -> web.Response:
     token = _tok(request)
     if not token:
         return web.json_response({"error": "bad token"}, status=400, headers=API_CORS)

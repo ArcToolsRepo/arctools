@@ -186,8 +186,22 @@ async def _deployer(s: aiohttp.ClientSession, token: str) -> str | None:
     return dev
 
 
+_bundle_cache: dict[str, tuple[float, set]] = {}
+
+
 async def _bundle_wallets(token: str, dev: str | None) -> set[str]:
+    c = _bundle_cache.get(token)
+    if c and time.time() - c[0] < 600:
+        return c[1]
+    # launch-block wallets never change after the first minutes → 10 min cache; this GROUP BY over every swap of the
+    # token ran 13× in parallel under Terminal load
     rows = await db.fetchall(text("SELECT wallet, MIN(ts) AS t0 FROM swaps WHERE token = :t AND side = 'buy' GROUP BY wallet").bindparams(t=token))
+    out = _bundle_from_rows(rows, dev); _bundle_cache[token] = (time.time(), out)
+    if len(_bundle_cache) > 5000: _bundle_cache.clear()
+    return out
+
+
+def _bundle_from_rows(rows, dev):
     if not rows:
         return set()
     first = min(int(r["t0"]) for r in rows)

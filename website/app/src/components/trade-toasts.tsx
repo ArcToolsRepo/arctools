@@ -60,9 +60,23 @@ export function TradeToasts({ tokens, logos, enabled = true, insiders }: { token
       } catch { /* index busy: skip this tick */ }
     };
     void poll();
-    const id = setInterval(poll, 4000);
+    // stream first (Terminal opens /api/stream and re-dispatches every frame as "arc-live-trades"); polling is the net
+    const onLive = (ev: Event) => {
+      const batch = ((ev as CustomEvent).detail ?? []) as { tx: string; log_index?: number; ts: number; token: string; wallet?: string; side: "buy" | "sell"; usdc: number; price1m: number }[];
+      const fresh = batch
+        .filter((s) => s.usdc >= MIN_USD && watch.current.has(s.token.toLowerCase()))
+        .map((s) => { const i = insRef.current[s.token.toLowerCase()]; const w = (s.wallet ?? "").toLowerCase(); const flag = s.side === "sell" && i && w ? (i.dev === w ? "dev" as const : i.bundle.includes(w) ? "bundle" as const : null) : null;
+          return { ...s, symbol: null, rank: null, key: `${s.tx}:${s.log_index ?? 0}`, shownAt: Date.now(), flag } as Toast; })
+        .filter((s) => !seen.current.has(s.key))
+        .slice(-3);
+      if (!fresh.length) return;
+      fresh.forEach((s) => seen.current.add(s.key));
+      setToasts((t) => [...t, ...fresh].slice(-MAX_VISIBLE));
+    };
+    window.addEventListener("arc-live-trades", onLive);
+    const id = setInterval(poll, 15_000);
     const gc = setInterval(() => setToasts((t) => t.filter((x) => Date.now() - x.shownAt < (x.flag ? SHOW_MS * 2 : SHOW_MS))), 500);
-    return () => { alive = false; clearInterval(id); clearInterval(gc); };
+    return () => { alive = false; clearInterval(id); clearInterval(gc); window.removeEventListener("arc-live-trades", onLive); };
   }, [enabled]);
 
   if (!toasts.length) return null;

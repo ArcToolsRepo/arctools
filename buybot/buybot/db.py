@@ -154,3 +154,13 @@ async def fetchall_heavy(q):
         async with engine.begin() as c:
             await c.execute(text("SET LOCAL work_mem = '64MB'"))
             return [dict(r) for r in (await c.execute(q)).mappings().all()]
+
+
+async def kv_set_ingest(k: str, v: str):
+    """kv write on the ingest pool (the live loop must never queue behind API traffic for its cursor)."""
+    async with engine_ingest.begin() as c:
+        r = (await c.execute(select(kv).where(kv.c.k == k))).first()
+        if r is None:
+            await c.execute(insert(kv).values(k=k, v=v))
+        else:
+            await c.execute(update(kv).where(kv.c.k == k).values(v=v))

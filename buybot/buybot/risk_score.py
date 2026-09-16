@@ -396,6 +396,12 @@ async def api_dev_history(req: web.Request):
 
 
 async def api_wallet_labels(req: web.Request):
+    from .watchlist import _cached, _resp_body
+    body = await _cached("wlabels:" + req.query_string, 120, lambda: _resp_body(_api_wallet_labels_impl(req)))
+    return web.Response(body=body, content_type="application/json", headers={"Access-Control-Allow-Origin": "*"})
+
+
+async def _api_wallet_labels_impl(req: web.Request):
     ws = [w.strip() for w in (req.query.get("wallets") or "").split(",") if w.strip()]
     token = req.query.get("token")
     return web.json_response({"labels": await wallet_labels(ws, token)}, headers={**CORS, "Cache-Control": "public, max-age=60"})

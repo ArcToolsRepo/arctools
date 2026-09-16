@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
-import { BOT_API } from "@/lib/bot-api";
+import { BOT_API, BOT_ORIGIN } from "@/lib/bot-api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
@@ -169,6 +169,43 @@ function Trade() {
   const [rows, setRows] = useState<PadToken[]>(initial?.rows ?? []);
   const [movers, setMovers] = useState<Mover[]>([]);
   const [trend, setTrend] = useState<Trend[]>(initial?.trend ?? []);
+  // ---- LIVE: every swap on Arc (≥ $1) arrives over SSE in 300 ms frames → the row's vol / txs / buys-sells / price / MC
+  //      move the moment the block lands; toasts get the same feed via a window event. Polling stays as fallback.
+  const [liveFeed, setLiveFeed] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof EventSource === "undefined") return;
+    let es: EventSource | null = null; let closed = false; let backoff = 1000;
+    type LiveT = { tx: string; log_index?: number; ts: number; token: string; wallet?: string; side: "buy" | "sell"; usdc: number; price1m: number };
+    const apply = (batch: LiveT[]) => {
+      const ok = batch.filter((t) => Number(t.price1m) > 0 && Number(t.usdc) > 0);
+      if (!ok.length) return;
+      window.dispatchEvent(new CustomEvent("arc-live-trades", { detail: ok }));
+      setTrend((prev) => {
+        if (!prev.length) return prev;
+        const idx = new Map(prev.map((r, i) => [r.token.toLowerCase(), i]));
+        let next: Trend[] | null = null;
+        for (const t of ok) {
+          const i = idx.get(t.token.toLowerCase()); if (i == null) continue;
+          if (!next) next = [...prev];
+          const r = next[i]; const p1 = t.price1m;
+          const mcap = r.supply && p1 > 0 ? (p1 / 1e6) * r.supply : r.mcap;
+          next[i] = { ...r, txs: r.txs + 1, txs_all: r.txs_all + 1, vol: r.vol + t.usdc, buys: r.buys + (t.side === "buy" ? 1 : 0), sells: r.sells + (t.side === "sell" ? 1 : 0),
+            p1, mcap, ath: r.ath != null ? Math.max(r.ath, p1) : r.ath, ath_mcap: r.ath_mcap != null && mcap != null ? Math.max(r.ath_mcap, mcap) : r.ath_mcap };
+        }
+        return next ?? prev;
+      });
+    };
+    const open = () => {
+      if (closed) return;
+      es = new EventSource(`${BOT_ORIGIN}/api/stream`);
+      es.addEventListener("hello", () => { backoff = 1000; setLiveFeed(true); });
+      es.addEventListener("trade", (ev) => { try { apply([JSON.parse((ev as MessageEvent).data)]); } catch { /* malformed */ } });
+      es.addEventListener("trades", (ev) => { try { apply(JSON.parse((ev as MessageEvent).data)); } catch { /* malformed */ } });
+      es.onerror = () => { setLiveFeed(false); es?.close(); es = null; if (!closed) setTimeout(open, backoff); backoff = Math.min(backoff * 2, 15_000); };
+    };
+    open();
+    return () => { closed = true; es?.close(); };
+  }, []);
   const [tf, setTf] = useState(0);   // 0 = all-time (default): every token shows its full volume / txs / change
   const [favs, setFavs] = useState<Set<string>>(new Set());
   const [liq, setLiq] = useState<Map<string, number>>(new Map());
@@ -553,7 +590,7 @@ function Trade() {
               ))}
               <span style={{ marginLeft: "auto" }}>
                 {[1, 5, 60, 360, 1440, 0].map((m) => <button key={m} className="arc-mono" onClick={() => setTf(m)} style={{ background: tf === m ? "rgba(255,255,255,0.08)" : "transparent", border: "1px solid " + (tf === m ? "var(--arc-line)" : "transparent"), borderRadius: 4, color: tf === m ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, marginLeft: 2, padding: "4px 9px" }} type="button">{tfLabel(m)}</button>)}
-                <button className="arc-mono" onClick={toggleToasts} style={{ background: toastsOn ? "rgba(34,197,128,0.12)" : "transparent", border: "1px solid " + (toastsOn ? "var(--arc-up)" : "var(--arc-line)"), borderRadius: 4, color: toastsOn ? "var(--arc-up)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, marginLeft: 8, padding: "3px 8px" }} title="Live buy/sell pop-ups for the tokens on screen" type="button">{toastsOn ? "🔔 live" : "🔕 live"}</button>
+                <button className="arc-mono" onClick={toggleToasts} style={{ background: toastsOn ? "rgba(34,197,128,0.12)" : "transparent", border: "1px solid " + (toastsOn ? "var(--arc-up)" : "var(--arc-line)"), borderRadius: 4, color: toastsOn ? "var(--arc-up)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, marginLeft: 8, padding: "3px 8px" }} title="Live buy/sell pop-ups for the tokens on screen" type="button">{toastsOn ? (liveFeed ? "● live" : "🔔 live") : "🔕 live"}</button>
               </span>
             </div>
             {/* chain-wide search: every ERC-20 on Arc by name / symbol / address (shows when the query is not an address; addresses use the quick action below) */}

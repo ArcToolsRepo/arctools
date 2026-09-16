@@ -328,7 +328,7 @@ async def hunt_loop():
     while True:
         try:
             from .insider import _lag
-            if (_lag.get("blocks") or 0) > 500:            # the live index has priority on DB + node
+            if (_lag.get("blocks") or 0) > 40:            # the live index has priority on DB + node
                 await asyncio.sleep(30); continue
             n, f = await hunt_once()
             if n:
