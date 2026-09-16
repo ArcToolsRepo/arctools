@@ -44,6 +44,7 @@ FACTORIES: dict[str, dict] = {
     "pools":    {"label": "pools.trade", "url": "https://pools.trade",   "twitter": None,              "factories": ["0x0000ffffbe8efe702c8703ae3477ff5de3d319c0"], "model": "Uniswap liquidityLauncher → V4 pool (same uerc20Factory as Minara)"},
     "arguspad": {"label": "Arguspad",    "url": "https://arguspad.io",   "twitter": "arguspad",        "factories": ["0xb021be536808f551b31789422fd28a6c9c6e97da"], "model": "token factory (ARGUS-quoted V4 pools)"},
     "tolly":    {"label": "Tolly",       "url": "https://tolly.fun",     "twitter": "tollylabs",       "factories": ["0xcad7ee36ac193bf2eddb7b3e2736c5bdb8269c8b"], "model": "instant V3 pool + locker 0x712fee0e…"},
+    "faze":     {"label": "faze.fun",    "url": "https://faze.fun",     "twitter": "fazedotfun",     "factories": ["0x6a62919ccbf0c19e0c4e084f986b582b4492dda4", "0x47e7936ae9891e61c5123db720593c05de7120cc", "0x7c8de42426a058b778dce8530537cd62ef0178c4"], "model": "own bonding curve, graduates into a locked Uniswap V4 pool (LP NFT burned)"},
     "ubi":      {"label": "UBI.fun",     "url": "https://ubi.fun",       "twitter": "ubidotfun",       "factories": ["0xee3e862efde6dcd6df5648af0e2731b9d1df4605", "0xe07f7ca66ec795592385018dd998f0b50b8a2834"], "model": "V4 pool, hooks 0x20eead6d… / 0xc780c0f4…"},
 }
 

@@ -78,6 +78,7 @@ const V4_NAMES: Record<string, string> = {
   "0x20eead6db6b3d0a4491e9073119dd0ebff166acc": "UBI.fun",
   "0xc780c0f4aac690908854d351b8bfda2812daefdc": "UBI.fun",
   "0xbaba3f590b3661de78998d1576a73a4d726b2acc": "Sashimi",
+  "0x47e7936ae9891e61c5123db720593c05de7120cc": "faze.fun",
   "0xf73a3f56c533f7f1146fbc97806f07efa66ce0cc": "Klik",
   "0xca55cdde6578f6f8113dd339520e13418abc2acc": "Lift",
   "0x7cd35b33d495396c4707056d23582df68d0a28cc": "Archemist",

@@ -338,6 +338,14 @@ PRIORITY_POOLS = ["0xf89005ccf237a59eeee1521e74b15c7d8d022ab7"]   # ARCT/USDC �
 
 # ---- ArcPad v3: token moze byc kwotowany w innym tokenie (np. TOLLY) ----
 ARCPAD_V3 = "0x2726aec64d8a9bc41b9940dda5d21c889458b348"
+# faze.fun — its own bonding curve on Arc (BondingCurveV4). Buys and sells are two events on one contract, both
+# laid out [amountIn, fee, amountOut, ethReserve, tokenReserve] with the token in topic1 and the trader in topic2.
+# Quote side is native USDC (18-dec), so no pool lookup and no decimals guessing is needed: a curve trade decodes
+# from the log alone. Graduated coins leave the curve for a Uniswap V4 pool behind hook 0x47e7…20cc, which the
+# normal V4 path already handles once the hook is registered.
+FAZE_CURVE = "0x6a62919ccbf0c19e0c4e084f986b582b4492dda4"
+FAZE_BUY_TOPIC = "0x8a5254432535d4192429d2cc163283a57784eac274295fcda17cc659c1ee414c"
+FAZE_SELL_TOPIC = "0x156f189818933420824a33bbb00381f62b4acd509c93f9e45e90de784e594b73"
 SEL_LAUNCH = "0x214013ca"
 _pad_quote: dict[str, str | None] = {}       # token -> quote token addr (None = USDC)
 _quote_usd: dict[str, tuple[float, float]] = {}   # quote -> (usd, ts)
@@ -1101,6 +1109,20 @@ def _decode(topic: str, lg, pool_info: dict | None) -> dict | None:
     data = lg["data"]
     body = (data.hex() if hasattr(data, "hex") else str(data)).replace("0x", "")
     try:
+        if topic in (FAZE_BUY_TOPIC, FAZE_SELL_TOPIC):
+            if lg["address"].lower() != FAZE_CURVE:
+                return None
+            topics = [t.hex() if hasattr(t, "hex") else str(t) for t in lg["topics"]]
+            topics = [t if t.startswith("0x") else "0x" + t for t in topics]
+            token = ("0x" + topics[1][-40:]).lower()
+            w = [int(body[i * 64:(i + 1) * 64], 16) for i in range(min(3, len(body) // 64))]
+            if len(w) < 3:
+                return None
+            buy = topic == FAZE_BUY_TOPIC
+            usdc, toks = (w[0], w[2]) if buy else (w[2], w[0])
+            if usdc <= 0 or toks <= 0:
+                return None
+            return {"side": "buy" if buy else "sell", "token": token, "tokens": toks / 1e18, "usdc": usdc / 1e18}
         if topic == ARCPAD_TRADE_TOPIC:
             topics = [t.hex() if hasattr(t, "hex") else str(t) for t in lg["topics"]]
             topics = [t if t.startswith("0x") else "0x" + t for t in topics]
@@ -1222,7 +1244,7 @@ async def _window_clock(frm: int, to: int) -> tuple[int, float]:
         return int(time.time()), 0.5
 
 
-_RECEIPT_TOPICS = (V3_SWAP_TOPIC, V2_SWAP_TOPIC, ARCPAD_TRADE_TOPIC, V4_SWAP_TOPIC, V4_INIT_TOPIC)
+_RECEIPT_TOPICS = (V3_SWAP_TOPIC, V2_SWAP_TOPIC, ARCPAD_TRADE_TOPIC, V4_SWAP_TOPIC, V4_INIT_TOPIC, FAZE_BUY_TOPIC, FAZE_SELL_TOPIC)
 _NODE_RPC = os.getenv("PRIMARY_RPC", "http://89.68.166.52:8545")
 
 
@@ -1396,7 +1418,7 @@ async def _scan_window(frm: int, to: int, senders: bool = True, prefetched: tupl
                 log.warning("insider get_logs %s %s-%s: %s", topic[:10], frm, to, str(e)[:70])
                 return topic, None
 
-        results = await asyncio.gather(*[fetch(t) for t in (V3_SWAP_TOPIC, V2_SWAP_TOPIC, ARCPAD_TRADE_TOPIC, V4_SWAP_TOPIC, V4_INIT_TOPIC)])
+        results = await asyncio.gather(*[fetch(t) for t in (V3_SWAP_TOPIC, V2_SWAP_TOPIC, ARCPAD_TRADE_TOPIC, V4_SWAP_TOPIC, V4_INIT_TOPIC, FAZE_BUY_TOPIC, FAZE_SELL_TOPIC)])
         if any(logs is None for _, logs in results):
             return None
 
@@ -1437,7 +1459,7 @@ async def _scan_window(frm: int, to: int, senders: bool = True, prefetched: tupl
                     continue
                 dec = _decode_v4(lg, await _v4_pool(_topic_hex(lg["topics"][1])))
             else:
-                info = None if topic == ARCPAD_TRADE_TOPIC else _pool_cache.get(lg["address"].lower())
+                info = None if topic in (ARCPAD_TRADE_TOPIC, FAZE_BUY_TOPIC, FAZE_SELL_TOPIC) else _pool_cache.get(lg["address"].lower())
                 dec = _decode(topic, lg, info)
             if dec and _sane_print(dec):
                 decoded.append((topic, lg, dec))
@@ -1462,7 +1484,7 @@ async def _scan_window(frm: int, to: int, senders: bool = True, prefetched: tupl
             "price1m": dec["usdc"] / dec["tokens"] * 1e6,
             "side": dec["side"], "token": dec["token"], "tokens": dec["tokens"],
             "ts": int(t0 + (lg["blockNumber"] - frm) * slope), "tx": txh, "usdc": dec["usdc"],
-            "venue": "pad" if topic == ARCPAD_TRADE_TOPIC else ("v3" if topic == V3_SWAP_TOPIC else ("v4" if topic == V4_SWAP_TOPIC else "v2")),
+            "venue": "faze" if topic in (FAZE_BUY_TOPIC, FAZE_SELL_TOPIC) else ("pad" if topic == ARCPAD_TRADE_TOPIC else ("v3" if topic == V3_SWAP_TOPIC else ("v4" if topic == V4_SWAP_TOPIC else "v2"))),
             "wallet": senders.get(txh, ""),
         })
     return rows
