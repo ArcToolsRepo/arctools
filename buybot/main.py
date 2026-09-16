@@ -61,6 +61,7 @@ async def main():
         asyncio.create_task(trending.trending_loop(), name="trending"),
         asyncio.create_task(chain_status.loop(), name="chain-status"),
         asyncio.create_task(insider.ingest_loop(), name="insider-ingest"),
+        asyncio.create_task(insider.sender_fill_loop(), name="insider-senders"),
         asyncio.create_task(insider.stats_loop(), name="insider-stats"),
         asyncio.create_task(insider.repair_loop(), name="insider-repair"),
         asyncio.create_task(insider.supply_repair_loop(), name="supply-repair"),

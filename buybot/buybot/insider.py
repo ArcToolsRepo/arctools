@@ -1149,7 +1149,7 @@ async def _window_clock(frm: int, to: int) -> tuple[int, float]:
         return int(time.time()), 0.5
 
 
-async def _scan_window(frm: int, to: int) -> list[dict] | None:
+async def _scan_window(frm: int, to: int, senders: bool = True) -> list[dict] | None:
     """Skan jednego okna blokow -> wiersze swapow (None = blad RPC, powtorzyc)."""
     async def fetch(topic):
         try:
@@ -1206,9 +1206,12 @@ async def _scan_window(frm: int, to: int) -> list[dict] | None:
     if not decoded:
         return []
 
-    senders, clock = await asyncio.gather(
-        _tx_senders(list({lg["transactionHash"] for _, lg, _ in decoded}), {lg["transactionHash"]: lg["blockNumber"] for _, lg, _ in decoded}),
-        _window_clock(frm, to))
+    if senders:
+        senders, clock = await asyncio.gather(
+            _tx_senders(list({lg["transactionHash"] for _, lg, _ in decoded}), {lg["transactionHash"]: lg["blockNumber"] for _, lg, _ in decoded}),
+            _window_clock(frm, to))
+    else:
+        senders, clock = {}, await _window_clock(frm, to)      # wallets filled later by sender_fill_loop (catch-up mode)
     t0, slope = clock
     rows = []
     for topic, lg, dec in decoded:
@@ -1223,6 +1226,44 @@ async def _scan_window(frm: int, to: int) -> list[dict] | None:
             "wallet": senders.get(txh, ""),
         })
     return rows
+
+
+async def sender_fill_loop():
+    """Catch-up mode writes swaps with wallet='' (senders deferred). Fill them in the background, newest first,
+    one getBlock per block (full transactions) — low priority, yields when the live ingest is far behind."""
+    await asyncio.sleep(60)
+    while True:
+        try:
+            rows = await db.fetchall(text("SELECT tx, block FROM swaps WHERE wallet = '' ORDER BY block DESC LIMIT 400"))
+            if not rows:
+                await asyncio.sleep(30); continue
+            if _lag["blocks"] > 40_000:
+                await asyncio.sleep(20)                     # let the catch-up have the RPC budget first
+            by_block: dict[int, list[str]] = {}
+            for r in rows:
+                by_block.setdefault(int(r["block"]), []).append(r["tx"].lower())
+            sem = asyncio.Semaphore(4); done = 0
+
+            async def one(b: int, txs: list[str]):
+                nonlocal done
+                async with sem:
+                    try:
+                        blk = await CHAIN.w3.eth.get_block(b, full_transactions=True)
+                    except Exception:  # noqa
+                        return
+                    found = {(_hx(t["hash"])).lower(): (t["from"] or "").lower() for t in blk["transactions"]}
+                    for h in txs:
+                        w = found.get(h)
+                        if w:
+                            await db.execute(text("UPDATE swaps SET wallet = :w WHERE tx = :h AND wallet = ''").bindparams(w=w, h=h)); done += 1
+                        else:
+                            # tx not in this block (reorg / wrong block) → mark so we don't loop on it forever
+                            await db.execute(text("UPDATE swaps SET wallet = '0x' WHERE tx = :h AND wallet = ''").bindparams(h=h))
+            await asyncio.gather(*[one(b, t) for b, t in by_block.items()])
+            log.info("sender fill: %s wallets from %s blocks (%s rows pending)", done, len(by_block), len(rows))
+        except Exception as e:  # noqa
+            log.warning("sender fill: %s", e)
+            await asyncio.sleep(10)
 
 
 async def ingest_loop():
@@ -1251,17 +1292,38 @@ async def ingest_loop():
             backfilling = head - cursor > LIVE_WINDOW * 2
 
             if backfilling:
-                # kilka okien naraz — kursor idzie tylko po spojnym prefiksie sukcesow
+                # adaptive window: a post-outage burst can hold thousands of swaps in 5k blocks → the scan would not finish
+                # inside the timeout and restart forever. Halve on timeout, grow back when a window is quick.
+                win = int(_lag.get("win") or BACKFILL_WINDOW)
                 spans = []
                 c = cursor
                 for _ in range(PARALLEL_WINDOWS):
                     if c >= head:
                         break
-                    frm, to = c + 1, min(head, c + BACKFILL_WINDOW)
+                    frm, to = c + 1, min(head, c + win)
                     spans.append((frm, to))
                     c = to
-                _lag.update(phase="scan", since=time.time(), window=f"{spans[0][0]}-{spans[-1][1]}")
-                scans = await asyncio.wait_for(asyncio.gather(*[_scan_window(f, t) for f, t in spans]), timeout=600)
+                _lag.update(phase="scan", since=time.time(), window=f"{spans[0][0]}-{spans[-1][1]}", win=win)
+                t_scan = time.time()
+                try:
+                    defer = (head - cursor) > 10_000
+                    scans = await asyncio.wait_for(asyncio.gather(*[_scan_window(f, t, senders=not defer) for f, t in spans]), timeout=240)
+                except asyncio.TimeoutError:
+                    _lag["win"] = max(250, win // 2)
+                    log.warning("insider backfill window %s-%s timed out → window %s", spans[0][0], spans[-1][1], _lag["win"])
+                    continue
+                if any(r is None for r in scans):
+                    # RPC refused (e.g. "query exceeds max results 20000" in a post-outage burst) or transient failure:
+                    # shrink the window after 2 consecutive misses so a dense range gets through in smaller bites
+                    _lag["miss"] = int(_lag.get("miss") or 0) + 1
+                    if _lag["miss"] >= 2:
+                        _lag["win"] = max(250, win // 2); _lag["miss"] = 0
+                        log.warning("insider backfill window %s-%s failed twice → window %s", spans[0][0], spans[-1][1], _lag["win"])
+                    await asyncio.sleep(2)
+                    continue
+                _lag["miss"] = 0
+                if time.time() - t_scan < 60 and win < BACKFILL_WINDOW:
+                    _lag["win"] = min(BACKFILL_WINDOW, int(win * 1.5))
                 _lag.update(phase="write", since=time.time())
                 rows, advanced = [], cursor
                 for (frm, to), res in zip(spans, scans):
