@@ -216,6 +216,11 @@ function Trade() {
   const [, setRiskTick] = useState(0);
   useEffect(() => { const id = setInterval(() => { riskMiss.current.clear(); }, 300_000); return () => clearInterval(id); }, []);
   const [sortKey, setSortKey] = useState<"age" | "mcap" | "vol" | "txs" | "chg" | "smart">("vol");
+  // Venue-supplied numbers (DYORSwap & co.) arrive as strings, nulls or absurd values when a pool has broken
+  // decimals. A NaN volume made Array.sort leave the row wherever it happened to be — a 16-minute-old $14-liquidity
+  // token sat at #2 of a volume-sorted table. Everything numeric from outside our index goes through fin().
+  const fin = (n: unknown): number => { const v = Number(n); return Number.isFinite(v) && Math.abs(v) < 1e12 ? v : 0; };
+  const finN = (n: unknown): number | null => { const v = Number(n); return Number.isFinite(v) && v > 0 && v < 1e12 ? v : null; };
   useEffect(() => { setFavs(loadFavs()); }, []);
   const toggleFav = (t: string) => setFavs((f) => { const n = new Set(f); if (n.has(t)) n.delete(t); else n.add(t); try { localStorage.setItem(FAV_KEY, JSON.stringify([...n])); } catch { /* ignore */ } return n; });
   useEffect(() => {
@@ -420,8 +425,8 @@ function Trade() {
     const createdTs = t?.createdAt ? new Date(t.createdAt).getTime() / 1000 : tr?.first_ts ?? null;
     return {
       token: k, symbol: tr?.symbol ?? t?.symbol ?? short(k), name: t?.name ?? tr?.symbol ?? "", logo: t?.logo ?? logos[k] ?? xAvatar(t?.twitter) ?? null, pad: t?.pad ?? "", og: !!t?.og, stock: !!t?.stock, quoteSymbol: t?.quoteSymbol ?? null, dexes: t?.dexes ?? [],
-      age: createdTs, ca: k, mcap: (t?.stock ? (t?.mcapUsd ?? tr?.mcap) : (tr?.mcap ?? t?.mcapUsd)) ?? null, chg: tr?.chg ?? null, athMcap: tr?.ath_mcap ?? null,
-      liq: liq.get(k) ?? t?.liqUsd ?? null, vol: tr?.vol ?? t?.volUsd ?? 0, txs: tr?.txs ?? 0, buys: tr?.buys ?? 0, sells: tr?.sells ?? 0, traders: tr?.traders ?? 0,
+      age: createdTs, ca: k, mcap: finN(t?.stock ? (t?.mcapUsd ?? tr?.mcap) : (tr?.mcap ?? t?.mcapUsd)), chg: Number.isFinite(Number(tr?.chg)) ? tr?.chg ?? null : null, athMcap: finN(tr?.ath_mcap),
+      liq: finN(liq.get(k) ?? t?.liqUsd), vol: fin(tr?.vol ?? t?.volUsd), txs: fin(tr?.txs), buys: tr?.buys ?? 0, sells: tr?.sells ?? 0, traders: tr?.traders ?? 0,
       insiders: c?.insiders ?? 0, smart: smartMap.get(k) ?? null, twitter: t?.twitter ?? null, telegram: t?.telegram ?? null, website: t?.website ?? null,
       price: tr?.p1 ? tr.p1 / 1e6 : t?.priceUsd ?? null,
     };
@@ -459,7 +464,7 @@ function Trade() {
     if (mv) base = base.filter((r) => r.vol >= mv);
     if ((tab !== "new" && tab !== "new15" && (padF === "all" || tab === "all")) || sortKey !== "vol") {
       const key = ((tab === "new" || tab === "new15") || (padF !== "all" && tab !== "all")) && sortKey === "vol" ? "age" : sortKey;
-      base.sort((a, b) => key === "age" ? (b.age ?? 0) - (a.age ?? 0) : key === "mcap" ? (b.mcap ?? 0) - (a.mcap ?? 0) : key === "txs" ? b.txs - a.txs : key === "chg" ? (b.chg ?? -1e9) - (a.chg ?? -1e9) : key === "smart" ? (b.smart?.net ?? -1e9) - (a.smart?.net ?? -1e9) : b.vol - a.vol);
+      base.sort((a, b) => key === "age" ? fin(b.age) - fin(a.age) : key === "mcap" ? fin(b.mcap) - fin(a.mcap) : key === "txs" ? fin(b.txs) - fin(a.txs) : key === "chg" ? (Number.isFinite(Number(b.chg)) ? Number(b.chg) : -1e9) - (Number.isFinite(Number(a.chg)) ? Number(a.chg) : -1e9) : key === "smart" ? fin(b.smart?.net) - fin(a.smart?.net) : fin(b.vol) - fin(a.vol));
     }
     // pin the official token on top (every tab except Holdings), regardless of sort / filter
     if (tab !== "holdings" && (!q || matches(toRow(OFFICIAL_TOKEN)))) {
