@@ -263,15 +263,37 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
       return { ...k, o, h, l, c };
     });
   }, [candles]);
+  // incremental path: same series config, candles only grew/changed at the tail (live trade, poll refresh) → update()
+  // the last bars in place. No series rebuild, no flicker, viewport/drawings/markers untouched.
+  const appliedRef = useRef<{ key: string; len: number; first: number; lastT: number } | null>(null);
   useEffect(() => {
     const chart = chartRef.current; const lw = lwRef.current; const vs = volRef.current;
     if (!chart || !lw || !vs) return;
+    const key = `${ctype}|${mode}|${scale}|${theme.light ? "l" : "d"}|${ready ? 1 : 0}`;
+    const src = ctype === "heikin" ? haData : candles;
+    const prev = appliedRef.current;
+    const T0 = (t: number) => t as UTC;
+    if (mainRef.current && prev && prev.key === key && src.length >= prev.len && src.length - prev.len <= 3 && src.length > 0 && src[0].t === prev.first && src[src.length - 1].t >= prev.lastT) {
+      const s = mainRef.current;
+      const from = Math.max(0, prev.len - 1);
+      try {
+        for (let i = from; i < src.length; i++) {
+          const k = src[i];
+          if (ctype === "line" || ctype === "area") (s as import("lightweight-charts").ISeriesApi<"Line">).update({ time: T0(k.t), value: k.c * scale });
+          else (s as import("lightweight-charts").ISeriesApi<"Candlestick">).update({ time: T0(k.t), open: k.o * scale, high: k.h * scale, low: k.l * scale, close: k.c * scale });
+          const kv = candles[i];
+          if (kv) vs.update({ color: kv.c >= kv.o ? (theme.light ? "rgba(22,163,74,0.35)" : "rgba(34,197,128,0.45)") : (theme.light ? "rgba(220,38,38,0.35)" : "rgba(240,83,79,0.45)"), time: T0(kv.t), value: kv.v });
+        }
+        appliedRef.current = { key, len: src.length, first: src[0].t, lastT: src[src.length - 1].t };
+        return;
+      } catch { /* fall through to a full rebuild */ }
+    }
+    appliedRef.current = src.length ? { key, len: src.length, first: src[0].t, lastT: src[src.length - 1].t } : null;
     // drop the previous main series (drawings attached to it are re-created below)
     for (const pl of drawSeries.current.priceLines) { try { pl.s.removePriceLine(pl.l); } catch { /* gone */ } }
     drawSeries.current.priceLines = [];
     if (mainRef.current) { try { chart.removeSeries(mainRef.current); } catch { /* gone */ } mainRef.current = null; markRef.current = null; }
     const pf = { formatter: (p: number) => fmtAxis(p, mode), type: "custom" as const };
-    const src = ctype === "heikin" ? haData : candles;
     const T = (t: number) => t as UTC;
     let s: import("lightweight-charts").ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area">;
     if (ctype === "line") {

@@ -620,7 +620,11 @@ function TokenPage() {
   const liquidity = info?.liquidityUsdc && info.liquidityUsdc > 0 ? info.liquidityUsdc : (vs?.liquidityUsdc ?? info?.liquidityUsdc ?? null);
   // arc-scan zwraca max 50 wierszy (rozmiar strony), screener ma prawdziwy licznik — bierzemy najwiekszy
   const holderCount = Math.max(holders?.count ?? 0, vs?.holders ?? 0, info?.holders ?? 0) || null;
-  const scale = useMemo(() => (mode === "mcap" ? (info?.supply ?? 0) / 1e6 : 1e-6), [mode, info?.supply]);
+  // MCap mode needs a supply; a brand-new token may not have one yet → derive it from mcap/price, else fall back to price
+  // mode instead of drawing a flat-zero (blank) chart
+  const supplyForChart = info?.supply || (info?.mcapUsd && info?.price1m ? info.mcapUsd / (info.price1m / 1e6) : null);
+  const scale = useMemo(() => (mode === "mcap" && supplyForChart ? supplyForChart / 1e6 : 1e-6), [mode, supplyForChart]);
+  const effMode: "price" | "mcap" = mode === "mcap" && supplyForChart ? "mcap" : "price";
   const buys = eff.buys24;
   const sells = eff.sells24;
   const buyPct = buys + sells > 0 ? (buys / (buys + sells)) * 100 : 50;
@@ -744,13 +748,13 @@ function TokenPage() {
             </div>
             <div className="arc-mono" style={{ borderBottom: "1px solid var(--arc-line)", color: "var(--arc-muted)", fontSize: 11, padding: "6px 10px" }}>
               <span style={{ color: live ? "#22c580" : "var(--arc-muted)", marginRight: 8 }} title={live ? "live: every swap arrives over the stream within a second" : "polling every 5 s"}>{live ? "● LIVE" : "○ polling"}</span>
-              {info.symbol}/{info.stock ? "USDC" : pairSym} · {mode === "mcap" ? "Market Cap" : "Price"} · {tf} · {info.venue === "pad" ? `ArcToolsPad curve (${qSym} pair)` : info.venue === "v3" ? `Uniswap V3 ${((info.poolFee ?? 0) / 10000).toFixed(2)}%${info.graduated ? " · graduated from ArcToolsPad" : ""}` : info.venue === "v4" ? `Uniswap V4${info.launchpad && info.launchpad !== "Uniswap V4" ? ` · ${info.launchpad}` : " · hookless pool"}` : info.venue === "curve" ? "Warp bonding curve" : (info.launchpad ?? "external pool")}
+              {info.symbol}/{info.stock ? "USDC" : pairSym} · {effMode === "mcap" ? "Market Cap" : "Price"} · {tf} · {info.venue === "pad" ? `ArcToolsPad curve (${qSym} pair)` : info.venue === "v3" ? `Uniswap V3 ${((info.poolFee ?? 0) / 10000).toFixed(2)}%${info.graduated ? " · graduated from ArcToolsPad" : ""}` : info.venue === "v4" ? `Uniswap V4${info.launchpad && info.launchpad !== "Uniswap V4" ? ` · ${info.launchpad}` : " · hookless pool"}` : info.venue === "curve" ? "Warp bonding curve" : (info.launchpad ?? "external pool")}
               {candles.length < 5 && effCandles.length > 0 && <span style={{ marginLeft: 10, opacity: 0.7 }}>· venue data (own index syncing)</span>}
             </div>
             {adv ? (
               <TvAdvanced height={Math.max(460, Number((typeof localStorage !== "undefined" && localStorage.getItem("arc_chart_h")) || 520))} interval={tf} light={typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light"} mode={mode} onFail={() => setAdv(false)} token={params.ca.toLowerCase()} />
             ) : (
-              <TvChart avatars={chartAvatars} candles={effCandles} interval={tf} markers={chartMarkers} mode={mode} onVisible={setMarkersVisible} orderLines={orderLines} scale={scale} storageKey={params.ca} symbol={info ? `${info.symbol}/${pairSym}` : undefined} />
+              <TvChart avatars={chartAvatars} candles={effCandles} interval={tf} markers={chartMarkers} mode={effMode} onVisible={setMarkersVisible} orderLines={orderLines} scale={scale} storageKey={params.ca} symbol={info ? `${info.symbol}/${pairSym}` : undefined} />
             )}
             <MarkerLegend data={eventsData} visible={markersVisible} />
           </div>
