@@ -213,9 +213,19 @@ async def _token_lists(s: aiohttp.ClientSession) -> list[dict]:
         items = (page or {}).get("items") or []
         for t in items:
             a = (t.get("address") or "").lower()
-            if not a or a in seen:
+            if not a:
                 continue
             soc = socials_from_text(t.get("description") or "")
+            if a in seen:
+                # already listed by RadarDex/Tolly without pad/logo → fill the gaps from Minara
+                for o in out:
+                    if o["address"] == a:
+                        o["launchpad"] = o.get("launchpad") or "minara"; o["logo"] = o.get("logo") or t.get("imageUrl")
+                        for k in ("twitter", "telegram", "website"):
+                            o[k] = o.get(k) or soc.get(k)
+                        break
+                continue
+            seen.add(a)
             out.append({"address": a, "deployer": (t.get("creator") or "").lower() or None, "deploy_ts": t.get("createdAtTimestamp"),
                         "launchpad": "minara", "mcap": t.get("marketCapUsd"), "name": t.get("name"), "symbol": t.get("symbol"),
                         "telegram": soc.get("telegram"), "twitter": soc.get("twitter"), "website": soc.get("website"), "logo": t.get("imageUrl")})
