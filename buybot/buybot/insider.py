@@ -216,7 +216,7 @@ async def _resolve_pool(pool: str) -> dict | None:
     # 5 RPCs × 10 s timeouts and stalled the live path for 10-15 s. A transport error is NOT persisted (retry next swap).
     try:
         async with aiohttp.ClientSession() as _s:
-            async with _s.post(_NODE_RPC, headers={"Content-Type": "application/json"}, json=[
+            async with _s.post(node_rpc(), headers={"Content-Type": "application/json"}, json=[
                 {"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [{"to": pool, "data": SEL_TOKEN0 if isinstance(SEL_TOKEN0, str) else "0x" + SEL_TOKEN0.hex()}, "latest"]},
                 {"jsonrpc": "2.0", "id": 2, "method": "eth_call", "params": [{"to": pool, "data": SEL_TOKEN1 if isinstance(SEL_TOKEN1, str) else "0x" + SEL_TOKEN1.hex()}, "latest"]},
             ], timeout=aiohttp.ClientTimeout(total=4)) as r:
@@ -1245,7 +1245,30 @@ async def _window_clock(frm: int, to: int) -> tuple[int, float]:
 
 
 _RECEIPT_TOPICS = (V3_SWAP_TOPIC, V2_SWAP_TOPIC, ARCPAD_TRADE_TOPIC, V4_SWAP_TOPIC, V4_INIT_TOPIC, FAZE_BUY_TOPIC, FAZE_SELL_TOPIC)
-_NODE_RPC = os.getenv("PRIMARY_RPC", "http://89.68.166.52:8545")
+# Two own reth nodes. PRIMARY is the US box (close to Railway, ~137 ms instead of ~359 ms to Warsaw); BACKUP is the
+# original Warsaw node. We never trust a node just because it is configured first: a node that has fallen behind the
+# chain would silently starve the index, so node_rpc() keeps using the backup until the primary is caught up.
+# rpc_monitor refreshes _node_state every 20 s; the initial value assumes primary is fine.
+_PRIMARY_RPC = os.getenv("PRIMARY_RPC", "http://178.156.197.90:8545")
+_BACKUP_RPC = os.getenv("BACKUP_RPC", "http://89.68.166.52:8545")
+_node_state: dict[str, object] = {"use": _PRIMARY_RPC, "primary_ok": True, "primary_lag": 0, "since": 0.0}
+
+
+def node_rpc() -> str:
+    """The node URL every read should go through right now."""
+    return str(_node_state["use"])
+
+
+def set_node_state(primary_ok: bool, lag: int) -> None:
+    """Called by rpc_monitor: flip to the backup when the primary is stale, flip back once it catches up."""
+    use = _PRIMARY_RPC if primary_ok else _BACKUP_RPC
+    if use != _node_state["use"]:
+        log.warning("node switch → %s (primary_ok=%s lag=%s)", use, primary_ok, lag)
+        _node_state["since"] = time.time()
+    _node_state.update({"use": use, "primary_ok": primary_ok, "primary_lag": lag})
+
+
+_NODE_RPC = _PRIMARY_RPC          # kept for modules that import the constant; live reads use node_rpc()
 
 
 # ---------------------------------------------------------------------------
@@ -1342,6 +1365,9 @@ async def api_ingest_stats(request: web.Request) -> web.Response:
         "stats": _remote_stats,
         "ingest": {"cursor": _lag.get("cursor"), "lag_blocks": _lag.get("blocks"), "t_fetch": _lag.get("t_fetch"),
                    "t_scan": _lag.get("t_scan"), "source": "agent" if remote_alive() else "node-rpc"},
+        "node": {"in_use": node_rpc(), "primary": _PRIMARY_RPC, "backup": _BACKUP_RPC,
+                 "primary_ok": _node_state.get("primary_ok"), "primary_lag_blocks": _node_state.get("primary_lag"),
+                 "switched_at": _node_state.get("since") or None},
     }, headers={"Cache-Control": "no-store", **API_CORS})
 
 
@@ -1367,7 +1393,7 @@ async def _fetch_receipt_logs(frm: int, to: int, _speculative: bool = False, _hi
             for i in range(0, len(blocks), 25):
                 chunk = blocks[i:i + 25]
                 body = [{"jsonrpc": "2.0", "id": b, "method": "eth_getBlockReceipts", "params": [hex(b)]} for b in chunk]
-                async with s.post(_NODE_RPC, json=body, headers={"Content-Type": "application/json"}, timeout=aiohttp.ClientTimeout(total=30)) as r:
+                async with s.post(node_rpc(), json=body, headers={"Content-Type": "application/json"}, timeout=aiohttp.ClientTimeout(total=30)) as r:
                     res = await r.json(content_type=None)
                 if not isinstance(res, list) or len(res) != len(chunk):
                     return None
@@ -1515,7 +1541,7 @@ async def pool_audit_loop():
                         body.append({"jsonrpc": "2.0", "id": n * 2, "method": "eth_call", "params": [{"to": USDC, "data": "0x70a08231" + r["pool"][2:].rjust(64, "0")}, "latest"]})
                         body.append({"jsonrpc": "2.0", "id": n * 2 + 1, "method": "eth_getBalance", "params": [r["pool"], "latest"]})
                     try:
-                        async with s_.post(_NODE_RPC, json=body, headers={"Content-Type": "application/json"}, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                        async with s_.post(node_rpc(), json=body, headers={"Content-Type": "application/json"}, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                             res = await resp.json(content_type=None)
                     except Exception:  # noqa
                         continue
@@ -2073,7 +2099,7 @@ async def api_receipt(request: web.Request) -> web.Response:
     out = {"hash": h, "receipt": None, "tx": None}
     try:
         async with aiohttp.ClientSession() as s:
-            async with s.post(_NODE_RPC, headers={"Content-Type": "application/json"}, json=[
+            async with s.post(node_rpc(), headers={"Content-Type": "application/json"}, json=[
                 {"jsonrpc": "2.0", "id": 1, "method": "eth_getTransactionReceipt", "params": [h]},
                 {"jsonrpc": "2.0", "id": 2, "method": "eth_getTransactionByHash", "params": [h]},
             ], timeout=aiohttp.ClientTimeout(total=6)) as r:

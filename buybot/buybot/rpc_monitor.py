@@ -27,11 +27,12 @@ from .config import CFG
 
 log = logging.getLogger("rpc_monitor")
 
-PRIMARY = os.getenv("PRIMARY_RPC", "http://89.68.166.52:8545")
-ENDPOINTS: list[tuple[str, str]] = [("node", PRIMARY)] + [
+PRIMARY = os.getenv("PRIMARY_RPC", "http://178.156.197.90:8545")     # US box, next door to Railway
+BACKUP = os.getenv("BACKUP_RPC", "http://89.68.166.52:8545")        # original Warsaw box, now the fallback
+ENDPOINTS: list[tuple[str, str]] = [("node", PRIMARY), ("node-backup", BACKUP)] + [
     (u.split("//")[1].split("/")[0].replace("rpc.", "").replace(".up.railway.app", " (relay)"), u)
     for u in (CFG.rpc_urls if hasattr(CFG, "rpc_urls") else [])
-    if u.rstrip("/") != PRIMARY.rstrip("/")
+    if u.rstrip("/") not in (PRIMARY.rstrip("/"), BACKUP.rstrip("/"))
 ]
 for extra in ("https://rpc.arc-scan.org", "https://sharc.fun/rpc", "https://rpc-production-ba7a.up.railway.app"):
     if all(u.rstrip("/") != extra for _, u in ENDPOINTS):
@@ -103,6 +104,17 @@ def _stats(url: str, window_s: int) -> dict:
             "p95_ms": round(p(0.95)) if lat else None, "max_ms": round(lat[-1]) if lat else None}
 
 
+def _decide(heads: dict[str, int | None]) -> None:
+    """Primary wins unless it is stale: more than 120 blocks behind the best head we can see, or unreachable.
+    A syncing node answers requests happily while serving blocks from an hour ago, which would quietly starve
+    the index — this is why the choice is made on head distance, not on whether the port is open."""
+    from . import insider
+    best = max([h for h in heads.values() if h], default=0)
+    ph = heads.get(PRIMARY)
+    lag = (best - ph) if (ph and best) else 10 ** 6
+    insider.set_node_state(bool(ph) and lag <= 120, int(lag))
+
+
 async def monitor_loop():
     global _last_lat_alert
     await asyncio.sleep(15)
@@ -114,6 +126,7 @@ async def monitor_loop():
                 now = time.time()
                 heads = [h for (_, _, h, _) in res if h]
                 best = max(heads) if heads else None
+                _decide({u: h for (_, u), (_, _, h, _) in zip(ENDPOINTS, res)})
                 for (name, url), (ok, ms, head, err) in zip(ENDPOINTS, res):
                     st = _state[url]
                     # a node that answers but sits > 120 blocks (~1-2 min) behind the freshest endpoint is effectively down
