@@ -11,12 +11,14 @@ import logging
 import os
 import random
 
-from aiohttp import ClientSession, ClientTimeout, web
+from aiohttp import ClientSession, ClientTimeout, web, TCPConnector
 
 log = logging.getLogger("arcrpc")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
-UPSTREAMS = [
+# own nodes first (env PRIVATE_UPSTREAMS, comma separated) — no rate limit, archive; public endpoints are the backup
+PRIVATE = [u.strip() for u in os.getenv("PRIVATE_UPSTREAMS", "").split(",") if u.strip()]
+UPSTREAMS = PRIVATE + [
     "https://rpc.arc-scan.org",
     "https://sharc.fun/rpc",               # community proxy behind Cloudflare/Caddy: no per-IP burst limit seen, but 502s in waves
     "https://5042.rpc.thirdweb.com",
@@ -193,7 +195,12 @@ UP_CONC = int(os.getenv("UPSTREAM_CONCURRENCY", "6"))
 UP_TIMEOUT = float(os.getenv("UPSTREAM_TIMEOUT", "8"))
 QUOTA_MARKERS = ("quota", "exceeded", "-32600")          # provider key exhausted → long cooldown
 RATE_ONLY = ("rate limit", "too many", "-32005", "429")   # transient → short cooldown, try the next upstream right away
-_sems = {up: asyncio.Semaphore(UP_CONC) for up in UPSTREAMS}
+_sems = {up: asyncio.Semaphore(32 if up in PRIVATE else UP_CONC) for up in UPSTREAMS}
+ARCSCAN = "https://rpc.arc-scan.org"
+
+
+def _is_private(up: str) -> bool:
+    return up in PRIVATE
 _cooldown: dict[str, float] = {}
 _last_call: dict[str, float] = {}
 MIN_GAP = {"https://5042.rpc.thirdweb.com": 1.1}   # thirdweb public endpoint: ~1 request / s before it 429s
@@ -345,7 +352,7 @@ async def _post_raw(payload: str, tokened: bool = False) -> tuple[str, int]:
             if _cooldown.get(up, 0) > time.time() and not all_cool:
                 continue
             try:
-                if up == UPSTREAMS[0] and not (tokened and attempt == 0):
+                if up == ARCSCAN and not (tokened and attempt == 0):
                     await _take_token()
                 await _gap(up)
                 async with _sems[up]:
@@ -363,8 +370,10 @@ async def _post_raw(payload: str, tokened: bool = False) -> tuple[str, int]:
                     quota = any(m in low for m in QUOTA_MARKERS) and ("infura" in up or "alchemy" in up)
                     if quota:
                         _cooldown[up] = time.time() + 600
-                    elif r.status != 503 or up != UPSTREAMS[0]:
-                        _cooldown[up] = time.time() + (5 if up == UPSTREAMS[0] else 60)
+                    elif _is_private(up):
+                        _cooldown[up] = time.time() + 3            # own node hiccup: come back fast
+                    elif r.status != 503 or up != ARCSCAN:
+                        _cooldown[up] = time.time() + (5 if up == ARCSCAN else 60)
                 # any failure (rate limit, 5xx, "could not complete") → next upstream immediately
             except Exception as e:  # noqa
                 last_status, last_text = 502, str(e)[:200]
@@ -391,7 +400,7 @@ async def _upstream(payload: str, ckey, fut, rid) -> web.Response:
             if _cooldown.get(up, 0) > time.time() and not all_cool:
                 continue
             try:
-                if up == UPSTREAMS[0]:
+                if up == ARCSCAN:
                     await _take_token()
                 await _gap(up)
                 async with _sems[up]:
@@ -416,8 +425,10 @@ async def _upstream(payload: str, ckey, fut, rid) -> web.Response:
                     quota = any(m in low for m in QUOTA_MARKERS) and ("infura" in up or "alchemy" in up)
                     if quota:
                         _cooldown[up] = time.time() + 600
-                    elif r.status != 503 or up != UPSTREAMS[0]:
-                        _cooldown[up] = time.time() + (5 if up == UPSTREAMS[0] else 60)
+                    elif _is_private(up):
+                        _cooldown[up] = time.time() + 3            # own node hiccup: come back fast
+                    elif r.status != 503 or up != ARCSCAN:
+                        _cooldown[up] = time.time() + (5 if up == ARCSCAN else 60)
             except Exception as e:  # noqa
                 last_status, last_text = 502, str(e)[:200]
         if attempt < 3:
@@ -492,7 +503,7 @@ async def health(_):
 async def on_startup(app):
     global session
     asyncio.create_task(_batch_worker())
-    session = ClientSession(timeout=ClientTimeout(total=25))
+    session = ClientSession(timeout=ClientTimeout(total=25), connector=TCPConnector(limit=96, limit_per_host=48), headers={"ngrok-skip-browser-warning": "1"})
 
 
 async def on_cleanup(app):

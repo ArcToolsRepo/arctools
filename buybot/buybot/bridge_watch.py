@@ -58,10 +58,14 @@ async def _rpc(method: str, params: list):
 
 
 async def init_tables():
+    try:
+        await db.execute(text("ALTER TABLE bridge_mints ADD COLUMN IF NOT EXISTS swept INTEGER DEFAULT 0"))
+    except Exception:  # noqa
+        pass
     await db.execute(text("""CREATE TABLE IF NOT EXISTS bridge_mints (
         tx VARCHAR(80) NOT NULL, log_index INTEGER NOT NULL, block BIGINT, ts BIGINT,
         recipient VARCHAR(64), amount DOUBLE PRECISION, fee DOUBLE PRECISION, source_domain INTEGER,
-        direction VARCHAR(4), alerted INTEGER DEFAULT 0, fresh_buy_alerted INTEGER DEFAULT 0,
+        direction VARCHAR(4), alerted INTEGER DEFAULT 0, fresh_buy_alerted INTEGER DEFAULT 0, swept INTEGER DEFAULT 0,
         PRIMARY KEY (tx, log_index))"""))
     await db.execute(text("CREATE INDEX IF NOT EXISTS bridge_recipient_ts ON bridge_mints (recipient, ts)"))
     await db.execute(text("CREATE INDEX IF NOT EXISTS bridge_ts ON bridge_mints (ts)"))
@@ -295,3 +299,101 @@ async def api_bridge(request: web.Request) -> web.Response:
         "latest": [{**dict(r), "source": DOMAINS.get(r["source_domain"]) if r["source_domain"] is not None else None}
                    for r in latest],
     }, headers=API_CORS)
+
+
+# ---- proxy sweeper -----------------------------------------------------------------------------------------------
+# Old burns (before destinationCaller was pinned to the proxy) can still be minted by a public relayer straight into
+# ArcBridgeFeeProxy, bypassing bridgeReceive → the USDC parks in the proxy. The owner key sweeps it: 2% fee to the
+# treasury, the rest to the original source-chain sender decoded from the CCTP message in the mint transaction.
+BRIDGE_PROXY = "0xa42c4beee84ced9f2ea15b3981b8a321943b7bec"
+TREASURY = "0xb35c471b31d636b96f95b84e7a27d69b63235c0d"
+SEND_URLS = [("https://rpc-production-ba7a.up.railway.app", {"X-Send-Auth": os.getenv("RPC_SEND_AUTH", "")}),
+             ("https://rpc.arc-scan.org", {})]
+
+
+def _decode_message_sender(tx_input: str) -> tuple[str, float] | None:
+    """receiveMessage(bytes message, bytes attestation) → (messageSender, amount USDC) from BurnMessageV2 body."""
+    try:
+        inp = tx_input[10:]
+        off = int(inp[0:64], 16) * 2
+        ln = int(inp[off:off + 64], 16) * 2
+        msg = inp[off + 64:off + 64 + ln]
+        body = msg[148 * 2:]
+        amount = int(body[136:200], 16) / 1e6
+        sender = "0x" + body[200 + 24:200 + 64]
+        return sender, amount
+    except Exception:  # noqa
+        return None
+
+
+async def proxy_sweep_loop():
+    key = os.getenv("BRIDGE_OWNER_KEY", "")
+    if not key:
+        log.info("bridge sweeper disabled (BRIDGE_OWNER_KEY empty)")
+        return
+    from eth_account import Account
+    from web3 import Web3
+    acct = Account.from_key(key)
+    log.info("bridge sweeper on: owner %s", acct.address)
+    sel = Web3.keccak(text="rescue(address,uint256)").hex().replace("0x", "")[:8]
+    await asyncio.sleep(120)
+    while True:
+        try:
+            bal = int(await _rpc("eth_getBalance", [BRIDGE_PROXY, "latest"]), 16)
+            if bal < 10 ** 16:                      # < 0.01 USDC → nothing parked
+                await asyncio.sleep(60); continue
+            rows = await db.fetchall(text(
+                "SELECT tx, amount FROM bridge_mints WHERE lower(recipient) = :p AND COALESCE(swept, 0) = 0 ORDER BY ts DESC LIMIT 5"
+            ).bindparams(p=BRIDGE_PROXY))
+            for r in rows:
+                tx = await _rpc("eth_getTransactionByHash", [r["tx"]])
+                if not tx:
+                    continue
+                if tx["input"][:10] != "0x57ecfd28":          # minted via bridgeReceive → nothing parked from this one
+                    await db.execute(text("UPDATE bridge_mints SET swept = 1 WHERE tx = :t").bindparams(t=r["tx"])); continue
+                dec = _decode_message_sender(tx["input"])
+                if not dec:
+                    continue
+                user, amount = dec
+                wei = int(round(amount * 1e18))
+                if wei > bal:
+                    continue
+                fee = wei * 2 // 100
+                nonce = int(await _rpc("eth_getTransactionCount", [acct.address, "pending"]), 16)
+                gp = int(int(await _rpc("eth_gasPrice", []), 16) * 1.2)
+                hashes = []
+                for to, amt in ((TREASURY, fee), (user, wei - fee)):
+                    data = "0x" + sel + to[2:].lower().rjust(64, "0") + hex(amt)[2:].rjust(64, "0")
+                    s = acct.sign_transaction({"to": Web3.to_checksum_address(BRIDGE_PROXY), "data": data, "value": 0, "gas": 120_000,
+                                               "gasPrice": gp, "nonce": nonce, "chainId": 5042})
+                    raw = (s.raw_transaction if hasattr(s, "raw_transaction") else s.rawTransaction).hex()
+                    raw = raw if raw.startswith("0x") else "0x" + raw
+                    h = None
+                    for _ in range(5):
+                        for u, hdr in SEND_URLS:
+                            try:
+                                async with aiohttp.ClientSession() as sess:
+                                    async with sess.post(u, json={"jsonrpc": "2.0", "id": 1, "method": "eth_sendRawTransaction", "params": [raw]},
+                                                         headers={"Content-Type": "application/json", **hdr}, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                                        j = await resp.json(content_type=None)
+                                if "result" in j:
+                                    h = j["result"]; break
+                            except Exception:  # noqa
+                                pass
+                        if h:
+                            break
+                        await asyncio.sleep(2)
+                    if not h:
+                        raise RuntimeError("sweep broadcast failed")
+                    hashes.append(h); nonce += 1
+                await db.execute(text("UPDATE bridge_mints SET swept = 1 WHERE tx = :t").bindparams(t=r["tx"]))
+                bal -= wei
+                log.warning("bridge sweep: %.2f USDC parked in proxy → %.2f to %s, %.2f fee (%s)", amount, (wei - fee) / 1e18, user, fee / 1e18, hashes)
+                try:
+                    if bot and CFG.insider_channel_id:
+                        pass  # admin notice goes through the watchdog summary; keep the channel clean
+                except Exception:  # noqa
+                    pass
+        except Exception as e:  # noqa
+            log.warning("bridge sweeper: %s", e)
+        await asyncio.sleep(60)

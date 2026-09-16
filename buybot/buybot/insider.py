@@ -1102,7 +1102,7 @@ async def _tx_senders(hashes: list, blocks: dict | None = None) -> dict[str, str
     (one call per block instead of one per tx — a 2k-block window with 230 swaps went from ~80 s to a few seconds)."""
     out: dict[str, str] = {}
     want = {_hx(h) for h in hashes}
-    sem = asyncio.Semaphore(5)
+    sem = asyncio.Semaphore(12)
     if blocks:
         by_block: dict[int, set[str]] = {}
         for h, b in blocks.items():
@@ -1282,7 +1282,7 @@ async def sender_fill_loop():
             by_block: dict[int, list[str]] = {}
             for r in rows:
                 by_block.setdefault(int(r["block"]), []).append(r["tx"].lower())
-            sem = asyncio.Semaphore(4); done = 0
+            sem = asyncio.Semaphore(12); done = 0
 
             async def one(b: int, txs: list[str]):
                 nonlocal done

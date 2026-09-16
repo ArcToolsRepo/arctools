@@ -1,0 +1,8 @@
+file '/home/user/bc0f5d35-e22d-4718-8575-2f3bdae5bc64/marketing/video/seg/01.mp4'
+file '/home/user/bc0f5d35-e22d-4718-8575-2f3bdae5bc64/marketing/video/seg/02.mp4'
+file '/home/user/bc0f5d35-e22d-4718-8575-2f3bdae5bc64/marketing/video/seg/03.mp4'
+file '/home/user/bc0f5d35-e22d-4718-8575-2f3bdae5bc64/marketing/video/seg/04.mp4'
+file '/home/user/bc0f5d35-e22d-4718-8575-2f3bdae5bc64/marketing/video/seg/05.mp4'
+file '/home/user/bc0f5d35-e22d-4718-8575-2f3bdae5bc64/marketing/video/seg/06.mp4'
+file '/home/user/bc0f5d35-e22d-4718-8575-2f3bdae5bc64/marketing/video/seg/07.mp4'
+file '/home/user/bc0f5d35-e22d-4718-8575-2f3bdae5bc64/marketing/video/seg/08.mp4'

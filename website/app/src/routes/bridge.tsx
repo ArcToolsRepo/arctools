@@ -114,7 +114,7 @@ function encodeDepositForBurn(amount: bigint, burnToken: string): string {
     padNum(BigInt(ARC_DOMAIN)) +
     pad(BRIDGE_PROXY) + // mint to the fee proxy; it forwards to the sender atomically
     pad(burnToken) +
-    "0".repeat(64) +
+    pad(BRIDGE_PROXY) + // destinationCaller = the proxy: nobody else (e.g. a public relayer) can mint, so funds never park in the proxy
     padNum(0n) +
     padNum(1000n)
   );
@@ -301,17 +301,6 @@ function BridgePage() {
         <p className="arc-eyebrow">CCTP v2 bridge</p>
         <h1 className="arc-h2">USDC in. Same address. Native.</h1>
 
-        <div className="arc-alert" role="alert">
-          <p className="arc-mono arc-alert__title">
-            ⚠️ CIRCLE HAS PAUSED CCTP TRANSFERS TO ARC UNTIL SEPTEMBER 16
-          </p>
-          <p className="arc-body" style={{ fontSize: 13, margin: "8px 0 0" }}>
-            Bridged funds may only arrive on September 16 — possibly earlier, but there is no guarantee. Burns still
-            go through on the source chain, so your USDC would sit in transit until Circle resumes attestations.
-            <b> We recommend NOT using the bridge before September 16.</b> Nothing is lost if you already bridged:
-            the mint completes once CCTP resumes.
-          </p>
-        </div>
         <p className="arc-body">
           Circle burns your USDC on the source chain and mints it natively on Arc, straight back to your address. No
           wrapped tokens, no third-party bridge. The 2% service fee is taken atomically inside the mint transaction.
