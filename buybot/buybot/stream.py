@@ -39,7 +39,13 @@ def publish(rows: list[dict]) -> None:
             if key == "*" and float(r.get("usdc") or 0) < 5:
                 continue
             if payload is None:
-                payload = json.dumps({k: r.get(k) for k in ("tx", "ts", "wallet", "side", "usdc", "tokens", "price1m", "venue", "block", "log_index")} | {"token": tok, "pub": round(time.time(), 2)})
+                # symbol from the in-memory cache so live toasts show ARCT, not 0x4135…6e6 (never a DB hit here)
+                try:
+                    from .insider import _sym_cache
+                    sym = _sym_cache.get(tok)
+                except Exception:  # noqa
+                    sym = None
+                payload = json.dumps({k: r.get(k) for k in ("tx", "ts", "wallet", "side", "usdc", "tokens", "price1m", "venue", "block", "log_index")} | {"token": tok, "symbol": sym, "pub": round(time.time(), 2)})
             for q in list(qs):
                 if q.full():                           # slow client: drop the OLDEST event, keep the newest
                     try:

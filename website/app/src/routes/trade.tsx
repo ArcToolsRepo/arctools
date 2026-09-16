@@ -796,7 +796,7 @@ function Trade() {
           </div>
         </div>
       </section>
-          <TradeToasts enabled={toastsOn} insiders={Object.fromEntries(Object.entries(risk).map(([t, k]) => [t, { dev: k.dev ?? null, bundle: k.bundle_wallets ?? [] }]))} logos={Object.fromEntries([...tableRows.map((r) => [r.token, r.logo] as const), ...trend.map((t) => [t.token.toLowerCase(), logos[t.token.toLowerCase()] ?? byToken.get(t.token.toLowerCase())?.logo ?? null] as const)])} tokens={[...new Set([...trend.map((t) => t.token), ...tableRows.map((r) => r.token)])]} />
+          <TradeToasts symbols={Object.fromEntries([...tableRows.map((r) => [r.token, r.symbol] as const), ...rows.map((r) => [r.token.toLowerCase(), r.symbol] as const)])} enabled={toastsOn} insiders={Object.fromEntries(Object.entries(risk).map(([t, k]) => [t, { dev: k.dev ?? null, bundle: k.bundle_wallets ?? [] }]))} logos={Object.fromEntries([...tableRows.map((r) => [r.token, r.logo] as const), ...trend.map((t) => [t.token.toLowerCase(), logos[t.token.toLowerCase()] ?? byToken.get(t.token.toLowerCase())?.logo ?? null] as const)])} tokens={[...new Set([...trend.map((t) => t.token), ...tableRows.map((r) => r.token)])]} />
     </main>
   );
 }

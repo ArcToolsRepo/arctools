@@ -32,10 +32,12 @@ function fmtPrice(p1m: number | null): string {
 const subscript = (n: number) => String(n).replace(/\d/g, (d) => "₀₁₂₃₄₅₆₇₈₉"[Number(d)]);
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
-export function TradeToasts({ tokens, logos, enabled = true, insiders }: { tokens: string[]; logos: Record<string, string | null | undefined>; enabled?: boolean; insiders?: InsiderMap }) {
+export function TradeToasts({ tokens, logos, symbols, enabled = true, insiders }: { tokens: string[]; logos: Record<string, string | null | undefined>; symbols?: Record<string, string | null | undefined>; enabled?: boolean; insiders?: InsiderMap }) {
   const insRef = useRef<InsiderMap>({});
   useEffect(() => { insRef.current = insiders ?? {}; }, [insiders]);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const symRef = useRef<Record<string, string | null | undefined>>({});
+  useEffect(() => { symRef.current = symbols ?? {}; }, [symbols]);
   const seen = useRef<Set<string>>(new Set());
   const since = useRef<number>(Math.floor(Date.now() / 1000) - 20);
   const watch = useRef<Set<string>>(new Set());
@@ -48,7 +50,7 @@ export function TradeToasts({ tokens, logos, enabled = true, insiders }: { token
       if (document.hidden) return;
       try {
         const j = (await fetch(`${API}/api/whales?minutes=2&min_usd=${MIN_USD}&limit=60`).then((r) => r.json())) as { rows?: Swap[] };
-        const fresh = (j.rows ?? [])
+        const fresh = (j.rows ?? []).map((s0) => ({ ...s0, symbol: s0.symbol ?? symRef.current[s0.token.toLowerCase()] ?? null }))
           .filter((s) => s.ts >= since.current && watch.current.has(s.token.toLowerCase()))
           .map((s) => { const i = insRef.current[s.token.toLowerCase()]; const w = (s.wallet ?? "").toLowerCase(); const flag = s.side === "sell" && i && w ? (i.dev === w ? "dev" as const : i.bundle.includes(w) ? "bundle" as const : undefined) : undefined; return { ...s, flag, key: `${s.tx}:${s.log_index}`, shownAt: Date.now() }; })
           .filter((s) => !seen.current.has(s.key))
@@ -66,7 +68,7 @@ export function TradeToasts({ tokens, logos, enabled = true, insiders }: { token
       const fresh = batch
         .filter((s) => s.usdc >= MIN_USD && watch.current.has(s.token.toLowerCase()))
         .map((s) => { const i = insRef.current[s.token.toLowerCase()]; const w = (s.wallet ?? "").toLowerCase(); const flag = s.side === "sell" && i && w ? (i.dev === w ? "dev" as const : i.bundle.includes(w) ? "bundle" as const : null) : null;
-          return { ...s, symbol: null, rank: null, key: `${s.tx}:${s.log_index ?? 0}`, shownAt: Date.now(), flag } as Toast; })
+          return { ...s, symbol: (s as { symbol?: string | null }).symbol ?? symRef.current[s.token.toLowerCase()] ?? null, rank: null, key: `${s.tx}:${s.log_index ?? 0}`, shownAt: Date.now(), flag } as Toast; })
         .filter((s) => !seen.current.has(s.key))
         .slice(-3);
       if (!fresh.length) return;
