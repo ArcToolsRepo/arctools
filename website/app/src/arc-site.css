@@ -941,6 +941,13 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
 .arc-help__form input { flex: 1; background: rgba(255,255,255,0.04); border: 1px solid var(--arc-line); border-radius: 8px; color: var(--arc-ink); font-size: 13px; padding: 9px 11px; }
 .arc-help-fab { position: fixed; left: 14px; bottom: 14px; z-index: 600; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--arc-cobalt); background: rgba(46,124,255,0.18); color: var(--arc-ink); font-size: 18px; font-weight: 800; cursor: pointer; display: none; box-shadow: 0 4px 16px rgba(0,0,0,0.35); }
 @media (max-width: 1023px) { .arc-help-fab { display: block; } }
+/* desktop: Archy rides along with the cursor instead of sitting in the sidebar, so it is reachable wherever you
+   are on a long page. The in-nav entry is hidden there to avoid two launchers doing the same thing. */
+@media (min-width: 1024px) {
+  .arc-help-fab { display: block; left: 12px; width: 44px; height: 44px; z-index: 1100; transition: transform 90ms linear, box-shadow 160ms ease; box-shadow: 0 6px 18px rgba(0,0,0,0.45); }
+  .arc-help-fab:hover { box-shadow: 0 8px 26px rgba(46,124,255,0.45); }
+  .arc-nav--side .arc-nav__help { display: none; }
+}
 .arc-nav__help { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 8px; border: 1px dashed var(--arc-line); background: transparent; color: var(--arc-muted); cursor: pointer; font-size: 12px; width: 100%; }
 .arc-nav__help:hover { color: var(--arc-ink); border-color: var(--arc-cobalt); }
 .arc-nav:not(.arc-nav--side) .arc-nav__help { width: auto; margin: 0 0 0 6px; padding: 6px 10px; }

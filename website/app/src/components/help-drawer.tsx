@@ -58,10 +58,41 @@ export function HelpDrawer() {
     setBusy(false);
   };
 
+
+  // Archy follows you down the page: the launcher eases toward the pointer's height (damped, never jumpy) and
+  // falls back to tracking the scroll position on touch devices, where there is no cursor to follow.
+  const fab = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let want = window.innerHeight - 70;
+    let have = want;
+    let raf = 0;
+    const clamp = (v: number) => Math.max(70, Math.min(window.innerHeight - 70, v));
+    const onMove = (e: PointerEvent) => { want = clamp(e.clientY); };
+    const onScroll = () => { if (!matchMedia("(pointer: fine)").matches) want = clamp(window.innerHeight * 0.75); };
+    const tick = () => {
+      have += (want - have) * 0.08;                       // damping: it trails the cursor, it does not chase it
+      const el = fab.current;
+      if (el) el.style.transform = `translateY(${Math.round(have - (window.innerHeight - 70))}px)`;
+      raf = requestAnimationFrame(tick);
+    };
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
+    raf = requestAnimationFrame(tick);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("pointermove", onMove); window.removeEventListener("scroll", onScroll); };
+  }, []);
   return (
     <>
       {/* mobile / no-sidebar launcher: bottom-left (bottom-right is taken by the status pill and live toasts) */}
-      <button aria-label="Archy Agent" className="arc-help-fab" onClick={() => setOpen(true)} type="button"><img alt="Archy" src="/archy.png" style={{ borderRadius: "50%", height: 36, width: 36 }} /></button>
+      <button aria-label="Archy Agent" className="arc-help-fab" onClick={() => setOpen(true)} ref={fab} type="button"
+        style={{
+          // inline so the launcher cannot be switched off by a stylesheet that only expected a mobile FAB
+          alignItems: "center", background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)",
+          borderRadius: "50%", bottom: 16, boxShadow: "0 6px 18px rgba(0,0,0,0.45)", cursor: "pointer",
+          display: "flex", height: 46, justifyContent: "center", left: 12, padding: 0, position: "fixed",
+          width: 46, zIndex: 1100,
+        }}><img alt="Archy" src="/archy.png" style={{ borderRadius: "50%", height: 38, width: 38 }} /></button>
       {open && (
         <div aria-modal className="arc-help" role="dialog">
           <div className="arc-help__scrim" onClick={() => setOpen(false)} />

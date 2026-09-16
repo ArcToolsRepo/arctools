@@ -109,6 +109,30 @@ function Trade() {
   // who signs: the in-browser trading wallet (one click) or the connected browser wallet (MetaMask/Rabby — confirm each tx)
   const [signer, setSigner] = useState<"hot" | "browser">("hot");
   const [toastsOn, setToastsOn] = useState(true);
+  // Row flash: every buy/sell that lands on a listed token lights its row for a moment (green buy, red sell), so
+  // the table shows trade flow without opening a token page. Off by default only if the user turned it off before.
+  const [flashOn, setFlashOn] = useState(true);
+  const [flash, setFlash] = useState<Record<string, { side: "buy" | "sell"; at: number; usdc: number }>>({});
+  const flashOnRef = useRef(true);
+  useEffect(() => {
+    try { setFlashOn(localStorage.getItem("arctools_flash") !== "0"); } catch { /* private mode */ }
+  }, []);
+  useEffect(() => {
+    flashOnRef.current = flashOn;
+    try { localStorage.setItem("arctools_flash", flashOn ? "1" : "0"); } catch { /* private mode */ }
+    if (!flashOn) setFlash({});
+  }, [flashOn]);
+  useEffect(() => {
+    if (!flashOn) return;
+    const id = setInterval(() => {                 // drop expired marks so rows do not stay lit
+      const now = Date.now();
+      setFlash((f) => {
+        const keep = Object.entries(f).filter(([, v]) => now - v.at < 1600);
+        return keep.length === Object.keys(f).length ? f : Object.fromEntries(keep);
+      });
+    }, 700);
+    return () => clearInterval(id);
+  }, [flashOn]);
   // feed-style filters: launchpad / source, market-cap band, min volume (all persisted in the URL-free local state)
   const [padF, setPadF] = useState<string>("all");
   const PAGE = 50;
@@ -186,6 +210,14 @@ function Trade() {
         if (!prev.length) return prev;
         const idx = new Map(prev.map((r, i) => [r.token.toLowerCase(), i]));
         let next: Trend[] | null = null;
+        if (flashOnRef.current) {
+          const now = Date.now();
+          setFlash((f) => {
+            const n = { ...f };
+            for (const t of ok) n[t.token.toLowerCase()] = { at: now, side: t.side, usdc: t.usdc };
+            return n;
+          });
+        }
         for (const t of ok) {
           const i = idx.get(t.token.toLowerCase()); if (i == null) continue;
           if (!next) next = [...prev];
@@ -617,6 +649,7 @@ function Trade() {
               ))}
               <span style={{ marginLeft: "auto" }}>
                 {[1, 5, 60, 360, 1440, 0].map((m) => <button key={m} className="arc-mono" onClick={() => setTf(m)} style={{ background: tf === m ? "rgba(255,255,255,0.08)" : "transparent", border: "1px solid " + (tf === m ? "var(--arc-line)" : "transparent"), borderRadius: 4, color: tf === m ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, marginLeft: 2, padding: "4px 9px" }} type="button">{tfLabel(m)}</button>)}
+                <button className="arc-mono" onClick={() => setFlashOn((v) => !v)} style={{ background: flashOn ? "rgba(34,197,128,0.12)" : "transparent", border: "1px solid " + (flashOn ? "var(--arc-up)" : "var(--arc-line)"), borderRadius: 6, color: flashOn ? "var(--arc-up)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, marginRight: 6, padding: "3px 8px" }} title="Flash a row green on a buy and red on a sell, live" type="button">flash {flashOn ? "on" : "off"}</button>
                 <button className="arc-mono" onClick={toggleToasts} style={{ background: toastsOn ? "rgba(34,197,128,0.12)" : "transparent", border: "1px solid " + (toastsOn ? "var(--arc-up)" : "var(--arc-line)"), borderRadius: 4, color: toastsOn ? "var(--arc-up)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, marginLeft: 8, padding: "3px 8px" }} title="Live buy/sell pop-ups for the tokens on screen" type="button">{toastsOn ? (liveFeed ? "● live" : "🔔 live") : "🔕 live"}</button>
               </span>
             </div>
@@ -656,7 +689,7 @@ function Trade() {
                   <tbody>
                     {tableRows.length === 0 && <tr><td className="arc-mono" colSpan={11} style={{ ...cell, color: "var(--arc-muted)" }}>{q.trim() ? `Nothing in the ${tab} list matches “${q.trim()}” — see “Search all of Arc” above.` : tab === "favs" ? "No favourites yet — click ☆ on any row." : tab === "new15" ? "No launch younger than 15 minutes right now — watch New pair." : (padF !== "all" || minMc || maxMc || minVol) ? "Nothing matches these filters."  : tab === "insiders" ? "No token with 2+ insiders in the last 24h." : "Loading…"}</td></tr>}
                     {pageRows.map((r, ri) => (
-                      <tr className="arc-row-link" key={r.token} onClick={rowClick(r.token)} onMouseEnter={() => { void import("@/lib/arc-api").then((m) => m.tokenPage({ data: { token: r.token } })).catch(() => null); }} style={{ background: rankOf(ri) ? rankTint(rankOf(ri) as number).bg : r.token.toLowerCase() === OFFICIAL_TOKEN ? "rgba(46,124,255,0.09)" : favs.has(r.token) ? "rgba(46,124,255,0.05)" : undefined, boxShadow: rankOf(ri) ? `inset 3px 0 0 0 ${rankTint(rankOf(ri) as number).accent}` : undefined, cursor: "pointer" }}>
+                      <tr className="arc-row-link" key={r.token} onClick={rowClick(r.token)} onMouseEnter={() => { void import("@/lib/arc-api").then((m) => m.tokenPage({ data: { token: r.token } })).catch(() => null); }} style={{ background: flash[r.token.toLowerCase()] ? (flash[r.token.toLowerCase()].side === "buy" ? "rgba(34,197,128,0.20)" : "rgba(240,83,79,0.20)") : rankOf(ri) ? rankTint(rankOf(ri) as number).bg : r.token.toLowerCase() === OFFICIAL_TOKEN ? "rgba(46,124,255,0.09)" : favs.has(r.token) ? "rgba(46,124,255,0.05)" : undefined, boxShadow: flash[r.token.toLowerCase()] ? `inset 3px 0 0 0 ${flash[r.token.toLowerCase()].side === "buy" ? "#22c580" : "#f0534f"}` : rankOf(ri) ? `inset 3px 0 0 0 ${rankTint(rankOf(ri) as number).accent}` : undefined, cursor: "pointer", transition: "background 380ms ease-out" }}>
                         <td style={{ ...cell, paddingRight: 4 }}>{rankOf(ri) ? (
                           <span className="arc-mono" style={{ color: rankTint(rankOf(ri) as number).ink, display: "inline-block", fontSize: 10, minWidth: 12, textAlign: "right" }} title={`#${rankOf(ri)} by volume`}>{rankOf(ri)}</span>
                         ) : null}<button onClick={() => toggleFav(r.token)} style={{ background: "none", border: "none", color: favs.has(r.token) ? "#f5c542" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, padding: 0 }} title="favourite" type="button">{favs.has(r.token) ? "★" : "☆"}</button></td>
@@ -674,6 +707,14 @@ function Trade() {
                                 <button className="arc-mono" onClick={() => void navigator.clipboard.writeText(r.token)} style={{ background: "none", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "0 4px" }} title="copy CA" type="button">⧉</button>
                                 {r.pad && <span className="arc-tokmeta" style={{ border: "1px solid var(--arc-line)", borderRadius: 3, fontSize: 9, marginLeft: 4, padding: "0 4px" }}>{r.pad}</span>}
                                 {r.traders > 0 && <span className="arc-tokmeta" style={{ marginLeft: 6 }} title="traders in window">👥{r.traders}</span>}
+                                {flash[r.token.toLowerCase()] && (
+                                  <span className="arc-mono arc-flashpill" style={{
+                                    background: flash[r.token.toLowerCase()].side === "buy" ? "rgba(34,197,128,0.22)" : "rgba(240,83,79,0.22)",
+                                    border: "1px solid " + (flash[r.token.toLowerCase()].side === "buy" ? "#22c580" : "#f0534f"),
+                                    borderRadius: 4, color: flash[r.token.toLowerCase()].side === "buy" ? UP : DOWN, fontSize: 9,
+                                    marginLeft: 6, padding: "0 5px",
+                                  }}>{flash[r.token.toLowerCase()].side === "buy" ? "BUY" : "SELL"} {usd(flash[r.token.toLowerCase()].usdc)}</span>
+                                )}
                                 {r.curve !== null && (
                                   // bonding curve: how full the raise is. On a curve pad this beats market cap — it is the
                                   // distance to graduation into a locked pool. Rendered only when the pad reports it.
