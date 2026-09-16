@@ -124,6 +124,11 @@ export async function selfHeal(env: HealEnv): Promise<HealReport> {
     timed("watchdog", async () => { const r = await get(`${BOT_ORIGIN}/api/status`, 10000); const j = (await r.json()) as { state?: string; checks?: Record<string, { ok: boolean; detail: string }> }; const bad = Object.entries(j.checks ?? {}).filter(([, v]) => !v.ok).map(([k, v]) => `${k}: ${v.detail.slice(0, 50)}`); return `${j.state}${bad.length ? " — " + bad.join(" | ") : ""}`; }),
     timed("relay", async () => { const r = await get(`${RELAY}/stats`, 10000); if (r.status !== 200) throw new Error(`HTTP ${r.status}`); const j = (await r.json()) as { ok?: number; fail?: number; cooldown?: Record<string, number> }; return `ok ${j.ok} fail ${j.fail} cooldown ${Object.keys(j.cooldown ?? {}).length}`; }),
     timed("quotes", async () => { const r = await get(`${SITE}/api/swaproute?token=${ARCT}&side=buy&amount=1000000000000000000`, 15000); const j = (await r.json()) as { legs?: unknown[]; out?: string; error?: string }; if (!j.legs?.length) throw new Error(j.error ?? "no route"); return `${j.legs.length} leg(s), out ${j.out}`; }),
+    timed("rpcnode", async () => {
+      const r = await get(`${BOT_ORIGIN}/api/rpc-health`, 10000); const j = (await r.json()) as { primary_up?: boolean; endpoints?: { name: string; up: boolean; last_ms: number | null; h1: { uptime?: number } }[] };
+      const line = (j.endpoints ?? []).map((e) => `${e.name} ${e.up ? "up" : "DOWN"} ${e.last_ms ?? "-"}ms ${e.h1?.uptime ?? "-"}%`).join(" | ");
+      if (!j.primary_up) throw new Error(`PRIMARY NODE DOWN — ${line}`); return line;
+    }),
     timed("chain", async () => { const r = await get(`${BOT_ORIGIN}/api/chain-status`, 10000); const j = (await r.json()) as { down?: boolean; last_block?: number; stale_s?: number }; return `${j.down ? "DOWN" : "live"} block ${j.last_block} stale ${j.stale_s}s`; }),
   ]);
   const c = Object.fromEntries(checks.map((x) => [x.name, x]));
@@ -149,6 +154,7 @@ export async function selfHeal(env: HealEnv): Promise<HealReport> {
 
   // --- things we cannot fix from here: tell the admin
   if (!c.site.ok || !c.terminal.ok) await telegram(env, "site", `site probe failed: / ${c.site.detail} · /trade ${c.terminal.detail}`, alerts);
+  if (!c.rpcnode.ok) await telegram(env, "rpcnode", `own RPC node down (self-heal view): ${c.rpcnode.detail}`, alerts);
   if (!c.quotes.ok && c.relay.ok) await telegram(env, "quotes", `swap quotes failing: ${c.quotes.detail}`, alerts);
   if (c.watchdog.ok && /degraded|down/i.test(c.watchdog.detail)) { const n = await bump(env, "watchdog", false); if (n >= 3) await telegram(env, "watchdog", `watchdog ${c.watchdog.detail}`, alerts); } else await bump(env, "watchdog", true);
 

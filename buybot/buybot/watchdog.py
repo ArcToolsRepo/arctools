@@ -372,7 +372,16 @@ async def chk_minara(s):
         return True, f"minara probe: {str(e)[:60]}"
 
 
-CHECKS = [("bots", chk_bots), ("ui", chk_ui), ("terminal", chk_terminal), ("pages", chk_pages), ("cells", chk_cells), ("tokens", chk_tokens_api), ("relay", chk_relay), ("minara", chk_minara), ("index", chk_index), ("api", chk_own_api), ("display", chk_display)]
+async def chk_rpc(s):
+    """Own node + backups (rpc_monitor): FAIL while the primary node is down."""
+    from .rpc_monitor import check_line
+    try:
+        return check_line()
+    except Exception as e:  # noqa
+        return True, f"rpc monitor: {str(e)[:60]}"
+
+
+CHECKS = [("rpc", chk_rpc), ("bots", chk_bots), ("ui", chk_ui), ("terminal", chk_terminal), ("pages", chk_pages), ("cells", chk_cells), ("tokens", chk_tokens_api), ("relay", chk_relay), ("minara", chk_minara), ("index", chk_index), ("api", chk_own_api), ("display", chk_display)]
 REPORT_EVERY = int(os.getenv("WATCHDOG_REPORT_EVERY", "1800"))   # hourly "all good" summary to the admin
 _last_report = 0.0
 

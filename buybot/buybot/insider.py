@@ -1636,14 +1636,16 @@ async def api_wallet(request: web.Request) -> web.Response:
 
 
 async def api_health(_):
-    # Railway healthcheck + self-heal probe: must be cheap. COUNT(*) on a multi-million-row swaps table took 15 s+
-    # under ingest load and blocked the DB pool for everyone — use the planner estimate instead.
+    """Railway healthcheck + self-heal probe. 200 = process alive and serving; DB state is reported, not fatal
+    (a slow Postgres under ingest load must not make Railway/self-heal restart a healthy process)."""
+    out = {"ok": True, "lag": _lag.get("blocks"), "phase": _lag.get("phase"), "db": "ok"}
     try:
-        n = await asyncio.wait_for(db.fetchone(text("SELECT reltuples::bigint AS n FROM pg_class WHERE relname = 'swaps'")), 3)
-        cur = await asyncio.wait_for(db.kv_get("insider_cursor"), 3)
-        return web.json_response({"ok": True, "swaps_est": int(n["n"]) if n else None, "cursor": cur, "lag": _lag.get("blocks")}, headers=API_CORS)
+        t = time.time()
+        cur = await asyncio.wait_for(db.kv_get("insider_cursor"), 6)
+        out["cursor"] = cur; out["db_ms"] = round((time.time() - t) * 1000)
     except Exception as e:  # noqa
-        return web.json_response({"ok": False, "error": str(e)[:120]}, status=503, headers=API_CORS)
+        out["db"] = f"slow/err: {type(e).__name__} {str(e)[:60]}"
+    return web.json_response(out, headers=API_CORS)
 
 
 # ---------------- token page API: OHLC / trades / stats ----------------
@@ -1886,6 +1888,8 @@ async def start_api():
             out.append({"name": n, "state": st, "exc": exc})
         return web.json_response({"tasks": sorted(out, key=lambda x: x["name"]), "ingest_lag": _lag["blocks"], "ingest": {**_lag, "for_s": int(time.time() - float(_lag.get("since") or time.time()))}}, headers={"Access-Control-Allow-Origin": "*"})
     app.router.add_get("/api/tasks", api_tasks)
+    from .rpc_monitor import api_rpc_health
+    app.router.add_get("/api/rpc-health", api_rpc_health)
     from . import orders as _orders
     _orders.register(app)
     from . import bubbles as _bubbles
