@@ -14,8 +14,8 @@ import { keepAlive, memoKV, relayKey } from "@/lib/memo-kv";
 // relay twice (it batches + rate-limits towards arc-scan for us), arc-scan direct as last resort (429s CF egress);
 // the shared Infura key is over quota every day → not worth an attempt
 const RPCS = [
-  "https://rpc-production-ba7a.up.railway.app",
-  "https://rpc-production-ba7a.up.railway.app",
+  "http://89.68.166.52:8545",                      // own reth node (archive, no rate limit) — primary
+  "https://rpc-production-ba7a.up.railway.app",    // relay (node → public fan-out) — backup
   "https://rpc.arc-scan.org",
 ];
 const RPC = RPCS[0];
