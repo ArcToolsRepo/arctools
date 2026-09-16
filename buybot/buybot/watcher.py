@@ -132,7 +132,17 @@ async def post_buy(track: dict, buy: dict, tx_hash: str, buyer: str):
         try:
             await _with_retry(_send_group, f"post_buy {track.get('chat_id')}")
         except Exception as e:  # noqa
-            log.warning("post_buy %s: %s", track.get("chat_id"), e)
+            msg = str(e).lower()
+            if "forbidden" in msg or "chat not found" in msg or "bot was kicked" in msg or "not a member" in msg:
+                # the group removed the bot: stop tracking for that chat instead of failing on every buy forever
+                try:
+                    from sqlalchemy import text as _t
+                    await db.execute(_t("DELETE FROM tracks WHERE chat_id = :c").bindparams(c=int(track["chat_id"])))
+                    log.info("post_buy %s: bot removed from chat — tracks dropped", track.get("chat_id"))
+                except Exception as e2:  # noqa
+                    log.warning("post_buy drop tracks %s: %s", track.get("chat_id"), e2)
+            else:
+                log.warning("post_buy %s: %s", track.get("chat_id"), e)
 
     # mirror buys of top-10 trending tokens to the trending channel (once per tx, >= $30)
     try:

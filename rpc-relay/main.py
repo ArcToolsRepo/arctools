@@ -307,26 +307,31 @@ async def _send_batch_inner(items: list[tuple[dict, asyncio.Future]], tokened: b
 
 
 async def _broadcast(payload: str) -> web.Response:
+    """Fan a signed tx out to ALL upstreams; first "result" wins. Public Arc RPCs flap 200/503 after outages, so we
+    retry the whole fan-out for ~12 s before telling the wallet it failed — a signed tx is idempotent (same hash),
+    duplicates come back as "already known" which we treat as success-equivalent."""
     async def one(up):
-        async with session.post(up, data=payload, headers={"Content-Type": "application/json"}, timeout=ClientTimeout(total=8)) as r:
+        async with session.post(up, data=payload, headers={"Content-Type": "application/json"}, timeout=ClientTimeout(total=4)) as r:
             return await r.text(), r.status
-    tasks = [asyncio.create_task(one(u)) for u in UPSTREAMS]
     last = ("broadcast failed", 502)
-    for fut in asyncio.as_completed(tasks):
-        try:
-            text, status = await fut
-        except Exception as e:  # noqa
-            last = (str(e)[:200], 502); continue
-        low = text[:300].lower()
-        if status == 200 and '"result"' in text[:200].replace(" ", ""):
-            for t in tasks: t.cancel()
-            _stats["ok"] += 1
-            return web.Response(text=text, content_type="application/json", headers=CORS)
-        # deterministic rejections (nonce too low / already known / insufficient funds) are the real answer — return them
-        if status == 200 and any(k in low for k in ("nonce too low", "already known", "insufficient funds", "replacement", "exceeds")):
-            for t in tasks: t.cancel()
-            return web.Response(text=text, content_type="application/json", headers=CORS)
-        last = (text[:300], status)
+    for attempt in range(4):
+        tasks = [asyncio.create_task(one(u)) for u in UPSTREAMS]
+        for fut in asyncio.as_completed(tasks):
+            try:
+                text, status = await fut
+            except Exception as e:  # noqa
+                last = (str(e)[:200], 502); continue
+            low = text[:300].lower()
+            if status == 200 and '"result"' in text[:200].replace(" ", ""):
+                for t in tasks: t.cancel()
+                _stats["ok"] += 1
+                return web.Response(text=text, content_type="application/json", headers=CORS)
+            # deterministic rejections (nonce too low / already known / insufficient funds) are the real answer — return them
+            if status == 200 and any(k in low for k in ("nonce too low", "already known", "insufficient funds", "replacement", "exceeds", "invalid params", "invalid sender", "intrinsic gas")):
+                for t in tasks: t.cancel()
+                return web.Response(text=text, content_type="application/json", headers=CORS)
+            last = (text[:300], status)
+        await asyncio.sleep(1.0)
     _stats["fail"] += 1
     return web.Response(text=last[0], content_type="application/json", status=last[1] if last[1] >= 400 else 502, headers=CORS)
 
