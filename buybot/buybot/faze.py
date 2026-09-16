@@ -22,7 +22,7 @@ from . import db
 log = logging.getLogger("faze")
 
 API = "https://faze.fun/api/v1/launchpad/coins"
-PAD = "faze.fun"
+PAD = "faze"          # registry KEY (FACTORIES["faze"]), whose label is the user-facing "faze.fun"
 CURVE = "0x6a62919ccbf0c19e0c4e084f986b582b4492dda4"
 _meta_cache: dict[str, dict] = {}          # mint -> resolved metadata document
 _live: dict[str, dict] = {}                # mint -> latest API row (curve stage stats for the Terminal)
