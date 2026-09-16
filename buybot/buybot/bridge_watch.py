@@ -305,7 +305,8 @@ async def api_bridge(request: web.Request) -> web.Response:
 # Old burns (before destinationCaller was pinned to the proxy) can still be minted by a public relayer straight into
 # ArcBridgeFeeProxy, bypassing bridgeReceive → the USDC parks in the proxy. The owner key sweeps it: 2% fee to the
 # treasury, the rest to the original source-chain sender decoded from the CCTP message in the mint transaction.
-BRIDGE_PROXY = "0xa42c4beee84ced9f2ea15b3981b8a321943b7bec"
+BRIDGE_PROXY = "0xa42c4beee84ced9f2ea15b3981b8a321943b7bec"   # v1 (legacy mints still land here → sweep)
+BRIDGE_PROXY_V2 = "0x292ddaed9b959cbe4df5ac35c52da1977e29916e"
 TREASURY = "0xb35c471b31d636b96f95b84e7a27d69b63235c0d"
 SEND_URLS = [("https://rpc-production-ba7a.up.railway.app", {"X-Send-Auth": os.getenv("RPC_SEND_AUTH", "")}),
              ("https://rpc.arc-scan.org", {})]

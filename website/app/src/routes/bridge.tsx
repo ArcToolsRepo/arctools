@@ -51,7 +51,8 @@ const ARC_DOMAIN = 26;
 // ArcBridgeFeeProxy: atomic receiveMessage + 2% service fee in ONE transaction.
 // Mint goes to the proxy; it forwards 98% to the ORIGINAL source-chain sender
 // (read from the CCTP message itself) and 2% to the fee wallet.
-const BRIDGE_PROXY = "0xA42c4BEee84CEd9f2ea15b3981B8A321943b7Bec";
+// v2 (16.09): points at Arc's real MessageTransmitterV2 0x81D40F21…; v1 0xA42c… had the canonical 0xE737… address, which does not exist on Arc
+const BRIDGE_PROXY = "0x292DDAeD9B959Cbe4df5ac35c52da1977E29916e";
 
 const ARC_CHAIN = {
   chainId: "0x13b2",
