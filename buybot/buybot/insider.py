@@ -1213,12 +1213,114 @@ _RECEIPT_TOPICS = (V3_SWAP_TOPIC, V2_SWAP_TOPIC, ARCPAD_TRADE_TOPIC, V4_SWAP_TOP
 _NODE_RPC = os.getenv("PRIMARY_RPC", "http://89.68.166.52:8545")
 
 
+# ---------------------------------------------------------------------------
+# Remote block feed (node-side ingest agent)
+# ---------------------------------------------------------------------------
+# A tiny container runs ON the machine that hosts our Arc node. It reads block receipts over localhost (0.3 ms
+# instead of the 353 ms Railway→Warsaw round trip) and POSTs the filtered logs here over HTTPS. Decoding, pool
+# resolution, pricing and writing all stay in this process — the agent only removes the network distance.
+# If the agent stops, dies or its IP changes, the cache simply goes cold and _fetch_receipt_logs falls back to
+# reading the node directly: no switch to flip, no data loss.
+_remote_logs: dict[int, tuple[list, dict]] = {}          # block -> (raw filtered logs, {tx: sender})
+_remote_head: dict[str, float] = {"block": 0, "ts": 0.0, "mode": "off"}
+_remote_stats: dict[str, object] = {"batches": 0, "blocks": 0, "logs": 0, "lat_ms": 0, "last": None, "agent": None}
+INGEST_KEY = os.getenv("INGEST_KEY", "")
+
+
+def remote_alive() -> bool:
+    """True while the node-side agent is feeding us live blocks."""
+    return _remote_head["mode"] == "live" and (time.time() - float(_remote_head["ts"])) < 20
+
+
+def _remote_take(frm: int, to: int) -> tuple[list, dict] | None:
+    """Serve blocks frm..to from the agent's feed, or None when even one block is missing (→ read the node)."""
+    if not remote_alive():
+        return None
+    from hexbytes import HexBytes
+    by_topic: dict[str, list] = {t: [] for t in _RECEIPT_TOPICS}
+    senders: dict[str, str] = {}
+    for b in range(frm, to + 1):
+        hit = _remote_logs.get(b)
+        if hit is None:
+            return None
+        raw, snd = hit
+        senders.update(snd)
+        for lg in raw:
+            t0 = (lg.get("topics") or [""])[0].lower()
+            if t0 not in by_topic:
+                continue
+            by_topic[t0].append({
+                "address": lg["address"], "topics": [HexBytes(t) for t in lg["topics"]], "data": HexBytes(lg.get("data") or "0x"),
+                "transactionHash": HexBytes(lg["transactionHash"]), "blockNumber": int(lg["blockNumber"], 16) if isinstance(lg["blockNumber"], str) else int(lg["blockNumber"]),
+                "logIndex": int(lg["logIndex"], 16) if isinstance(lg["logIndex"], str) else int(lg["logIndex"]), "blockHash": lg.get("blockHash"),
+            })
+    return [(t, by_topic[t]) for t in _RECEIPT_TOPICS], senders
+
+
+async def api_ingest_blocks(request: web.Request) -> web.Response:
+    """POST /api/ingest-blocks — the node-side agent hands over filtered logs. Body (gzip allowed):
+    {mode: "live"|"shadow", head: int, sent: float, blocks: [{n: int, logs: [...], senders: {tx: from}}]}"""
+    if not INGEST_KEY or request.headers.get("X-Ingest-Key") != INGEST_KEY:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        body = await request.json()
+    except Exception:  # noqa
+        return web.json_response({"error": "bad json"}, status=400)
+    mode = "live" if body.get("mode") == "live" else "shadow"
+    blocks = body.get("blocks") or []
+    lat = round((time.time() - float(body.get("sent") or time.time())) * 1000)
+    nlogs = 0
+    if mode == "live":
+        for b in blocks:
+            try:
+                n = int(b["n"])
+            except Exception:  # noqa
+                continue
+            logs = b.get("logs") or []
+            nlogs += len(logs)
+            _remote_logs[n] = (logs, {k.lower(): (v or "").lower() for k, v in (b.get("senders") or {}).items()})
+        if len(_remote_logs) > 400:                      # keep a short ring only
+            for k in sorted(_remote_logs)[:len(_remote_logs) - 300]:
+                _remote_logs.pop(k, None)
+        _remote_head["block"] = max(int(body.get("head") or 0), int(_remote_head["block"]))
+        _remote_head["ts"] = time.time()
+        _remote_head["mode"] = "live"
+    else:
+        nlogs = sum(len(b.get("logs") or []) for b in blocks)
+        _remote_head["mode"] = "shadow" if _remote_head["mode"] != "live" else _remote_head["mode"]
+    _remote_stats["batches"] = int(_remote_stats["batches"]) + 1          # type: ignore[arg-type]
+    _remote_stats["blocks"] = int(_remote_stats["blocks"]) + len(blocks)  # type: ignore[arg-type]
+    _remote_stats["logs"] = int(_remote_stats["logs"]) + nlogs            # type: ignore[arg-type]
+    _remote_stats["lat_ms"] = lat
+    _remote_stats["last"] = int(time.time())
+    _remote_stats["agent"] = str(body.get("agent") or "")[:40]
+    return web.json_response({"ok": True, "mode": mode, "cursor": int(_lag.get("cursor") or 0), "lag_blocks": _lag.get("blocks"),
+                              "lat_ms": lat, "accepted": len(blocks)}, headers={"Cache-Control": "no-store"})
+
+
+async def api_ingest_stats(request: web.Request) -> web.Response:
+    """GET /api/ingest-stats — is the node-side agent alive, how fresh is its feed, what does it cost us."""
+    return web.json_response({
+        "remote": {**{k: v for k, v in _remote_head.items()}, "alive": remote_alive(),
+                   "age_s": round(time.time() - float(_remote_head["ts"]), 1) if _remote_head["ts"] else None,
+                   "cached_blocks": len(_remote_logs)},
+        "stats": _remote_stats,
+        "ingest": {"cursor": _lag.get("cursor"), "lag_blocks": _lag.get("blocks"), "t_fetch": _lag.get("t_fetch"),
+                   "t_scan": _lag.get("t_scan"), "source": "agent" if remote_alive() else "node-rpc"},
+    }, headers={"Cache-Control": "no-store", **API_CORS})
+
+
 async def _fetch_receipt_logs(frm: int, to: int, _speculative: bool = False, _hi: list | None = None) -> tuple[list, dict] | None:
     """All logs of blocks frm..to via eth_getBlockReceipts on our own node (one call per block, batched 25 per HTTP
     request): no 20 000-result cap, no window sizing, and every tx sender comes for free. Returns
     ([(topic, [log, …]), …] in the same shape web3.get_logs gives, {tx_hash: from}) or None on any failure
     (the caller falls back to the getLogs path)."""
     from hexbytes import HexBytes
+    served = _remote_take(frm, to)                        # node-side agent already has these blocks locally
+    if served is not None:
+        if _hi is not None:
+            _hi[0] = to
+        return served
     blocks = list(range(frm, to + 1))
     if _hi is None:
         _hi = [to]
@@ -2238,6 +2340,8 @@ async def start_api():
     app.router.add_get("/api/insider/{wallet}", api_wallet)
     app.router.add_get("/api/ohlc", api_ohlc)
     app.router.add_get("/api/receipt", api_receipt)
+    app.router.add_post("/api/ingest-blocks", api_ingest_blocks)
+    app.router.add_get("/api/ingest-stats", api_ingest_stats)
     app.router.add_get("/udf/config", udf_config); app.router.add_get("/udf/time", udf_time); app.router.add_get("/udf/symbols", udf_symbols)
     app.router.add_get("/udf/search", udf_search); app.router.add_get("/udf/history", udf_history)
     app.router.add_get("/api/trades", api_trades)
