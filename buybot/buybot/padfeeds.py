@@ -88,6 +88,13 @@ async def sync_sharc(s: aiohttp.ClientSession) -> int:
         tok = (c.get("address") or "").lower()
         if not (tok.startswith("0x") and len(tok) == 42):
             continue
+        # a curated feed still carries every coin its pad ever made; only surface ones that are alive, so the
+        # Terminal does not gain 300 dead rows (search and /token keep working for the rest either way)
+        trades = int(_num(c.get("tradesCount")))
+        ts_age = _num(c.get("createdAt"), time.time())
+        ts_age = ts_age / 1000 if ts_age > 1e11 else ts_age
+        if trades == 0 and ts_age < time.time() - 7 * 86400:
+            continue
         logo, tw, tg, web = _meta_socials(c.get("metadata"))
         ts_raw = _num(c.get("createdAt"), time.time())
         created = int(ts_raw / 1000) if ts_raw > 1e11 else int(ts_raw)
