@@ -1260,7 +1260,7 @@ async def gap_fill_loop():
                 res = None
             if res is None:
                 win = max(250, win // 2); await asyncio.sleep(3); continue
-            await db.execute_many(ins, res)
+            await db.execute_many_ingest(ins, res)
             _prefetch_new_tokens(res)
             if time.time() - t0 < 40:
                 win = min(5_000, int(win * 1.5))
@@ -1283,7 +1283,7 @@ async def sender_fill_loop():
             rows = await db.fetchall(text("SELECT tx, block FROM swaps WHERE wallet = '' ORDER BY block DESC LIMIT 400"))
             if not rows:
                 await asyncio.sleep(30); continue
-            if _lag["blocks"] > 6_000:
+            if _lag["blocks"] > 1_500:
                 await asyncio.sleep(20); continue           # live ingest first
             by_block: dict[int, list[str]] = {}
             for r in rows:
@@ -1309,10 +1309,20 @@ async def sender_fill_loop():
 
 
 def _prefetch_new_tokens(rows: list[dict]):
+    try:
+        _prefetch_new_tokens_impl(rows)
+    except Exception as e:  # noqa - never let a helper stall the cursor
+        log.warning("prefetch: %s", e)
+
+
+def _prefetch_new_tokens_impl(rows: list[dict]):
     """First swap of a token → fetch supply + symbol NOW (own node, ms) so the Terminal shows MC and a name on the
     first render instead of dashes that wait for the next repair pass."""
     toks = {r["token"] for r in rows if r.get("token")}
-    fresh = [t for t in toks if t not in _supply_cache or _supply_cache[t][0] is None]
+    def _has(t):
+        c = _supply_cache.get(t)
+        return c is not None and ((isinstance(c, tuple) and c[0] is not None) or (not isinstance(c, tuple) and c))
+    fresh = [t for t in toks if not _has(t)]
     try:
         from . import stream
         stream.publish(rows)
@@ -1407,7 +1417,7 @@ async def ingest_loop():
                         break                     # dalsze okna powtorzymy w nastepnej iteracji
                     rows.extend(res)
                     advanced = to
-                await db.execute_many(ins, rows)
+                await db.execute_many_ingest(ins, rows)
                 _prefetch_new_tokens(rows)
                 if advanced > cursor:
                     cursor = advanced; _last_progress = time.time()
@@ -1418,17 +1428,32 @@ async def ingest_loop():
                     await asyncio.sleep(3)
                 await asyncio.sleep(0.1)
             else:
-                frm, to = cursor + 1, min(head, cursor + LIVE_WINDOW)
-                _lag.update(phase="scan", since=time.time(), window=f"{frm}-{to}")
-                res = await asyncio.wait_for(_scan_window(frm, to, senders=(head - cursor) < 3_000), timeout=300)
+                # live window is adaptive too: with ~20 swaps/block the chain now exceeds the 20 000-log cap in a
+                # 2 000-block window → the scan returned None forever and the cursor froze ~2 300 blocks behind
+                lwin = int(_lag.get("lwin") or LIVE_WINDOW)
+                frm, to = cursor + 1, min(head, cursor + lwin)
+                _lag.update(phase="scan", since=time.time(), window=f"{frm}-{to}", lwin=lwin)
+                t_scan = time.time()
+                try:
+                    res = await asyncio.wait_for(_scan_window(frm, to, senders=(head - cursor) < 1_500), timeout=120)
+                except asyncio.TimeoutError:
+                    res = None
                 if res is None:
-                    await asyncio.sleep(3)
+                    _lag["lmiss"] = int(_lag.get("lmiss") or 0) + 1
+                    if _lag["lmiss"] >= 2:
+                        _lag["lwin"] = max(100, lwin // 2); _lag["lmiss"] = 0
+                        log.warning("insider live window %s-%s failed twice → window %s", frm, to, _lag["lwin"])
+                    await asyncio.sleep(2)
                     continue
-                await db.execute_many(ins, res)
+                _lag["lmiss"] = 0
+                if time.time() - t_scan < 20 and lwin < LIVE_WINDOW:
+                    _lag["lwin"] = min(LIVE_WINDOW, int(lwin * 1.5))
+                await db.execute_many_ingest(ins, res)
                 _prefetch_new_tokens(res)
                 cursor = to; _last_progress = time.time()
                 await db.kv_set("insider_cursor", str(cursor))
-                await asyncio.sleep(CFG.poll_interval)
+                # behind head → go straight on; at head → normal poll cadence
+                await asyncio.sleep(CFG.poll_interval if head - cursor < 50 else 0.2)
         except Exception as e:  # noqa
             log.warning("insider ingest [%s %s]: %r", _lag.get("phase"), _lag.get("window"), e)
             _lag.update(phase="error:" + type(e).__name__, since=time.time())

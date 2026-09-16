@@ -281,7 +281,7 @@ async def hunt_once(limit: int = 150) -> tuple[int, int]:
     if not rows:
         return 0, 0
     found = 0
-    sem = asyncio.Semaphore(24)
+    sem = asyncio.Semaphore(6)
     async with aiohttp.ClientSession() as s:
         async def one(r):
             nonlocal found
@@ -305,6 +305,9 @@ async def hunt_loop():
     await asyncio.sleep(90)
     while True:
         try:
+            from .insider import _lag
+            if (_lag.get("blocks") or 0) > 500:            # the live index has priority on DB + node
+                await asyncio.sleep(30); continue
             n, f = await hunt_once()
             if n:
                 log.info("logos: %s/%s found (%s)", f, n, stats["by"])

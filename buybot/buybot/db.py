@@ -113,6 +113,24 @@ async def execute_many(q, rows: list[dict]):
         return await c.execute(q, rows)
 
 
+# The swap ingest gets its own small pool: API bursts / background hunters can exhaust the shared pool (QueuePool
+# timeout) and every such exception froze the cursor. Writes of the live index never queue behind anything else.
+engine_ingest = create_async_engine(_url, pool_pre_ping=True, pool_size=4, max_overflow=4, pool_timeout=30, pool_recycle=1800,
+                                    connect_args={"server_settings": {"idle_in_transaction_session_timeout": "120000", "statement_timeout": "180000"}})
+
+
+async def execute_many_ingest(q, rows: list[dict]):
+    if not rows:
+        return
+    async with engine_ingest.begin() as c:
+        return await c.execute(q, rows)
+
+
+async def execute_ingest(q):
+    async with engine_ingest.begin() as c:
+        return await c.execute(q)
+
+
 async def kv_get(k: str, default=""):
     r = await fetchone(select(kv).where(kv.c.k == k))
     return r["v"] if r else default
