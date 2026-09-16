@@ -804,6 +804,9 @@ export const tokenPage = createServerFn({ method: "POST" })
       const listVenue = listRow?.venueUrl && /^https?:\/\//.test(listRow.venueUrl) && !["RadarDex", "UniswapV3", "UniswapV4"].includes(listRow.pad) ? listRow.venueUrl : null;
       const venueUrl = (!lp && venue !== "pad" && !longUrl && listVenue) ? listVenue : venueUrl0;
 
+      // launchpad lists + descriptions collected by the buybot (Minara, RadarDex, Tolly …) — logo / socials fallback
+      const botMeta = await fetch(`https://bot-production-4200.up.railway.app/api/token-meta?tokens=${lc}`, { signal: AbortSignal.timeout(4000) })
+        .then((r) => r.json()).then((j: { meta?: Record<string, { logo: string | null; twitter: string | null; telegram: string | null; website: string | null }> }) => j.meta?.[lc] ?? null).catch(() => null);
       return {
         createdAt: typeof meta.deployTs === "number" ? new Date(Number(meta.deployTs) * 1000).toISOString() : null,
         decimals,
@@ -820,7 +823,7 @@ export const tokenPage = createServerFn({ method: "POST" })
         stock: stockInfo,
         longPool,
         liquidityUsdc,
-        logo: padLogo || ipfsToHttp(String(meta.icon ?? "")) || listRow?.logo || (await screenerIcons().then((m) => ipfsToHttp(m.get(lc) ?? "")).catch(() => "")) || xAvatar(padSocial.twitter || (meta.twitter as string) || null),
+        logo: padLogo || ipfsToHttp(String(meta.icon ?? "")) || listRow?.logo || (await screenerIcons().then((m) => ipfsToHttp(m.get(lc) ?? "")).catch(() => "")) || botMeta?.logo || xAvatar(padSocial.twitter || (meta.twitter as string) || botMeta?.twitter || null),
         mcapUsd,
         name,
         pool,
@@ -828,14 +831,14 @@ export const tokenPage = createServerFn({ method: "POST" })
         price1m,
         supply,
         symbol,
-        telegram: normSocial("tg", padSocial.telegram || (meta.telegram as string) || listRow?.telegram || null),
+        telegram: normSocial("tg", padSocial.telegram || (meta.telegram as string) || listRow?.telegram || botMeta?.telegram || null),
         token: lc,
-        twitter: normSocial("x", padSocial.twitter || (meta.twitter as string) || listRow?.twitter || null),
+        twitter: normSocial("x", padSocial.twitter || (meta.twitter as string) || listRow?.twitter || botMeta?.twitter || null),
         curveAddress,
         v4Key,
         venue,
         venueUrl,
-        website: normSocial("web", padSocial.website || (meta.website as string) || listRow?.website || null),
+        website: normSocial("web", padSocial.website || (meta.website as string) || listRow?.website || botMeta?.website || null),
       };
     // cache only complete results: a page computed while RadarDex / the RPC were rate-limiting comes back
     // without price, mcap or logo — serve it once, but let the next visitor recompute instead of freezing junk
@@ -1996,14 +1999,19 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   {
     const have = new Set(all.map((t) => t.token.toLowerCase()));
     const fresh: PadToken[] = [];
+    // factory registries hold every launch ever made (Lift alone: 1400+ dead pools) — carry only what is alive:
+    // created in the last 7 days, or seen in the screener / trending set. Anything else stays reachable via search + /token.
+    const aliveCut = Date.now() / 1000 - 7 * 86400;
+    const scrAlive = new Set(screener.map((t) => t.token.toLowerCase()));
     for (const [tok, r] of Object.entries(registry)) {
       if (have.has(tok)) continue;
+      if (!((r.ts ?? 0) > aliveCut || scrAlive.has(tok))) continue;
       const row = { token: tok, symbol: r.symbol ?? tok.slice(2, 8).toUpperCase(), name: r.symbol ?? "", pad: r.pad, logo: null, mcapUsd: null, priceUsd: null, volUsd: null, pool: null, stage: null,
         createdAt: r.ts ? new Date(r.ts * 1000).toISOString() : null, venueUrl: r.url ?? `/token/${tok}`, website: null, twitter: null, telegram: null, og: false, dexes: ["v3"] } as PadToken;
       all.push(row); fresh.push(row);
     }
     // symbol + name straight from the contract when the registry has none yet (never show a hex stub as a name)
-    const noSym = fresh.filter((t) => !t.name).slice(0, 120);
+    const noSym = fresh.filter((t) => !t.name).slice(0, 400);
     if (noSym.length) {
       try {
         const res = await memo(`padreg:sym:${noSym.map((t) => t.token.slice(2, 8)).join("")}`, 600_000, () =>

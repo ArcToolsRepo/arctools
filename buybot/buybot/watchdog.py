@@ -126,7 +126,7 @@ async def chk_tokens_api(s):
 
 async def chk_relay(s):
     try:
-        async with s.post(RELAY, json={"id": 1, "jsonrpc": "2.0", "method": "eth_blockNumber", "params": []},
+        async with s.post(RELAY, headers={"Content-Type": "application/json", "X-Relay-Key": os.getenv("RELAY_KEY", ""), "X-Priority": "high"}, json={"id": 1, "jsonrpc": "2.0", "method": "eth_blockNumber", "params": []},
                           timeout=aiohttp.ClientTimeout(total=20)) as r:
             j = await r.json(content_type=None)
             ok = r.status == 200 and str(j.get("result", "")).startswith("0x")
@@ -365,6 +365,9 @@ async def chk_minara(s):
         if mainnet and not _MINARA_SEEN["mainnet"]:
             _MINARA_SEEN["mainnet"] = True
             await _tg("🟢 minara.fun now ships an Arc MAINNET config — time to wire the pad (PENDING_FACTORIES['minara'])")
+        from .pads_registry import FACTORIES
+        if mainnet and "minara" in FACTORIES:
+            return True, "minara.fun on mainnet — wired (pads_registry: minara)"
         if mainnet:
             return False, "minara.fun: MAINNET config detected — wire the pad"
         return True, f"minara.fun still testnet-only ({'5042002' if testnet else 'no chain id found'})"

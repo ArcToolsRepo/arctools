@@ -10,6 +10,7 @@ Reported "liq" = 2 x USDC side (the usual DEX convention). Cached 60 s per token
 GET /api/liq?tokens=0x..,0x..  ->  {"liq": {token: usd}}
 """
 import asyncio
+import os
 import logging
 import time
 
@@ -38,7 +39,7 @@ async def _mc(calls: list[tuple[str, bytes]]) -> list[tuple[bool, bytes]]:
     sel = bytes.fromhex("bce38bd7")
     data = "0x" + (sel + encode(["bool", "(address,bytes)[]"], [False, calls])).hex()
     async with aiohttp.ClientSession() as s:
-        async with s.post(RELAY_RPC, json={"id": 1, "jsonrpc": "2.0", "method": "eth_call",
+        async with s.post(RELAY_RPC, headers={"Content-Type": "application/json", "X-Relay-Key": os.getenv("RELAY_KEY", ""), "X-Priority": "high"}, json={"id": 1, "jsonrpc": "2.0", "method": "eth_call",
                                           "params": [{"to": MULTICALL3, "data": data}, "latest"]},
                           timeout=aiohttp.ClientTimeout(total=40)) as r:
             res = (await r.json()).get("result")

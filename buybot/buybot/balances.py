@@ -58,7 +58,7 @@ async def _multicall_balances(wallets: list[str]) -> dict[str, float]:
             calls = [(MULTICALL3, bytes.fromhex(_sel_get_eth_balance(w)[2:])) for w in batch]
             data = "0x" + (sel + encode(["bool", "(address,bytes)[]"], [False, calls])).hex()
             try:
-                async with s.post(RELAY_RPC, json={"id": 1, "jsonrpc": "2.0", "method": "eth_call",
+                async with s.post(RELAY_RPC, headers={"Content-Type": "application/json", "X-Relay-Key": os.getenv("RELAY_KEY", ""), "X-Priority": "high"}, json={"id": 1, "jsonrpc": "2.0", "method": "eth_call",
                                                   "params": [{"to": MULTICALL3, "data": data}, "latest"]},
                                   timeout=aiohttp.ClientTimeout(total=40)) as r:
                     res = (await r.json()).get("result")

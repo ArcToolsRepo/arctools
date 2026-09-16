@@ -82,7 +82,7 @@ async def _symbol(token: str) -> str:
         try:
             # wlasny relay (stabilny) — arc-scan w trakcie backfillu zwraca 429
             async with _aiohttp.ClientSession() as s:
-                async with s.post(RELAY_RPC, json={
+                async with s.post(RELAY_RPC, headers={"Content-Type": "application/json", "X-Relay-Key": os.getenv("RELAY_KEY", ""), "X-Priority": "high"}, json={
                     "id": 1, "jsonrpc": "2.0", "method": "eth_call",
                     "params": [{"data": SEL_SYMBOL, "to": token}, "latest"],
                 }, timeout=_aiohttp.ClientTimeout(total=12)) as r:
@@ -1313,6 +1313,11 @@ def _prefetch_new_tokens(rows: list[dict]):
     first render instead of dashes that wait for the next repair pass."""
     toks = {r["token"] for r in rows if r.get("token")}
     fresh = [t for t in toks if t not in _supply_cache or _supply_cache[t][0] is None]
+    try:
+        from . import stream
+        stream.publish(rows)
+    except Exception:  # noqa
+        pass
     for t in fresh[:60]:
         if t not in _supply_pending:
             _supply_pending.add(t)
@@ -1962,6 +1967,8 @@ async def start_api():
     _social.register(app)
     from . import liquidity as _liq
     _liq.register(app)
+    from . import stream as _stream
+    _stream.register(app)
     _liq.register_risk(app)
     from . import referrals as _ref
     _ref.register(app)

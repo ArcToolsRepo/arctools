@@ -13,6 +13,7 @@ Anti-spam:
 from __future__ import annotations
 
 import asyncio
+import os
 import logging
 import time
 
@@ -123,7 +124,7 @@ async def _total_supply(token: str) -> float | None:
         return c[0]
     try:
         async with aiohttp.ClientSession() as s:
-            async with s.post(RELAY_RPC, json={
+            async with s.post(RELAY_RPC, headers={"Content-Type": "application/json", "X-Relay-Key": os.getenv("RELAY_KEY", ""), "X-Priority": "high"}, json={
                 "id": 1, "jsonrpc": "2.0", "method": "eth_call",
                 "params": [{"data": SEL_TOTAL_SUPPLY, "to": token}, "latest"],
             }, timeout=aiohttp.ClientTimeout(total=10)) as r:

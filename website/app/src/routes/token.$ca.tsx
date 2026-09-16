@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { BOT_API } from "@/lib/bot-api";
+import { BOT_API, BOT_ORIGIN } from "@/lib/bot-api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
@@ -298,11 +298,44 @@ function TokenPage() {
     } catch { /* keep old */ }
   }, [ca]);
 
+  // ---- LIVE: every swap the indexer writes arrives here within ~1 s over SSE (direct to the bot origin: no proxy
+  //      buffering). It updates the trade list, the last price and the open candle in place; polling stays as a slow
+  //      safety net (30 s) while the stream is up, and speeds up to 5 s when it is not.
+  const [live, setLive] = useState(false);
+  const liveRef = useRef(false);
+  useEffect(() => {
+    if (!ca || typeof window === "undefined" || typeof EventSource === "undefined") return;
+    let es: EventSource | null = null; let closed = false; let backoff = 1000;
+    const step = TF_SEC[tf] ?? 300;
+    const open = () => {
+      if (closed) return;
+      es = new EventSource(`${BOT_ORIGIN}/api/stream?token=${ca}`);
+      es.addEventListener("hello", () => { backoff = 1000; liveRef.current = true; setLive(true); });
+      es.addEventListener("trade", (ev) => {
+        try {
+          const t = JSON.parse((ev as MessageEvent).data) as Trade & { log_index?: number };
+          setTrades((prev) => (prev.some((p) => p.tx === t.tx && p.ts === t.ts && p.usdc === t.usdc) ? prev : [{ ...t, insider_rank: null, insider_pnl: null }, ...prev].slice(0, 80)));
+          setStats((prev) => (prev ? { ...prev, price1m: t.price1m, vol24: prev.vol24 + t.usdc, buys24: prev.buys24 + (t.side === "buy" ? 1 : 0), sells24: prev.sells24 + (t.side === "sell" ? 1 : 0), txns_all: prev.txns_all + 1, vol_all: prev.vol_all + t.usdc } : prev));
+          const px = t.price1m / 1e6; const b = Math.floor(t.ts / step) * step;
+          setCandles((prev) => {
+            if (!prev.length) return prev;
+            const last = prev[prev.length - 1];
+            if (last.t === b) return [...prev.slice(0, -1), { ...last, c: px, h: Math.max(last.h, px), l: Math.min(last.l, px), v: (last.v ?? 0) + t.usdc, vb: (last.vb ?? 0) + (t.side === "buy" ? t.usdc : 0), n: (last.n ?? 0) + 1 }];
+            if (b > last.t) return [...prev, { t: b, o: last.c, h: Math.max(last.c, px), l: Math.min(last.c, px), c: px, v: t.usdc, vb: t.side === "buy" ? t.usdc : 0, n: 1 }];
+            return prev;
+          });
+        } catch { /* malformed event */ }
+      });
+      es.onerror = () => { liveRef.current = false; setLive(false); es?.close(); es = null; if (!closed) setTimeout(open, backoff); backoff = Math.min(backoff * 2, 15_000); };
+    };
+    open();
+    return () => { closed = true; liveRef.current = false; es?.close(); };
+  }, [ca, tf]);
   useEffect(() => {
     void loadCandles();
-    const id = setInterval(loadCandles, 15_000);
+    const id = setInterval(() => { if (!liveRef.current || document.visibilityState === "visible") void loadCandles(); }, liveRef.current ? 30_000 : 5_000);
     return () => clearInterval(id);
-  }, [loadCandles]);
+  }, [loadCandles, live]);
   // a pool we know but our swap index never saw (brand-new launchpad pool whose first swaps hit an RPC hiccup):
   // ask the indexer to backfill it right away, then the chart fills in on the next candle poll
   const indexAsked = useRef(false);
@@ -316,9 +349,9 @@ function TokenPage() {
   }, [info?.pool, candles.length, stats]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     void loadSide();
-    const id = setInterval(loadSide, 12_000);
+    const id = setInterval(loadSide, liveRef.current ? 30_000 : 5_000);
     return () => clearInterval(id);
-  }, [loadSide]);
+  }, [loadSide, live]);
   useEffect(() => {
     if (!ca) return;
     const load = () => venueData({ data: { launchpad: info?.launchpad ?? null, token: ca } }).then(setVenue).catch(() => null);
@@ -710,6 +743,7 @@ function TokenPage() {
               ))}
             </div>
             <div className="arc-mono" style={{ borderBottom: "1px solid var(--arc-line)", color: "var(--arc-muted)", fontSize: 11, padding: "6px 10px" }}>
+              <span style={{ color: live ? "#22c580" : "var(--arc-muted)", marginRight: 8 }} title={live ? "live: every swap arrives over the stream within a second" : "polling every 5 s"}>{live ? "● LIVE" : "○ polling"}</span>
               {info.symbol}/{info.stock ? "USDC" : pairSym} · {mode === "mcap" ? "Market Cap" : "Price"} · {tf} · {info.venue === "pad" ? `ArcToolsPad curve (${qSym} pair)` : info.venue === "v3" ? `Uniswap V3 ${((info.poolFee ?? 0) / 10000).toFixed(2)}%${info.graduated ? " · graduated from ArcToolsPad" : ""}` : info.venue === "v4" ? `Uniswap V4${info.launchpad && info.launchpad !== "Uniswap V4" ? ` · ${info.launchpad}` : " · hookless pool"}` : info.venue === "curve" ? "Warp bonding curve" : (info.launchpad ?? "external pool")}
               {candles.length < 5 && effCandles.length > 0 && <span style={{ marginLeft: 10, opacity: 0.7 }}>· venue data (own index syncing)</span>}
             </div>

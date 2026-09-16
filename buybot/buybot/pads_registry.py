@@ -25,6 +25,7 @@ from . import db
 log = logging.getLogger("pads")
 CORS = {"Access-Control-Allow-Origin": "*"}
 RELAY = os.getenv("RELAY_URL", "https://rpc-production-ba7a.up.railway.app")
+NODE = os.getenv("PRIMARY_RPC", "http://89.68.166.52:8545")   # own reth node: no rate limit → symbols resolve on first sight
 SCAN = "https://api.arc-scan.org/v1"
 TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 V3_POS_NFT = "0x39654a85a4c05127f5fd6ed22caec077a0fb1377"
@@ -62,8 +63,16 @@ async def init():
 
 
 async def _rpc(s: aiohttp.ClientSession, method: str, params: list):
-    async with s.post(RELAY, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params}, timeout=aiohttp.ClientTimeout(total=25)) as r:
-        return (await r.json(content_type=None)).get("result")
+    for url in (NODE, RELAY):
+        try:
+            async with s.post(url, headers={"Content-Type": "application/json", "X-Relay-Key": os.getenv("RELAY_KEY", ""), "X-Priority": "high"},
+                              json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params}, timeout=aiohttp.ClientTimeout(total=12)) as r:
+                j = await r.json(content_type=None)
+                if isinstance(j, dict) and "result" in j:
+                    return j["result"]
+        except Exception:  # noqa - next endpoint
+            continue
+    return None
 
 
 async def _symbol(s: aiohttp.ClientSession, token: str) -> str | None:
@@ -140,6 +149,21 @@ async def registry_loop():
         except Exception as e:  # noqa
             log.warning("pads loop: %s", e)
         first = False
+        # registry rows created without a symbol (RPC hiccup at discovery) → fill them, newest first, 40 per pass
+        try:
+            rows = await db.fetchall(text("SELECT token FROM pad_tokens WHERE symbol IS NULL OR symbol = '' ORDER BY ts DESC LIMIT 40"))
+            if rows:
+                async with aiohttp.ClientSession() as s:
+                    fixed = 0
+                    for r in rows:
+                        sym = await _symbol(s, r["token"])
+                        if sym:
+                            await db.execute(text("UPDATE pad_tokens SET symbol = :s WHERE token = :t").bindparams(s=sym, t=r["token"])); fixed += 1
+                        else:
+                            await db.execute(text("UPDATE pad_tokens SET symbol = '?' WHERE token = :t").bindparams(t=r["token"]))   # no symbol() on-chain
+                    log.info("pads: symbols filled %s/%s", fixed, len(rows))
+        except Exception as e:  # noqa
+            log.warning("pads symbol backfill: %s", e)
         await asyncio.sleep(180)
 
 

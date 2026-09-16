@@ -49,7 +49,7 @@ API_CORS = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": 
 
 async def _rpc(method: str, params: list):
     async with aiohttp.ClientSession() as s:
-        async with s.post(RELAY_RPC, json={"id": 1, "jsonrpc": "2.0", "method": method, "params": params},
+        async with s.post(RELAY_RPC, headers={"Content-Type": "application/json", "X-Relay-Key": os.getenv("RELAY_KEY", ""), "X-Priority": "high"}, json={"id": 1, "jsonrpc": "2.0", "method": method, "params": params},
                           timeout=aiohttp.ClientTimeout(total=25)) as r:
             j = await r.json()
     if "error" in j:
