@@ -36,7 +36,7 @@ def publish(rows: list[dict]) -> None:
             qs = _subs.get(key)
             if not qs:
                 continue
-            if key == "*" and float(r.get("usdc") or 0) < 1:
+            if key == "*" and float(r.get("usdc") or 0) < 5:
                 continue
             if payload is None:
                 payload = json.dumps({k: r.get(k) for k in ("tx", "ts", "wallet", "side", "usdc", "tokens", "price1m", "venue", "block", "log_index")} | {"token": tok, "pub": round(time.time(), 2)})
@@ -69,8 +69,8 @@ async def api_stream(request: web.Request) -> web.StreamResponse:
                 ev, data = await asyncio.wait_for(q.get(), timeout=15)
                 # coalesce: a hot token prints 10-30 swaps/s — one "trades" frame every 300 ms instead of a frame per swap
                 batch = [data]
-                deadline = time.monotonic() + 0.3
-                while len(batch) < 100:
+                deadline = time.monotonic() + (1.0 if key == "*" else 0.3)   # firehose clients get 1 frame/s
+                while len(batch) < 400:
                     left = deadline - time.monotonic()
                     if left <= 0:
                         break
