@@ -444,6 +444,13 @@ const V4_HOOK_NAMES: Record<string, string> = {
   "0xfea9dfe2a20e11f7c4d4b30c6c96a06e42e6e044": "Arguspad",
   "0x465af15c85ac291d5cffb8d02d8c8e23102fe6e3": "act.fun",
   "0x20eead6db6b3d0a4491e9073119dd0ebff166acc": "UBI.fun",
+  "0xc780c0f4aac690908854d351b8bfda2812daefdc": "UBI.fun",
+  "0xbaba3f590b3661de78998d1576a73a4d726b2acc": "Sashimi",
+  "0xf73a3f56c533f7f1146fbc97806f07efa66ce0cc": "Klik",
+  "0xca55cdde6578f6f8113dd339520e13418abc2acc": "Lift",
+  "0x7cd35b33d495396c4707056d23582df68d0a28cc": "Archemist",
+  "0xc0fda29b6683ef1aa5376d5d7054ff773f5a20cc": "Minara",
+  "0xb6a65950534f061618b4ae102fbcbb8541a8e0cc": "Minara",
 };
 const ARCPAD_LAUNCHPAD = "0x1EaAD48260eECC7624666F1dFec202b2D75257fE";
 const ARCPAD_V3 = "0x2726AeC64D8a9BC41B9940dDA5D21c889458B348";
@@ -1450,6 +1457,13 @@ const V4_HOOK_PADS: Record<string, string> = {
   "0xfea9dfe2a20e11f7c4d4b30c6c96a06e42e6e044": "Arguspad",
   "0x465af15c85ac291d5cffb8d02d8c8e23102fe6e3": "act.fun",
   "0x20eead6db6b3d0a4491e9073119dd0ebff166acc": "UBI.fun",
+  "0xc780c0f4aac690908854d351b8bfda2812daefdc": "UBI.fun",
+  "0xbaba3f590b3661de78998d1576a73a4d726b2acc": "Sashimi",
+  "0xf73a3f56c533f7f1146fbc97806f07efa66ce0cc": "Klik",
+  "0xca55cdde6578f6f8113dd339520e13418abc2acc": "Lift",
+  "0x7cd35b33d495396c4707056d23582df68d0a28cc": "Archemist",
+  "0xc0fda29b6683ef1aa5376d5d7054ff773f5a20cc": "Minara",
+  "0xb6a65950534f061618b4ae102fbcbb8541a8e0cc": "Minara",
 };
 
 async function listTokensImpl(pad: string): Promise<PadToken[]> {
@@ -2029,6 +2043,26 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   const scrMeta = new Map(screener.map((t) => [t.token.toLowerCase(), t]));
   // ---- metadata memory: a token's logo / name / symbol / socials once seen are remembered in KV and used to heal
   //      any later compute where an upstream (RadarDex, IPFS, a pad API, the relay) dropped them. Self-healing, no re-fetch.
+  // launchpad lists + descriptions the buybot collected (RadarDex, Tolly, Minara …): logo, X, Telegram, website for rows that
+  // came from bare pool discovery and would otherwise show no socials
+  try {
+    const need = all.filter((t) => !t.logo || (!t.twitter && !t.telegram && !t.website)).map((t) => t.token.toLowerCase()).slice(0, 300);
+    if (need.length) {
+      const meta = await memo(`tokmeta:${need.length}:${need.slice(0, 40).map((t) => t.slice(2, 6)).join("")}`, 120_000, async () =>
+        ((await fetch(`https://bot-production-4200.up.railway.app/api/token-meta?tokens=${need.join(",")}`, { signal: AbortSignal.timeout(10_000) }).then((r) => r.json())) as
+          { meta?: Record<string, { symbol: string | null; name: string | null; logo: string | null; twitter: string | null; telegram: string | null; website: string | null }> }).meta ?? {},
+      (v) => Object.keys(v).length > 0);
+      for (const t of all) {
+        const m = meta[t.token.toLowerCase()];
+        if (!m) continue;
+        if (!t.logo && m.logo) t.logo = m.logo;
+        if (!t.twitter && m.twitter) t.twitter = m.twitter;
+        if (!t.telegram && m.telegram) t.telegram = m.telegram;
+        if (!t.website && m.website) t.website = m.website;
+        if ((!t.name || t.name === t.symbol) && m.name) t.name = m.name.slice(0, 40);
+      }
+    }
+  } catch { /* meta service busy: rows keep what they have */ }
   await healFromMemory(all);
   // full (uncompacted) list for the client-side explorer / pagination — same compact field shape
   fullListCache = { ts: Date.now(), v: all.map(compactToken) };
@@ -2051,6 +2085,9 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
       ...(t.stock ? { stock: true } : {}), ...(t.quote ? { quote: t.quote, quoteSymbol: t.quoteSymbol } : {}), ...(t.liqUsd != null ? { liqUsd: t.liqUsd } : {}),
     } as PadToken;
   }
+  // never list the quote assets themselves (native USDC / USDC facade / ARGUS bridge quotes): they are what tokens are priced in
+  const QUOTE_ASSETS = new Set(["0x0000000000000000000000000000000000000000", "0x3600000000000000000000000000000000000000"]);
+  for (const k of [...keep.keys()]) if (QUOTE_ASSETS.has(k.toLowerCase())) keep.delete(k);
   return [...keep.values()].sort((a, b) => ts(b) - ts(a)).map(compactToken);
 }
 let fullListCache: { ts: number; v: PadToken[] } | null = null;

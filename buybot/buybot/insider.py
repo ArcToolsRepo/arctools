@@ -393,6 +393,8 @@ async def _v4_register_init(lg):
     c0 = ("0x" + topics[2][-40:]).lower()
     c1 = ("0x" + topics[3][-40:]).lower()
     token, is0, quote = None, False, None
+    if c0 in (NATIVE, USDC) and c1 in (NATIVE, USDC):
+        return                                   # native USDC ↔ USDC facade pool: not a token, never index it
     if c0 in (NATIVE, USDC):
         token, is0 = c1, True
     elif c1 in (NATIVE, USDC):
@@ -509,6 +511,7 @@ async def v4_quote_backfill():
                              "token": dec["token"], "tokens": dec["tokens"], "ts": int(t0 + (lg["blockNumber"] - a) * slope), "tx": txh,
                              "usdc": dec["usdc"], "venue": "v4", "wallet": senders.get(txh, "")})
             await db.execute_many(ins, rows)
+            _prefetch_new_tokens(rows)
             total += len(rows)
             await asyncio.sleep(0.05)
         if ok:
@@ -590,6 +593,7 @@ async def v4_bootstrap():
                          "ts": int(t0 + (lg["blockNumber"] - (a + 1)) * slope), "tx": txh, "usdc": dec["usdc"],
                          "venue": "v4", "wallet": senders.get(txh, "")})
         await db.execute_many(ins, rows)
+        _prefetch_new_tokens(rows)
         total += len(rows)
         await asyncio.sleep(0.05)
     await db.kv_set("v4_bootstrapped", "1")
@@ -956,6 +960,7 @@ async def backfill_pool(pool: str, blocks: int = BACKFILL_BLOCKS) -> int:
                 "usdc": dec["usdc"], "venue": "v3" if topic == V3_SWAP_TOPIC else "v2", "wallet": senders.get(txh, ""),
             })
         await db.execute_many(ins, rows)
+        _prefetch_new_tokens(rows)
         total += len(rows)
         await asyncio.sleep(0.1)
     log.info("backfill_pool %s: +%s swaps", pool[:10], total)
@@ -1256,6 +1261,7 @@ async def gap_fill_loop():
             if res is None:
                 win = max(250, win // 2); await asyncio.sleep(3); continue
             await db.execute_many(ins, res)
+            _prefetch_new_tokens(res)
             if time.time() - t0 < 40:
                 win = min(5_000, int(win * 1.5))
             gaps[0][0] = to + 1
@@ -1300,6 +1306,26 @@ async def sender_fill_loop():
         except Exception as e:  # noqa
             log.warning("sender fill: %s", e)
             await asyncio.sleep(10)
+
+
+def _prefetch_new_tokens(rows: list[dict]):
+    """First swap of a token → fetch supply + symbol NOW (own node, ms) so the Terminal shows MC and a name on the
+    first render instead of dashes that wait for the next repair pass."""
+    toks = {r["token"] for r in rows if r.get("token")}
+    fresh = [t for t in toks if t not in _supply_cache or _supply_cache[t][0] is None]
+    for t in fresh[:60]:
+        if t not in _supply_pending:
+            _supply_pending.add(t)
+
+            async def _bg(tok=t):
+                try:
+                    await _total_supply(tok)
+                    await _symbol(tok)
+                except Exception:  # noqa
+                    pass
+                finally:
+                    _supply_pending.discard(tok)
+            asyncio.create_task(_bg())
 
 
 async def ingest_loop():
@@ -1377,6 +1403,7 @@ async def ingest_loop():
                     rows.extend(res)
                     advanced = to
                 await db.execute_many(ins, rows)
+                _prefetch_new_tokens(rows)
                 if advanced > cursor:
                     cursor = advanced; _last_progress = time.time()
                     await db.kv_set("insider_cursor", str(cursor))
@@ -1393,6 +1420,7 @@ async def ingest_loop():
                     await asyncio.sleep(3)
                     continue
                 await db.execute_many(ins, res)
+                _prefetch_new_tokens(res)
                 cursor = to; _last_progress = time.time()
                 await db.kv_set("insider_cursor", str(cursor))
                 await asyncio.sleep(CFG.poll_interval)

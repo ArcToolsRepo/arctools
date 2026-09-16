@@ -391,7 +391,7 @@ async def _api_stats_impl(request: web.Request) -> web.Response:
           SELECT token, ts, log_index, side, usdc, wallet, price1m,
                  ROW_NUMBER() OVER (PARTITION BY token ORDER BY ts ASC, log_index ASC) AS rn_first,
                  ROW_NUMBER() OVER (PARTITION BY token ORDER BY ts DESC, log_index DESC) AS rn_last
-          FROM swaps WHERE ts > :since AND usdc >= 0.2 AND token IN :toks
+          FROM swaps WHERE ts > :since AND usdc >= 0.2 AND token <> '0x3600000000000000000000000000000000000000' AND token IN :toks
         ), agg AS (
           SELECT token, COUNT(*) AS txs, SUM(usdc) AS vol,
                  SUM(CASE WHEN side='buy' THEN 1 ELSE 0 END) AS buys, SUM(CASE WHEN side='sell' THEN 1 ELSE 0 END) AS sells,
@@ -439,7 +439,7 @@ async def _api_trending_impl(request: web.Request) -> web.Response:
           SELECT token, ts, log_index, side, usdc, wallet, price1m,
                  ROW_NUMBER() OVER (PARTITION BY token ORDER BY ts ASC, log_index ASC) AS rn_first,
                  ROW_NUMBER() OVER (PARTITION BY token ORDER BY ts DESC, log_index DESC) AS rn_last
-          FROM swaps WHERE ts > :since AND usdc >= 0.2
+          FROM swaps WHERE ts > :since AND usdc >= 0.2 AND token <> '0x3600000000000000000000000000000000000000'
         ), agg AS (
           SELECT token, COUNT(*) AS txs, SUM(usdc) AS vol,
                  SUM(CASE WHEN side='buy' THEN 1 ELSE 0 END) AS buys, SUM(CASE WHEN side='sell' THEN 1 ELSE 0 END) AS sells,

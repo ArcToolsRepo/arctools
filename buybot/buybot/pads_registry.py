@@ -37,17 +37,20 @@ FACTORIES: dict[str, dict] = {
     "sashimi":  {"label": "Sashimi",     "url": "https://sashimi.fun",   "twitter": "sashimidotfun",   "factories": ["0x0d85ac76baaed7a46cb5133b57bce7d8f9a44d58", "0x5b7bf9bd9c35a845ec1d469ed58616e7076a6f5c"], "model": "bonding curve"},
     "aka":      {"label": "aka.fun",     "url": "https://aka.fun",       "twitter": "akadotfun",       "factories": ["0x268b41c0614d066dfc858455cb8f733deb3b04cc"], "model": "DN404"},
     "arcane":   {"label": "Arcane",      "url": "https://arcane.fi",     "twitter": "Arcanedotfi",     "factories": ["0x2dca1c5acdcf362c6b61d91ec4661a410fe4e178", "0x86dfced95ad9231f3cbe0c73d4cb9d555357301c"], "model": "AMM"},
+    # --- found 16.09 by walking token-creation txs of un-attributed V3/V4 tokens (marketing/src/find_factories.py) ---
+    "klik":     {"label": "Klik",        "url": "https://klik.finance",  "twitter": "klikfinance",     "factories": ["0x7e5aeacff30dabedc729a0456f99f3f80aa2217c"], "model": "instant V4 pool, hook 0xf73a3f56…"},
+    "minara":   {"label": "Minara",      "url": "https://minara.fun",    "twitter": "minarafun",       "factories": ["0xb6c6f77ee74af874a183bfd77dd0176d1ac91de6"], "model": "Uniswap liquidityLauncher → V4 pool (uerc20Factory 0xff99d8f6…, hook 0xb6a65950…); mainnet since 16.09"},
+    "pools":    {"label": "pools.trade", "url": "https://pools.trade",   "twitter": None,              "factories": ["0x0000ffffbe8efe702c8703ae3477ff5de3d319c0"], "model": "Uniswap liquidityLauncher → V4 pool (same uerc20Factory as Minara)"},
+    "arguspad": {"label": "Arguspad",    "url": "https://arguspad.io",   "twitter": "arguspad",        "factories": ["0xb021be536808f551b31789422fd28a6c9c6e97da"], "model": "token factory (ARGUS-quoted V4 pools)"},
+    "tolly":    {"label": "Tolly",       "url": "https://tolly.fun",     "twitter": "tollylabs",       "factories": ["0xcad7ee36ac193bf2eddb7b3e2736c5bdb8269c8b"], "model": "instant V3 pool + locker 0x712fee0e…"},
+    "ubi":      {"label": "UBI.fun",     "url": "https://ubi.fun",       "twitter": "ubidotfun",       "factories": ["0xee3e862efde6dcd6df5648af0e2731b9d1df4605", "0xe07f7ca66ec795592385018dd998f0b50b8a2834"], "model": "V4 pool, hooks 0x20eead6d… / 0xc780c0f4…"},
 }
 
-# Launchpads we have already reverse-engineered but that are NOT on Arc mainnet yet. Kept out of FACTORIES so the
-# Terminal never lists tokens nobody can buy. Going live = move the entry into FACTORIES and fill "factories".
+# Launchpads we have already reverse-engineered but that are NOT on Arc mainnet yet (or show no real tokens). Kept out of
+# FACTORIES so the Terminal never lists tokens nobody can buy. Going live = move the entry into FACTORIES and fill "factories".
 PENDING_FACTORIES: dict[str, dict] = {
-    # minara.fun — verified 2026-09-15: bundle has chainId 5042002 (Arc Testnet), rpc.testnet.arc.network only.
-    # Mechanics: uerc20Factory emits TokenCreated (topic 0x4ef8284ecf42d4cd19686572ffd87f630858c82398911e776cb831de35eddbf4),
-    # bonding curve graduates into Uniswap V4 (poolManager Initialize 0xdd466e674ea557f56295e2d0218a125ea4b4f0f6f3307b95f85e6110838d6438),
-    # metadata API https://api.minara.fun. After graduation tokens fall into our existing V4 path automatically.
-    "minara":   {"label": "Minara",      "url": "https://minara.fun",    "twitter": "minarafun",       "factories": [], "model": "curve -> V4 pool",
-                 "token_created_topic": "0x4ef8284ecf42d4cd19686572ffd87f630858c82398911e776cb831de35eddbf4", "status": "testnet only (chainId 5042002)"},
+    "arcfun":   {"label": "Arcfun",      "url": "https://arcfun.app",    "twitter": None, "factories": [], "model": "USDC bonding curve → DEX", "status": "site shows placeholder tokens only (16.09)"},
+    "arclaunch":{"label": "ARCLaunch",   "url": "https://arclaunch.fun", "twitter": None, "factories": [], "model": "?", "status": "no tokens / contracts visible (16.09)"},
 }
 
 

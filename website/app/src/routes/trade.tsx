@@ -50,7 +50,15 @@ const loadFavs = (): Set<string> => { try { return new Set(JSON.parse(localStora
 type Cluster = { token: string; symbol: string | null; insiders: number; usd: number; ranks: string; last_ts: number };
 type Position = { token: string; symbol: string | null; net: number; avg: number; price: number | null; value: number | null; unrealized: number | null; realized: number; cost: number; n: number; last_ts: number };
 
-const usd = (v: number | null | undefined) => (v == null ? "—" : v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v >= 1e4 ? `$${(v / 1e3).toFixed(1)}K` : v >= 1000 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`);
+const usd = (v: number | null | undefined) => {
+  if (v == null || !Number.isFinite(v) || v < 0) return "—";
+  if (v >= 1e13) return "—";                                   // nonsense (decimals bug upstream) — never print 3.99e+26
+  if (v >= 1e9) return `$${(v / 1e9).toFixed(2)}B`;
+  if (v >= 1e6) return `$${(v / 1e6).toFixed(2)}M`;
+  if (v >= 1e4) return `$${(v / 1e3).toFixed(1)}K`;
+  if (v >= 1000) return `$${(v / 1e3).toFixed(2)}K`;
+  return `$${v.toFixed(v >= 100 ? 0 : 2)}`;
+};
 const num = (v: number) => (v >= 1e9 ? `${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `${(v / 1e6).toFixed(2)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(1)}K` : v.toFixed(0));
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const ago = (iso: string | null | number) => {
@@ -94,7 +102,7 @@ function Trade() {
   const PAGE = 50;
   const [page, setPage] = useState(1);
   const [minMc, setMinMc] = useState(""); const [maxMc, setMaxMc] = useState(""); const [minVol, setMinVol] = useState("");
-  const PADS: [string, string][] = [["all", tr_("All sources")], ["ArcToolsPad", "ArcToolsPad"], ["ArcPad", "ArcPad"], ["RadarDex", "RadarDex"], ["Warp", "Warp"], ["Tolly", "Tolly"], ["Archemist", "Archemist"], ["Arguspad", "Arguspad"], ["UniswapV4", "Uniswap V4"], ["UniswapV3", "Uniswap V3 pools"], ["Lift", "Lift"], ["eve.fun", "eve.fun"], ["Ellipse", "Ellipse"], ["Sashimi", "Sashimi"], ["aka.fun", "aka.fun"], ["long.supply", "📈 Stock pairs"], ["Stocks", "📈 Stocks"], ["DYORSwap", "DYORSwap · V2"], ["UBI.fun", "UBI.fun"]];
+  const PADS: [string, string][] = [["all", tr_("All sources")], ["ArcToolsPad", "ArcToolsPad"], ["ArcPad", "ArcPad"], ["RadarDex", "RadarDex"], ["Warp", "Warp"], ["Tolly", "Tolly"], ["Archemist", "Archemist"], ["Arguspad", "Arguspad"], ["UniswapV4", "Uniswap V4"], ["UniswapV3", "Uniswap V3 pools"], ["Lift", "Lift"], ["eve.fun", "eve.fun"], ["Ellipse", "Ellipse"], ["Sashimi", "Sashimi"], ["aka.fun", "aka.fun"], ["long.supply", "📈 Stock pairs"], ["Stocks", "📈 Stocks"], ["DYORSwap", "DYORSwap · V2"], ["UBI.fun", "UBI.fun"], ["Klik", "Klik"], ["Minara", "Minara"], ["pools.trade", "pools.trade"]];
   useEffect(() => { try { setToastsOn(localStorage.getItem("arctools_toasts") !== "0"); } catch { /* ignore */ } }, []);
   const toggleToasts = () => setToastsOn((v) => { try { localStorage.setItem("arctools_toasts", v ? "0" : "1"); } catch { /* ignore */ } return !v; });
   const [browserAddr, setBrowserAddr] = useState<string | null>(null);

@@ -27,6 +27,10 @@ bot = None  # ustawiane z main.py (aiogram Bot) — do getChat
 
 
 async def init_tables():
+    try:
+        await db.execute(text("ALTER TABLE social_tokens ADD COLUMN IF NOT EXISTS logo VARCHAR(300)"))
+    except Exception:  # noqa
+        pass
     for s in [
         # kto (kind/key) byl podpiety pod jaki token i kiedy
         """CREATE TABLE IF NOT EXISTS social_registry (
@@ -192,7 +196,7 @@ async def _token_lists(s: aiohttp.ClientSession) -> list[dict]:
             out.append({"address": t["address"].lower(), "deployer": (t.get("deployer") or "").lower() or None,
                         "deploy_ts": t.get("deployTs"), "launchpad": t.get("launchpad"), "mcap": t.get("mcap"),
                         "name": t.get("name"), "symbol": t.get("symbol"), "telegram": t.get("telegram"),
-                        "twitter": t.get("twitter"), "website": t.get("website")})
+                        "twitter": t.get("twitter"), "website": t.get("website"), "logo": t.get("logo") or t.get("image") or t.get("imageUrl")})
     tolly = await _get_json(s, "https://api.tollylabs.com/tokens", {"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
     seen = {o["address"] for o in out}
     for t in (tolly or {}).get("tokens") or []:
@@ -200,7 +204,58 @@ async def _token_lists(s: aiohttp.ClientSession) -> list[dict]:
         if a and a not in seen:
             out.append({"address": a, "deployer": (t.get("creator") or "").lower() or None, "deploy_ts": t.get("created_ts"),
                         "launchpad": "tolly", "mcap": t.get("marketCap"), "name": t.get("name"), "symbol": t.get("symbol"),
-                        "telegram": t.get("telegram"), "twitter": t.get("twitter"), "website": t.get("website")})
+                        "telegram": t.get("telegram"), "twitter": t.get("twitter"), "website": t.get("website"), "logo": t.get("logo") or t.get("image") or t.get("imageUrl")})
+    # minara.fun (mainnet since 16.09): list API has logo + description + creator; socials live inside the description
+    seen = {o["address"] for o in out}
+    for offset in range(0, 600, 100):
+        page = await _get_json(s, f"https://api.minara.fun/minara-fun/launches?chainId=5042&limit=100&offset={offset}",
+                               {"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
+        items = (page or {}).get("items") or []
+        for t in items:
+            a = (t.get("address") or "").lower()
+            if not a or a in seen:
+                continue
+            soc = socials_from_text(t.get("description") or "")
+            out.append({"address": a, "deployer": (t.get("creator") or "").lower() or None, "deploy_ts": t.get("createdAtTimestamp"),
+                        "launchpad": "minara", "mcap": t.get("marketCapUsd"), "name": t.get("name"), "symbol": t.get("symbol"),
+                        "telegram": soc.get("telegram"), "twitter": soc.get("twitter"), "website": soc.get("website"), "logo": t.get("imageUrl")})
+        if len(items) < 100:
+            break
+    # any source: a description / name that carries an @handle, x.com, t.me or a bare domain fills the gaps
+    for o in out:
+        if not (o.get("twitter") and o.get("telegram") and o.get("website")):
+            soc = socials_from_text(" ".join(str(o.get(k) or "") for k in ("description", "name")))
+            for k in ("twitter", "telegram", "website"):
+                o[k] = o.get(k) or soc.get(k)
+    return out
+
+
+_X_RE = re.compile(r"(?:https?://)?(?:www\.)?(?:x|twitter)\.com/([A-Za-z0-9_]{2,15})", re.I)
+_TG_RE = re.compile(r"(?:https?://)?t\.me/([A-Za-z0-9_]{4,32})", re.I)
+_URL_RE = re.compile(r"https?://([a-z0-9.-]+\.[a-z]{2,})", re.I)
+_AT_RE = re.compile(r"(?<![\w@])@([A-Za-z0-9_]{3,15})\b")
+
+
+def socials_from_text(txt: str) -> dict:
+    """Pull X / Telegram / website out of free text (token descriptions, names)."""
+    out: dict = {}
+    if not txt:
+        return out
+    m = _X_RE.search(txt)
+    if m and m.group(1).lower() not in ("home", "search", "i", "intent", "share", "hashtag"):
+        out["twitter"] = m.group(1)
+    m = _TG_RE.search(txt)
+    if m:
+        out["telegram"] = m.group(1)
+    for m in _URL_RE.finditer(txt):
+        host = m.group(1).lower()
+        if not any(b in host for b in ("x.com", "twitter.com", "t.me", "minara", "static.", "ipfs", "arc-scan", "arcscan", "dexscreener", "radardex")):
+            out["website"] = host
+            break
+    if "twitter" not in out:
+        m = _AT_RE.search(txt)
+        if m and m.group(1).lower() not in ("arc", "everyone", "here", "channel"):
+            out["twitter"] = m.group(1)
     return out
 
 
@@ -229,15 +284,15 @@ async def registry_loop():
                 for t in toks:
                     xh, th, dom = x_handle(t["twitter"]), tg_handle(t["telegram"]), domain_of(t["website"])
                     await db.execute(text("""
-                        INSERT INTO social_tokens (token, symbol, name, launchpad, deployer, x_handle, tg_handle, domain, mcap, deploy_ts, updated)
-                        VALUES (:t, :s, :n, :l, :d, :x, :g, :w, :m, :ts, :u)
-                        ON CONFLICT (token) DO UPDATE SET symbol=:s, name=:n, launchpad=COALESCE(:l, social_tokens.launchpad),
+                        INSERT INTO social_tokens (token, symbol, name, launchpad, deployer, x_handle, tg_handle, domain, mcap, deploy_ts, updated, logo)
+                        VALUES (:t, :s, :n, :l, :d, :x, :g, :w, :m, :ts, :u, :logo)
+                        ON CONFLICT (token) DO UPDATE SET symbol=:s, name=:n, launchpad=COALESCE(:l, social_tokens.launchpad), logo=COALESCE(:logo, social_tokens.logo),
                           deployer=COALESCE(:d, social_tokens.deployer), x_handle=COALESCE(:x, social_tokens.x_handle),
                           tg_handle=COALESCE(:g, social_tokens.tg_handle), domain=COALESCE(:w, social_tokens.domain),
                           mcap=:m, deploy_ts=COALESCE(:ts, social_tokens.deploy_ts), updated=:u
                     """).bindparams(t=t["address"], s=(t["symbol"] or "")[:32], n=(t["name"] or "")[:80], l=t["launchpad"],
                                     d=t["deployer"], x=xh, g=th, w=dom, m=float(t["mcap"] or 0),
-                                    ts=int(t["deploy_ts"]) if t.get("deploy_ts") else None, u=now))
+                                    ts=int(t["deploy_ts"]) if t.get("deploy_ts") else None, u=now, logo=(t.get("logo") or None)))
                     if t["deployer"]:
                         await _upsert_registry("deployer", t["deployer"], t["address"], None, t["symbol"], now)
                     if dom:
@@ -451,3 +506,17 @@ def _dedupe(rows: list[dict]) -> list[dict]:
 
 def register(app: web.Application):
     app.router.add_get("/api/social-check", api_social_check)
+    app.router.add_get("/api/token-meta", api_token_meta)
+
+
+async def api_token_meta(req: web.Request):
+    """GET /api/token-meta?tokens=a,b,… (≤300) → {meta: {token: {symbol, name, logo, twitter, telegram, website, launchpad}}}
+    Everything the pad lists / descriptions told us about a token — the site uses it to fill logos + socials on rows that
+    came from bare pool discovery (Uniswap V3/V4 tabs)."""
+    toks = [t.strip().lower() for t in (req.query.get("tokens") or "").split(",") if t.strip().startswith("0x") and len(t.strip()) == 42][:300]
+    if not toks:
+        return web.json_response({"meta": {}})
+    rows = await db.fetchall(text("SELECT token, symbol, name, logo, x_handle, tg_handle, domain, launchpad FROM social_tokens WHERE token = ANY(:t)").bindparams(t=toks))
+    meta = {r["token"]: {"symbol": r["symbol"], "name": r["name"], "logo": r["logo"], "twitter": r["x_handle"], "telegram": r["tg_handle"],
+                         "website": r["domain"], "launchpad": r["launchpad"]} for r in rows}
+    return web.json_response({"meta": meta}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=120"})

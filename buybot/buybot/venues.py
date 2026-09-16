@@ -107,6 +107,13 @@ V4_HOOKS = {
     "0xfea9dfe2a20e11f7c4d4b30c6c96a06e42e6e044": "Arguspad",          # Arguspad V4 (ARGUS-quoted pools)
     "0x465af15c85ac291d5cffb8d02d8c8e23102fe6e3": "act.fun",
     "0x20eead6db6b3d0a4491e9073119dd0ebff166acc": "UBI.fun",
+    "0xc780c0f4aac690908854d351b8bfda2812daefdc": "UBI.fun",           # UBI.fun revenue-stream hook (launcher 0xe07f7ca6…)
+    "0xbaba3f590b3661de78998d1576a73a4d726b2acc": "Sashimi",           # Sashimi graduation pools (launcher 0x3990608d…)
+    "0xf73a3f56c533f7f1146fbc97806f07efa66ce0cc": "Klik",              # klik.finance Arc factory 0x7e5aeacf…
+    "0xca55cdde6578f6f8113dd339520e13418abc2acc": "Lift",              # Lift V4 (launcher 0x1ca37b3c…), since block ~21.09M
+    "0x7cd35b33d495396c4707056d23582df68d0a28cc": "Archemist",         # Archemist V4 (launcher 0xc6e91233…)
+    "0xc0fda29b6683ef1aa5376d5d7054ff773f5a20cc": "Minara",            # minara.fun (launcher 0xb6c6f77e…)
+    "0xb6a65950534f061618b4ae102fbcbb8541a8e0cc": "Minara",            # minaraFeeHook (API contracts?chainId=5042)
 }
 
 

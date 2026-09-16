@@ -10,7 +10,10 @@ if _url.startswith("postgres://"):
 elif _url.startswith("postgresql://"):
     _url = _url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-engine = create_async_engine(_url, pool_pre_ping=True, pool_size=20, max_overflow=20, pool_timeout=20)
+# Connections leaked by cancelled coroutines (asyncio.wait_for timeouts mid-query) sat "idle in transaction" and
+# exhausted the pool → Postgres now kills such sessions after 60 s and caps any statement at 90 s; pre_ping replaces them.
+engine = create_async_engine(_url, pool_pre_ping=True, pool_size=20, max_overflow=20, pool_timeout=20, pool_recycle=1800,
+                             connect_args={"server_settings": {"idle_in_transaction_session_timeout": "60000", "statement_timeout": "90000"}})
 meta = MetaData()
 
 tracks = Table("tracks", meta,
