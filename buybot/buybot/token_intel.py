@@ -6,6 +6,8 @@ GET /api/token-position?token=&wallet=  → the same numbers for one wallet (the
 """
 from __future__ import annotations
 
+import asyncio
+
 import logging
 import time
 
@@ -19,6 +21,7 @@ CORS = {"Access-Control-Allow-Origin": "*"}
 PRO_WINRATE = 75.0
 PRO_MIN_CLOSED = 5
 _cache: dict[str, tuple[float, object]] = {}
+_inflight: dict[str, "asyncio.Future"] = {}
 
 
 def _tok(req: web.Request) -> str | None:
@@ -28,12 +31,21 @@ def _tok(req: web.Request) -> str | None:
 
 async def _swaps(token: str) -> list[dict]:
     c = _cache.get("sw:" + token)
-    if c and time.time() - c[0] < 45:
+    if c and time.time() - c[0] < 120:
         return c[1]  # type: ignore[return-value]
-    rows = await db.fetchall(text("SELECT tx, ts, wallet, side, usdc, tokens, price1m FROM swaps WHERE token = :t ORDER BY ts, log_index").bindparams(t=token))
-    out = [dict(r) for r in rows]
-    _cache["sw:" + token] = (time.time(), out)
-    return out
+    fut = _inflight.get(token)
+    if fut is None:
+        async def _load():
+            # newest 40 000 swaps are plenty for holders / positions / top traders; ARCT-class tokens have 100k+ and the
+            # unbounded read took 13 s and a DB core each time a token page opened
+            rows = await db.fetchall_heavy(text("SELECT tx, ts, wallet, side, usdc, tokens, price1m FROM swaps WHERE token = :t "
+                                                "ORDER BY ts DESC, log_index DESC LIMIT 40000").bindparams(t=token))
+            out = [dict(r) for r in rows][::-1]
+            _cache["sw:" + token] = (time.time(), out)
+            return out
+        fut = _inflight[token] = asyncio.ensure_future(_load())
+        fut.add_done_callback(lambda _f: _inflight.pop(token, None))
+    return await fut
 
 
 async def _wallet_kinds(token: str) -> tuple[set[str], dict[str, int], dict[str, float]]:

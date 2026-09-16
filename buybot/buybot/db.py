@@ -1,5 +1,5 @@
 import time
-from sqlalchemy import (Column, Integer, BigInteger, String, Float, Text,
+from sqlalchemy import (text, Column, Integer, BigInteger, String, Float, Text,
                         MetaData, Table, select, insert, update, delete)
 from sqlalchemy.ext.asyncio import create_async_engine
 from .config import CFG
@@ -141,3 +141,16 @@ async def kv_set(k: str, v: str):
         await execute(insert(kv).values(k=k, v=v))
     else:
         await execute(update(kv).where(kv.c.k == k).values(v=v))
+
+
+import asyncio as _asyncio
+_heavy_sem = _asyncio.Semaphore(2)      # at most 3 whole-table aggregates at once — the rest wait instead of thrashing the disk
+
+
+async def fetchall_heavy(q):
+    """Window/aggregate queries over the whole swaps table: give the sort/hash 64 MB instead of the server default
+    (4 MB on the Railway plan → sorts spilled to disk, 1-20 s). SET LOCAL lives only inside this transaction."""
+    async with _heavy_sem:
+        async with engine.begin() as c:
+            await c.execute(text("SET LOCAL work_mem = '64MB'"))
+            return [dict(r) for r in (await c.execute(q)).mappings().all()]

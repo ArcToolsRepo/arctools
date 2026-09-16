@@ -166,7 +166,7 @@ function Index() {
               the second a whale, a bridge or a cluster hits.
             </p>
           </div>
-          <img alt="ArcTools position panel with live profit and loss" src="/assets/ui/positions-panel.png" />
+          <img alt="ArcTools position panel with live profit and loss" src="/assets/ui/positions-panel.webp" />
         </div>
       </section>
 

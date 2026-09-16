@@ -163,11 +163,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => buildHead(appMeta),
   // chain / RPC outage flag rendered into the first HTML (the banner must not depend on a client fetch racing hydration)
   loader: async () => {
+    // 600 ms budget, shared through KV: a slow buybot must never add seconds to every page (it did: 2.5 s timeouts
+    // showed up as random 2.8 s TTFB). The banner refreshes client-side anyway.
     try {
       const { BOT_ORIGIN } = await import("@/lib/bot-api");
-      const r = await fetch(`${BOT_ORIGIN}/api/chain-status`, { signal: AbortSignal.timeout(2500) });
-      const j = await r.json() as { down?: boolean; since?: number | null; last_block?: number | null; stale_s?: number };
-      return { chain: j };
+      const { memoKV, keepAlive } = await import("@/lib/memo-kv");
+      const kv = memoKV();
+      const cached = kv ? await kv.get("chain:status", "text").catch(() => null) : null;
+      const parsed = cached ? (JSON.parse(cached) as { ts?: number }) : null;
+      if (parsed && Date.now() / 1000 - (parsed.ts ?? 0) < 20) return { chain: parsed };
+      const fresh = fetch(`${BOT_ORIGIN}/api/chain-status`, { signal: AbortSignal.timeout(2500) }).then((r) => r.json())
+        .then((j: Record<string, unknown>) => { if (kv) keepAlive(kv.put("chain:status", JSON.stringify(j), { expirationTtl: 120 })); return j; });
+      const j = await Promise.race([fresh, new Promise<null>((res) => setTimeout(() => res(null), 600))]);
+      if (j) return { chain: j as { down?: boolean; since?: number | null; last_block?: number | null; stale_s?: number } };
+      keepAlive(fresh.catch(() => null));
+      return { chain: parsed ?? null };
     } catch { return { chain: null }; }
   },
   staleTime: 20_000,

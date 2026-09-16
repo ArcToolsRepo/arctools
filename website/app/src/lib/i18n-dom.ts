@@ -163,8 +163,16 @@ export async function applyLanguage(lang: Lang) {
   currentLang = lang;
   misses.clear();
   if (lang !== "en") {
-    const m = await import("./i18n-dict");
-    dict = m.dictFor(lang);
+    // one small JSON per language (generated at build: scripts/gen-i18n.ts → public/i18n/<lang>.json, ~30 KB) instead of the
+    // 156 KB five-language module; the module stays as fallback when the JSON is missing
+    try {
+      const r = await fetch(`/i18n/${lang}.json`, { cache: "force-cache" });
+      if (!r.ok) throw new Error(String(r.status));
+      dict = (await r.json()) as Dict;
+    } catch {
+      const m = await import("./i18n-dict");
+      dict = m.dictFor(lang);
+    }
   }
   observer?.disconnect();
   walk(document.body);

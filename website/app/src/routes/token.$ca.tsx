@@ -312,9 +312,7 @@ function TokenPage() {
       if (closed) return;
       es = new EventSource(`${BOT_ORIGIN}/api/stream?token=${ca}`);
       es.addEventListener("hello", () => { backoff = 1000; liveRef.current = true; setLive(true); });
-      es.addEventListener("trade", (ev) => {
-        try {
-          const t = JSON.parse((ev as MessageEvent).data) as Trade & { log_index?: number };
+      const onTrade = (t: Trade & { log_index?: number }) => {
           setTrades((prev) => (prev.some((p) => p.tx === t.tx && p.ts === t.ts && p.usdc === t.usdc) ? prev : [{ ...t, insider_rank: null, insider_pnl: null }, ...prev].slice(0, 80)));
           setStats((prev) => (prev ? { ...prev, price1m: t.price1m, vol24: prev.vol24 + t.usdc, buys24: prev.buys24 + (t.side === "buy" ? 1 : 0), sells24: prev.sells24 + (t.side === "sell" ? 1 : 0), txns_all: prev.txns_all + 1, vol_all: prev.vol_all + t.usdc } : prev));
           const px = t.price1m / 1e6; const b = Math.floor(t.ts / step) * step;
@@ -325,8 +323,9 @@ function TokenPage() {
             if (b > last.t) return [...prev, { t: b, o: last.c, h: Math.max(last.c, px), l: Math.min(last.c, px), c: px, v: t.usdc, vb: t.side === "buy" ? t.usdc : 0, n: 1 }];
             return prev;
           });
-        } catch { /* malformed event */ }
-      });
+      };
+      es.addEventListener("trade", (ev) => { try { onTrade(JSON.parse((ev as MessageEvent).data)); } catch { /* malformed */ } });
+      es.addEventListener("trades", (ev) => { try { for (const t of JSON.parse((ev as MessageEvent).data) as (Trade & { log_index?: number })[]) onTrade(t); } catch { /* malformed */ } });
       es.onerror = () => { liveRef.current = false; setLive(false); es?.close(); es = null; if (!closed) setTimeout(open, backoff); backoff = Math.min(backoff * 2, 15_000); };
     };
     open();

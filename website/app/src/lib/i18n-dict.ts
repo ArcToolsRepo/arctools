@@ -2,7 +2,7 @@
 import type { Lang } from "./i18n";
 
 type Row = [string, string, string, string, string];
-const ROWS: Row[] = [
+export const ROWS: Row[] = [
   // ---- nav / chrome
   ["Terminal", "Terminal", "Terminal", "Терминал", "终端"],
   ["Profile", "Profil", "Perfil", "Профиль", "个人"],

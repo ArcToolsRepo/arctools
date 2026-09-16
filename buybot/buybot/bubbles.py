@@ -274,8 +274,10 @@ async def warm_loop():
     while True:
         try:
             async with aiohttp.ClientSession() as s:
-                async with s.get("https://arctools.fun/api/tokens", timeout=aiohttp.ClientTimeout(total=40)) as r:
-                    toks = [x["token"].lower() for x in ((await r.json(content_type=None)).get("tokens") or [])[:30]]
+                import os as _os
+                async with s.get(f"http://127.0.0.1:{_os.getenv('PORT', '8080')}/api/trending?minutes=1440&limit=40", timeout=aiohttp.ClientTimeout(total=60)) as r:
+                    toks = [x["token"].lower() for x in ((await r.json(content_type=None)).get("rows") or [])]
+            toks = ["0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52"] + [t for t in toks if t != "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52"]
             for t in toks:
                 hit = _cache.get(t)
                 if hit and time.time() - hit[0] < CACHE_S * 0.8:

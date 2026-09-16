@@ -174,7 +174,25 @@ async def _creation_block(s: aiohttp.ClientSession, token: str, head: int) -> in
     return lo
 
 
-async def try_creation_tx(s: aiohttp.ClientSession, token: str) -> str | None:
+async def _creation_tx_hash(s: aiohttp.ClientSession, token: str) -> str | None:
+    """Cheap sources first: our pad registry (tx of the launch), arc-scan's creation record; the 25-call
+    getCode binary search on the node only as a last resort."""
+    try:
+        r = await db.fetchone(text("SELECT tx FROM pad_tokens WHERE token = :t").bindparams(t=token))
+        if r and r["tx"]:
+            return r["tx"]
+    except Exception:  # noqa
+        pass
+    try:
+        async with s.get(f"https://api.arc-scan.org/v1/address/{token}", headers=UA, timeout=aiohttp.ClientTimeout(total=8)) as r:
+            if r.status == 200:
+                j = await r.json(content_type=None)
+                cr = j.get("creation") or {}
+                h = cr.get("tx_hash") or cr.get("transaction_hash") or cr.get("hash")
+                if h:
+                    return h
+    except Exception:  # noqa
+        pass
     head_hex = await _rpc(s, "eth_blockNumber", [])
     if not head_hex:
         return None
@@ -182,7 +200,11 @@ async def try_creation_tx(s: aiohttp.ClientSession, token: str) -> str | None:
     if not b:
         return None
     logs = await _rpc(s, "eth_getLogs", [{"fromBlock": hex(b), "toBlock": hex(b), "address": token}]) or []
-    txh = logs[0]["transactionHash"] if logs else None
+    return logs[0]["transactionHash"] if logs else None
+
+
+async def try_creation_tx(s: aiohttp.ClientSession, token: str) -> str | None:
+    txh = await _creation_tx_hash(s, token)
     if not txh:
         return None
     rc = await _rpc(s, "eth_getTransactionReceipt", [txh]) or {}

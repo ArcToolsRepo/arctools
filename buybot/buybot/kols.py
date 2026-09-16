@@ -484,6 +484,12 @@ async def api_kol_follows(req: web.Request):
 
 
 async def api_kols(req: web.Request):
+    from .watchlist import _cached, _resp_body
+    body = await _cached("kols:" + req.query_string, 600, lambda: _resp_body(_api_kols_impl(req)))
+    return web.Response(body=body, content_type="application/json", headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=60"})
+
+
+async def _api_kols_impl(req: web.Request):
     rows = await db.fetchall(text("SELECT handle, name, followers, avatar, category, synced, full_sync FROM kols WHERE active = 1 ORDER BY followers DESC LIMIT 300"))
     tot = await db.fetchone(text("SELECT COUNT(*) n, COALESCE(SUM(followers),0) f, COUNT(*) FILTER (WHERE followers >= 100000) big, COUNT(*) FILTER (WHERE followers >= 1000000) mega FROM kols WHERE active = 1"))
     edges = await db.fetchone(text("SELECT COUNT(*) n, COUNT(DISTINCT kol) k FROM kol_following"))

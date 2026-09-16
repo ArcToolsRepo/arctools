@@ -30,9 +30,18 @@ export const Route = createFileRoute("/trade")({
     const within = <T,>(p: Promise<T>, ms: number, fb: T) => Promise.race([p.catch(() => fb), new Promise<T>((res) => setTimeout(() => res(fb), ms))]);
     const rowsP = listAllTokens();
     const trendP = fetch(`${API}/api/trending?minutes=0&limit=400`, { signal: AbortSignal.timeout(8000) }).then((r) => r.json()).then((j) => (j.rows ?? []) as Trend[]);
-    const [rows, trend] = await Promise.all([within(rowsP, 1500, [] as PadToken[]), within(trendP, 1500, [] as Trend[])]);
+    const [rowsAll, trendAll] = await Promise.all([within(rowsP, 1500, [] as PadToken[]), within(trendP, 1500, [] as Trend[])]);
     if (typeof window === "undefined") { try { const { keepAlive } = await import("@/lib/memo-kv"); keepAlive(rowsP.catch(() => null)); keepAlive(trendP.catch(() => null)); } catch { /* no runtime */ } }
-    return { rows, trend };
+    // ship only what the first paint needs (Trending top-120 + 80 newest for the New tabs): the full 7k-row list
+    // (4 MB of HTML!) arrives from /api/tokens?full=1 right after hydration. Search / other tabs use that list.
+    const trend = trendAll.slice(0, 120);
+    const keep = new Set(trend.map((t) => t.token.toLowerCase()));
+    const byTs = (t: PadToken) => (t.createdAt ? Date.parse(t.createdAt) : 0);
+    const newest = [...rowsAll].sort((a, b) => byTs(b) - byTs(a)).slice(0, 80);
+    for (const t of newest) keep.add(t.token.toLowerCase());
+    keep.add("0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52");
+    const rows = rowsAll.filter((t) => keep.has(t.token.toLowerCase()));
+    return { rows, trend, partial: rows.length < rowsAll.length };
   },
   staleTime: 10_000,
   head: () => ({

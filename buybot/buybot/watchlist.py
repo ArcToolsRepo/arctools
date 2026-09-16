@@ -257,7 +257,7 @@ async def _api_whales_impl(request: web.Request) -> web.Response:
     mins = min(1440, int(request.query.get("minutes", "60")))
     min_usd = float(request.query.get("min_usd", "250"))
     limit = min(200, int(request.query.get("limit", "60")))
-    rows = await db.fetchall(text("""
+    rows = await db.fetchall_heavy(text("""
         SELECT s.tx, s.log_index, s.ts, s.wallet, s.token, s.side, s.usdc, s.tokens, s.price1m, s.venue, sym.symbol,
                (SELECT COUNT(*) + 1 FROM wallet_stats w2 WHERE w2.range = '30d' AND w2.pnl_total > ws.pnl_total) AS rank,
                ws.pnl_total, ws.winrate
@@ -284,7 +284,7 @@ async def _api_movers_impl(request: web.Request) -> web.Response:
     """Tokens with the biggest price change over the window (needs >= 3 trades and >= $50 volume in window)."""
     mins = min(1440, int(request.query.get("minutes", "60")))
     now = int(time.time())
-    rows = await db.fetchall(text("""
+    rows = await db.fetchall_heavy(text("""
         WITH w AS (
           SELECT token, ts, price1m, usdc,
                  ROW_NUMBER() OVER (PARTITION BY token ORDER BY ts ASC, log_index ASC) AS rn_first,
@@ -403,7 +403,7 @@ async def _api_stats_impl(request: web.Request) -> web.Response:
     if not toks:
         return web.json_response({"rows": []}, headers=API_CORS)
     now = int(time.time())
-    rows = await db.fetchall(text("""
+    rows = await db.fetchall_heavy(text("""
         WITH w AS (
           SELECT token, ts, log_index, side, usdc, wallet, price1m,
                  ROW_NUMBER() OVER (PARTITION BY token ORDER BY ts ASC, log_index ASC) AS rn_first,
@@ -451,7 +451,7 @@ async def _api_trending_impl(request: web.Request) -> web.Response:
     limit = min(400, int(request.query.get("limit", "80")))
     sort = request.query.get("sort", "vol")
     now = int(time.time())
-    rows = await db.fetchall(text("""
+    rows = await db.fetchall_heavy(text("""
         WITH w AS (
           SELECT token, ts, log_index, side, usdc, wallet, price1m,
                  ROW_NUMBER() OVER (PARTITION BY token ORDER BY ts ASC, log_index ASC) AS rn_first,
@@ -485,3 +485,27 @@ async def _api_trending_impl(request: web.Request) -> web.Response:
     elif sort == "txs":
         out.sort(key=lambda d: -(d.get("txs") or 0))
     return web.json_response({"minutes": mins, "rows": out}, headers=API_CORS)
+
+
+# ---- self-warm: the heavy endpoints are recomputed from a clock, never from the first visitor -----------------------
+WARM_URLS = ["/api/trending?minutes=0&limit=400", "/api/trending?minutes=60&limit=400", "/api/trending?minutes=1440&limit=400",
+             "/api/trending?minutes=1440&limit=150", "/api/trending?minutes=60&limit=80", "/api/whales?minutes=60", "/api/movers?minutes=60"]
+
+
+async def self_warm_loop():
+    import aiohttp, os
+    base = f"http://127.0.0.1:{os.getenv('PORT', '8080')}"
+    await asyncio.sleep(40)
+    while True:
+        try:
+            async with aiohttp.ClientSession() as s:
+                for u in WARM_URLS:
+                    try:
+                        async with s.get(base + u, timeout=aiohttp.ClientTimeout(total=90)) as r:
+                            await r.read()
+                    except Exception:  # noqa
+                        pass
+                    await asyncio.sleep(0.5)
+        except Exception as e:  # noqa
+            log.warning("self warm: %s", e)
+        await asyncio.sleep(40)

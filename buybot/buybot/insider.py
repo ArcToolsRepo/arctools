@@ -1338,9 +1338,9 @@ async def sender_fill_loop():
     await asyncio.sleep(60)
     while True:
         try:
-            rows = await db.fetchall(text("SELECT tx, block FROM swaps WHERE wallet = '' ORDER BY block DESC LIMIT 400"))
+            rows = await db.fetchall(text("SELECT tx, block FROM swaps WHERE wallet = '' AND block > :b ORDER BY block DESC LIMIT 400").bindparams(b=int(_lag.get("head") or 0) - 400_000))
             if not rows:
-                await asyncio.sleep(30); continue
+                await asyncio.sleep(300); continue          # receipts ingest delivers wallets inline → this loop is idle
             if _lag["blocks"] > 1_500:
                 await asyncio.sleep(20); continue           # live ingest first
             by_block: dict[int, list[str]] = {}
@@ -1416,6 +1416,7 @@ async def ingest_loop():
         try:
             _lag.update(phase="head", since=time.time())
             head = await asyncio.wait_for(CHAIN._bn(), timeout=30)
+            _lag["head"] = head
             _lag["blocks"] = max(0, head - cursor)
             if head - cursor > 20_000:
                 # far behind (outage): serve LIVE data first — jump to near-head and hand the gap to gap_fill_loop
@@ -1938,16 +1939,33 @@ async def api_trades(request: web.Request) -> web.Response:
         return web.json_response({"error": "bad token"}, status=400, headers=API_CORS)
     limit = min(200, max(10, int(request.query.get("limit", "60"))))
     rows = await db.fetchall(text("""
-        SELECT s.tx, s.ts, s.wallet, s.side, s.usdc, s.tokens, s.price1m, s.venue, s.block,
-               w.rank AS insider_rank, w.pnl_total AS insider_pnl
-        FROM swaps s
-        LEFT JOIN (
-            SELECT wallet, pnl_total, ROW_NUMBER() OVER (ORDER BY pnl_total DESC) AS rank
-            FROM wallet_stats WHERE range = '30d'
-        ) w ON w.wallet = s.wallet
-        WHERE s.token = :t ORDER BY s.ts DESC, s.log_index DESC LIMIT :lim
+        SELECT s.tx, s.ts, s.wallet, s.side, s.usdc, s.tokens, s.price1m, s.venue, s.block
+        FROM swaps s WHERE s.token = :t ORDER BY s.ts DESC, s.log_index DESC LIMIT :lim
     """).bindparams(t=token, lim=limit))
-    return web.json_response({"token": token, "trades": [dict(r) for r in rows]}, headers=API_CORS)
+    # insider rank / pnl joined in memory (top-100 map refreshed every 60 s) — the per-request window function over
+    # wallet_stats ran 6× in parallel under polling load
+    ins = await _insider_map()
+    out = []
+    for r in rows:
+        d = dict(r); m = ins.get((d.get("wallet") or "").lower())
+        d["insider_rank"] = m[0] if m else None; d["insider_pnl"] = m[1] if m else None
+        out.append(d)
+    return web.json_response({"token": token, "trades": out}, headers=API_CORS)
+
+
+_ins_map: tuple[float, dict] = (0.0, {})
+
+
+async def _insider_map() -> dict:
+    global _ins_map
+    if time.time() - _ins_map[0] < 60:
+        return _ins_map[1]
+    try:
+        rows = await db.fetchall(text("SELECT wallet, pnl_total FROM wallet_stats WHERE range = '30d' ORDER BY pnl_total DESC LIMIT 100"))
+        _ins_map = (time.time(), {r["wallet"].lower(): (i + 1, r["pnl_total"]) for i, r in enumerate(rows)})
+    except Exception:  # noqa
+        _ins_map = (time.time(), _ins_map[1])
+    return _ins_map[1]
 
 
 async def api_token_stats(request: web.Request) -> web.Response:

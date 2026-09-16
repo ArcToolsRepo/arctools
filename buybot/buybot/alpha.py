@@ -187,11 +187,12 @@ def score_token(token: str, sw: list[dict], now: int, insiders: dict[str, float]
 # ---------------- live ranking ----------------
 
 _cache: dict[str, tuple[float, list[dict]]] = {}
-CACHE_S = 45
+_inflight: dict[str, "asyncio.Future"] = {}
+CACHE_S = 300
 
 
 async def _insiders() -> dict[str, float]:
-    rows = await db.fetchall(text("SELECT wallet, pnl_total FROM wallet_stats WHERE range='30d' ORDER BY pnl_total DESC LIMIT :n").bindparams(n=INSIDER_TOP))
+    rows = await db.fetchall_heavy(text("SELECT wallet, pnl_total FROM wallet_stats WHERE range='30d' ORDER BY pnl_total DESC LIMIT :n").bindparams(n=INSIDER_TOP))
     out = {}
     for i, r in enumerate(rows):
         out[r["wallet"]] = 1.0 - i / (2 * INSIDER_TOP)      # rank weight 1.0 → 0.5
@@ -199,11 +200,26 @@ async def _insiders() -> dict[str, float]:
 
 
 async def rank(mode: str, limit: int = 30) -> list[dict]:
+    fut = _inflight.get(mode)
+    if fut is not None:
+        return (await fut)[:limit]
+    hit = _cache.get(mode)
+    if hit and time.time() - hit[0] < CACHE_S:
+        return hit[1][:limit]
+    fut = _inflight[mode] = asyncio.ensure_future(_rank_impl(mode))
+    try:
+        return (await fut)[:limit]
+    finally:
+        _inflight.pop(mode, None)
+
+
+async def _rank_impl(mode: str) -> list[dict]:
+    limit = 10_000
     hit = _cache.get(mode)
     if hit and time.time() - hit[0] < CACHE_S:
         return hit[1][:limit]
     now = int(time.time())
-    swaps = await db.fetchall(text(
+    swaps = await db.fetchall_heavy(text(
         "SELECT token, wallet, side, usdc, ts, price1m FROM swaps WHERE ts > :s AND usdc >= 0.5 ORDER BY ts").bindparams(s=now - LOOKBACK))
     by_tok: dict[str, list[dict]] = defaultdict(list)
     for s in swaps:
@@ -211,15 +227,15 @@ async def rank(mode: str, limit: int = 30) -> list[dict]:
     if not by_tok:
         return []
     toks = list(by_tok.keys())
-    firsts = await db.fetchall(text("SELECT token, MIN(ts) f FROM swaps WHERE token = ANY(:t) GROUP BY token").bindparams(t=toks))
+    firsts = await db.fetchall_heavy(text("SELECT token, MIN(ts) f FROM swaps WHERE token = ANY(:t) GROUP BY token").bindparams(t=toks))
     first = {r["token"]: int(r["f"]) for r in firsts}
     insiders = await _insiders()
-    kol_rows = await db.fetchall(text(
+    kol_rows = await db.fetchall_heavy(text(
         "SELECT m.token, m.kol, m.ts, k.followers FROM kol_mentions m LEFT JOIN kols k ON k.handle = m.kol WHERE m.ts > :s").bindparams(s=now - 6 * 3600))
     kols_by: dict[str, list[dict]] = defaultdict(list)
     for r in kol_rows:
         kols_by[r["token"]].append(dict(r))
-    risk_rows = await db.fetchall(text("SELECT token, data FROM risk_cache WHERE token = ANY(:t)").bindparams(t=toks))
+    risk_rows = await db.fetchall_heavy(text("SELECT token, data FROM risk_cache WHERE token = ANY(:t)").bindparams(t=toks))
     risk = {}
     for r in risk_rows:
         try:
@@ -247,7 +263,7 @@ async def rank(mode: str, limit: int = 30) -> list[dict]:
         o["mcap"] = round(p * sup / 1e6, 2) if (p and sup) else None      # price1m = USDC per 1M tokens
     await _record_calls(mode, out[:60], now)
     # symbols
-    syms = await db.fetchall(text("SELECT token, symbol FROM token_symbols WHERE token = ANY(:t)").bindparams(t=[o["token"] for o in out[:60]]))
+    syms = await db.fetchall_heavy(text("SELECT token, symbol FROM token_symbols WHERE token = ANY(:t)").bindparams(t=[o["token"] for o in out[:60]]))
     sm = {r["token"]: r["symbol"] for r in syms}
     for o in out:
         o["symbol"] = sm.get(o["token"])
@@ -270,7 +286,7 @@ async def _record_calls(mode: str, rows: list[dict], now: int) -> None:
                                   "ts BIGINT, score INTEGER, mcap DOUBLE PRECISION, price DOUBLE PRECISION, PRIMARY KEY (token, mode))"))
             _calls_ready = True
         toks = [r["token"] for r in rows]
-        have = {r["token"]: dict(r) for r in await db.fetchall(text(
+        have = {r["token"]: dict(r) for r in await db.fetchall_heavy(text(
             "SELECT token, ts, score, mcap, price FROM alpha_calls WHERE mode = :m AND token = ANY(:t)").bindparams(m=mode, t=toks))}
         for r in rows:
             c = have.get(r["token"])

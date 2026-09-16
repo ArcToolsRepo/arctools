@@ -72,6 +72,7 @@ async def main():
         asyncio.create_task(bridge_watch.proxy_sweep_loop(), name="bridge-sweeper"),
         asyncio.create_task(rpc_monitor.monitor_loop(), name="rpc-monitor"),
         asyncio.create_task(logos.hunt_loop(), name="logo-hunter"),
+        asyncio.create_task(watchlist.self_warm_loop(), name="self-warm"),
         asyncio.create_task(watchlist.alerts_loop(), name="watchlist"),
         asyncio.create_task(rules.rules_loop(), name="rules"),
         asyncio.create_task(balances.snapshot_loop(), name="balances"),

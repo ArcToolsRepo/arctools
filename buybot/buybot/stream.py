@@ -21,7 +21,7 @@ from aiohttp import web
 log = logging.getLogger("stream")
 
 _subs: dict[str, set[asyncio.Queue]] = {}        # token (lower) or "*" → queues
-MAXQ = 200
+MAXQ = 500
 stats = {"clients": 0, "published": 0, "dropped": 0}
 
 
@@ -67,7 +67,22 @@ async def api_stream(request: web.Request) -> web.StreamResponse:
         while True:
             try:
                 ev, data = await asyncio.wait_for(q.get(), timeout=15)
-                await resp.write(f"event: {ev}\ndata: {data}\n\n".encode())
+                # coalesce: a hot token prints 10-30 swaps/s — one "trades" frame every 300 ms instead of a frame per swap
+                batch = [data]
+                deadline = time.monotonic() + 0.3
+                while len(batch) < 100:
+                    left = deadline - time.monotonic()
+                    if left <= 0:
+                        break
+                    try:
+                        _, more = await asyncio.wait_for(q.get(), timeout=left)
+                        batch.append(more)
+                    except asyncio.TimeoutError:
+                        break
+                if len(batch) == 1:
+                    await resp.write(f"event: {ev}\ndata: {data}\n\n".encode())
+                else:
+                    await resp.write(("event: trades\ndata: [" + ",".join(batch) + "]\n\n").encode())
             except asyncio.TimeoutError:
                 from .insider import _lag
                 await resp.write(f"event: hb\ndata: {json.dumps({'ts': int(time.time()), 'lag': _lag.get('blocks')})}\n\n".encode())

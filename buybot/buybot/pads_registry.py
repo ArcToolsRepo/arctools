@@ -168,6 +168,12 @@ async def registry_loop():
 
 
 async def api_pad_tokens(req: web.Request):
+    from .watchlist import _cached, _resp_body
+    body = await _cached("pads:" + req.query_string, 60, lambda: _resp_body(_api_pad_tokens_impl(req)))
+    return web.Response(body=body, content_type="application/json", headers={**CORS, "Cache-Control": "public, max-age=30"})
+
+
+async def _api_pad_tokens_impl(req: web.Request):
     pad = req.query.get("pad")
     rows = await db.fetchall(text("SELECT token, pad, factory, tx, ts, symbol FROM pad_tokens" + (" WHERE pad = :p" if pad else "") + " ORDER BY ts DESC").bindparams(**({"p": pad} if pad else {})))
     out = {}

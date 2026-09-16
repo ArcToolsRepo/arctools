@@ -57,6 +57,8 @@ IP_BURST = float(os.getenv("IP_BURST", "30"))
 RELAY_KEY = os.getenv("RELAY_KEY", "")
 _ipb: dict[str, list[float]] = {}          # ip -> [tokens, ts]
 _ip_hits: dict[str, int] = {}
+BLOCK_IPS = {x.strip() for x in os.getenv("BLOCK_IPS", "").split(",") if x.strip()}
+_banned: dict[str, float] = {}
 _ip_drops: dict[str, int] = {}
 
 
@@ -86,10 +88,17 @@ async def relay(request: web.Request) -> web.Response:
     trusted = can_send or (bool(RELAY_KEY) and request.headers.get("X-Relay-Key") == RELAY_KEY)
     if not trusted:
         ip = _client_ip(request)
+        # abusers: static list + auto-ban (an IP that got > 20 000 rate-limit answers is a bot hammering us, not a user)
+        until = _banned.get(ip, 0)
+        if ip in BLOCK_IPS or until > time.time():
+            _ip_drops[ip] = _ip_drops.get(ip, 0) + 1
+            return web.Response(status=429, text="banned", headers={**CORS, "Retry-After": "3600"})
         _ip_hits[ip] = _ip_hits.get(ip, 0) + 1
         n = len(body) if isinstance(body, list) else 1
         if not _ip_allow(ip, n):
             _ip_drops[ip] = _ip_drops.get(ip, 0) + 1
+            if _ip_drops[ip] > 20_000:
+                _banned[ip] = time.time() + 86_400
             return web.json_response({"jsonrpc": "2.0", "id": body.get("id") if isinstance(body, dict) else None,
                                       "error": {"code": -32005, "message": f"rate limited: {IP_RATE:g} req/s per client on the public relay"}},
                                      status=429, headers={**CORS, "Retry-After": "1"})
