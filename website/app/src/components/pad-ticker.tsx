@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { BOT_API } from "@/lib/bot-api";
 
 import { TokenLogo } from "@/components/token-logo";
@@ -41,6 +41,14 @@ export function PadTicker() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows.map((r) => r.token).join(",")]);
 
+  // readable speed: ~55 px/s regardless of how many tokens are in the strip (the track holds two copies, the
+  // animation moves half of it per cycle) — fixed 14 s for a 2500 px strip was "lightspeed"
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const [dur, setDur] = useState(90);
+  useEffect(() => {
+    const el = trackRef.current; if (!el) return;
+    const w = el.scrollWidth / 2; if (w > 0) setDur(Math.max(30, Math.round(w / 55)));
+  }, [rows.length]);
   if (rows.length === 0) return null;
 
   const items = rows.map((t, i) => {
@@ -60,7 +68,7 @@ export function PadTicker() {
 
   return (
     <div aria-hidden className="arc-ticker" title="Top 10 by 24 h volume on Arc — re-ranked every minute">
-      <div className="arc-ticker__track">
+      <div className="arc-ticker__track" ref={trackRef} style={{ animationDuration: `${dur}s` }}>
         {[0, 1].map((rep) => (
           <span className="arc-ticker__group" key={rep}>
             <span className="arc-ticker__item" style={{ color: "var(--arc-muted)", fontSize: 10, letterSpacing: "0.08em" }}>TRENDING 24H</span>

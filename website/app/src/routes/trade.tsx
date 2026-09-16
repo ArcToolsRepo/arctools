@@ -25,10 +25,13 @@ const SNIPER = "https://t.me/ArcSniper_bot";
 export const Route = createFileRoute("/trade")({
   // SSR: the first paint already contains the table (lists come from the KV-backed memo — milliseconds)
   loader: async () => {
-    const [rows, trend] = await Promise.all([
-      listAllTokens().catch(() => [] as PadToken[]),
-      fetch(`${API}/api/trending?minutes=0&limit=400`).then((r) => r.json()).then((j) => (j.rows ?? []) as Trend[]).catch(() => [] as Trend[]),
-    ]);
+    // never hold the HTML for a cold compute: whatever is ready within 1.5 s ships, the client fills the rest.
+    // (a 20 s+ SSR here is what produced the "This page didn't load" screen when the Worker hit its limits)
+    const within = <T,>(p: Promise<T>, ms: number, fb: T) => Promise.race([p.catch(() => fb), new Promise<T>((res) => setTimeout(() => res(fb), ms))]);
+    const rowsP = listAllTokens();
+    const trendP = fetch(`${API}/api/trending?minutes=0&limit=400`, { signal: AbortSignal.timeout(8000) }).then((r) => r.json()).then((j) => (j.rows ?? []) as Trend[]);
+    const [rows, trend] = await Promise.all([within(rowsP, 1500, [] as PadToken[]), within(trendP, 1500, [] as Trend[])]);
+    if (typeof window === "undefined") { try { const { keepAlive } = await import("@/lib/memo-kv"); keepAlive(rowsP.catch(() => null)); keepAlive(trendP.catch(() => null)); } catch { /* no runtime */ } }
     return { rows, trend };
   },
   staleTime: 10_000,

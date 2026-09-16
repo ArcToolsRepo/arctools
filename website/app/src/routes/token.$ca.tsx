@@ -282,10 +282,11 @@ function TokenPage() {
   const loadCandles = useCallback(async () => {
     if (!ca) return;
     try {
-      const r = (await (await fetch(`${BOT_API}/api/ohlc?token=${ca}&tf=${tf}&limit=600`)).json()) as { candles: Candle[] };
-      setCandles(r.candles ?? []);
+      const r = (await (await fetch(`${BOT_API}/api/ohlc?token=${ca}&tf=${tf}&limit=600`)).json()) as { candles?: Candle[] };
+      // a proxy/upstream hiccup returns {error} — never wipe a chart that already has data
+      if (Array.isArray(r.candles) && (r.candles.length > 0 || candles.length === 0)) setCandles(r.candles);
     } catch { /* keep old */ }
-  }, [ca, tf]);
+  }, [ca, tf, candles.length]);
   const loadSide = useCallback(async () => {
     if (!ca) return;
     try {
@@ -293,8 +294,8 @@ function TokenPage() {
         fetch(`${BOT_API}/api/token-stats?token=${ca}`).then((r) => r.json()) as Promise<Stats>,
         fetch(`${BOT_API}/api/trades?token=${ca}&limit=60`).then((r) => r.json()) as Promise<{ trades: Trade[] }>,
       ]);
-      setStats(s);
-      setTrades(t.trades ?? []);
+      if (s && typeof s === "object" && "price1m" in s) setStats(s);
+      if (Array.isArray(t.trades) && t.trades.length) setTrades(t.trades);
     } catch { /* keep old */ }
   }, [ca]);
 

@@ -204,10 +204,27 @@ async def _resp_body(coro) -> bytes:
     return r.body if isinstance(r.body, (bytes, bytearray)) else bytes(r.body)
 
 
+async def _refresh(key: str, fn):
+    fut = asyncio.get_event_loop().create_future(); _rc_inflight[key] = fut
+    try:
+        val = await fn()
+        _rc[key] = (time.time(), val); fut.set_result(val)
+    except Exception as e:  # noqa
+        fut.set_exception(e)
+    finally:
+        _rc_inflight.pop(key, None)
+
+
 async def _cached(key: str, ttl: float, fn):
     now = time.time()
     hit = _rc.get(key)
     if hit and now - hit[0] < ttl:
+        return hit[1]
+    if hit:
+        # stale-while-revalidate: answer instantly with the last value, refresh once in the background.
+        # The heavy window queries (trending all-time ≈ 7 s under ingest load) never sit in a request path again.
+        if key not in _rc_inflight:
+            asyncio.create_task(_refresh(key, fn))
         return hit[1]
     fut = _rc_inflight.get(key)
     if fut is None:
@@ -421,7 +438,7 @@ async def _api_stats_impl(request: web.Request) -> web.Response:
 
 async def api_trending(request: web.Request) -> web.Response:
     key = "trending:" + request.query_string
-    body = await _cached(key, 20, lambda: _resp_body(_api_trending_impl(request)))
+    body = await _cached(key, 30, lambda: _resp_body(_api_trending_impl(request)))
     return web.Response(body=body, content_type="application/json", headers=API_CORS)
 
 

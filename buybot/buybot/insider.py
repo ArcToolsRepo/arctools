@@ -1700,9 +1700,17 @@ async def api_ohlc(request: web.Request) -> web.Response:
     step = TF_SECONDS.get(tf, 300)
     limit = min(1500, max(50, int(request.query.get("limit", "600"))))
     rows = await db.fetchall(text("""
-        WITH b AS (
+        WITH raw AS (
             SELECT (ts / :step) * :step AS bucket, ts, log_index, price1m, usdc, side
             FROM swaps WHERE token = :t AND usdc >= :dust AND price1m > 0
+        ),
+        med AS (SELECT bucket, percentile_cont(0.5) WITHIN GROUP (ORDER BY price1m) AS m, COUNT(*) AS cnt FROM raw GROUP BY bucket),
+        -- outlier guard: a multi-hop leg or a sandwiched dust trade can print 10-60x off the real price inside one candle
+        -- and turns the chart into a wick forest; keep prints within 0.4x .. 2.5x of the candle's median (and every
+        -- print when the candle has < 3 trades so thin tokens still get their bars)
+        b AS (
+            SELECT r.* FROM raw r JOIN med ON med.bucket = r.bucket
+            WHERE r.price1m BETWEEN med.m * 0.4 AND med.m * 2.5 OR med.cnt < 3
         ),
         agg AS (
             SELECT bucket,
