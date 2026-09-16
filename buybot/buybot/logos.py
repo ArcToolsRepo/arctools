@@ -250,7 +250,7 @@ async def resolve(s: aiohttp.ClientSession, token: str, launchpad: str | None, x
     for name, fn in (("contract", lambda: try_contract(s, token)), ("creation", lambda: try_creation_tx(s, token)),
                      ("padpage", lambda: try_pad_page(s, token, launchpad)), ("x", lambda: try_x_avatar(s, x_handle))):
         try:
-            u = await asyncio.wait_for(fn(), 40)
+            u = await asyncio.wait_for(fn(), 15)
         except Exception:  # noqa
             u = None
         if u:
@@ -268,7 +268,7 @@ async def init():
             pass
 
 
-async def hunt_once(limit: int = 100) -> tuple[int, int]:
+async def hunt_once(limit: int = 150) -> tuple[int, int]:
     """Tokens that traded in the last 7 days, no logo, not checked in the last 6 h — most volume first."""
     now = int(time.time())
     rows = await db.fetchall(text("""
@@ -281,7 +281,7 @@ async def hunt_once(limit: int = 100) -> tuple[int, int]:
     if not rows:
         return 0, 0
     found = 0
-    sem = asyncio.Semaphore(12)
+    sem = asyncio.Semaphore(24)
     async with aiohttp.ClientSession() as s:
         async def one(r):
             nonlocal found
