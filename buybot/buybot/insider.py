@@ -1969,6 +1969,8 @@ async def start_api():
     _liq.register(app)
     from . import stream as _stream
     _stream.register(app)
+    from . import logos as _logos
+    _logos.register(app)
     _liq.register_risk(app)
     from . import referrals as _ref
     _ref.register(app)
