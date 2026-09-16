@@ -1198,6 +1198,8 @@ export type PadToken = {
   quoteSymbol?: string;
   /** pool liquidity in USD when the source knows it (stock-quoted pools) — the Terminal uses the index value first */
   liqUsd?: number | null;
+  /** bonding-curve fill in percent (faze.fun and other curve pads); null once the coin has graduated */
+  curve?: number | null;
   createdAt: string | null;
   logo: string | null;
   mcapUsd: number | null;
@@ -2012,6 +2014,7 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
       const patch = {
         logo: row?.logo ?? registry[tok]?.logo ?? null, mcapUsd: c.mcap ?? null, priceUsd: c.price1m ? c.price1m / 1e6 : null,
         volUsd: c.vol24 ?? null, liqUsd: c.liq ?? null, venueUrl: c.url,
+        curve: c.state === "curve-trading" ? (typeof c.progress === "number" ? c.progress : null) : null,
       };
       if (row) Object.assign(row, { ...patch, logo: row.logo ?? patch.logo });
       else all.push({
@@ -2117,6 +2120,7 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
       symbol: (t.symbol ?? "").slice(0, 16), telegram: t.telegram, token: t.token.toLowerCase(), twitter: t.twitter, venueUrl: t.venueUrl, volUsd: t.volUsd, website: t.website,
       og: t.og || scrMeta.get(t.token.toLowerCase())?.og || false, dexes: t.dexes?.length ? t.dexes : (scrMeta.get(t.token.toLowerCase())?.dexes ?? []),
       ...(t.stock ? { stock: true } : {}), ...(t.quote ? { quote: t.quote, quoteSymbol: t.quoteSymbol } : {}), ...(t.liqUsd != null ? { liqUsd: t.liqUsd } : {}),
+      ...(t.curve != null ? { curve: t.curve } : {}),   // bonding-curve fill: only present while the coin has not graduated
     } as PadToken;
   }
   // never list the quote assets themselves (native USDC / USDC facade / ARGUS bridge quotes): they are what tokens are priced in

@@ -56,7 +56,7 @@ export const Route = createFileRoute("/trade")({
 type Mover = { token: string; n: number; vol: number; p1: number; chg: number; symbol: string | null };
 type Trend = { token: string; symbol: string | null; txs: number; vol: number; buys: number; sells: number; traders: number; p1: number | null; chg: number | null; first_ts: number | null; ath: number | null; txs_all: number; supply: number | null; mcap: number | null; ath_mcap: number | null };
 type Smart = { token: string; net: number; bought: number; sold: number; buyers: number; sellers: number; best_rank: number | null; last_ts: number };
-type Row = { token: string; symbol: string; name: string; logo: string | null; pad: string; og: boolean; stock: boolean; smart: Smart | null; quoteSymbol: string | null; dexes: string[]; age: number | null; ca: string; mcap: number | null; chg: number | null; athMcap: number | null; liq: number | null; vol: number; txs: number; buys: number; sells: number; traders: number; insiders: number; twitter: string | null; telegram: string | null; website: string | null; price: number | null };
+type Row = { curve: number | null; token: string; symbol: string; name: string; logo: string | null; pad: string; og: boolean; stock: boolean; smart: Smart | null; quoteSymbol: string | null; dexes: string[]; age: number | null; ca: string; mcap: number | null; chg: number | null; athMcap: number | null; liq: number | null; vol: number; txs: number; buys: number; sells: number; traders: number; insiders: number; twitter: string | null; telegram: string | null; website: string | null; price: number | null };
 const FAV_KEY = "arctools_favs";
 const loadFavs = (): Set<string> => { try { return new Set(JSON.parse(localStorage.getItem(FAV_KEY) ?? "[]")); } catch { return new Set(); } };
 type Cluster = { token: string; symbol: string | null; insiders: number; usd: number; ranks: string; last_ts: number };
@@ -426,7 +426,8 @@ function Trade() {
     return {
       token: k, symbol: tr?.symbol ?? t?.symbol ?? short(k), name: t?.name ?? tr?.symbol ?? "", logo: t?.logo ?? logos[k] ?? xAvatar(t?.twitter) ?? null, pad: t?.pad ?? "", og: !!t?.og, stock: !!t?.stock, quoteSymbol: t?.quoteSymbol ?? null, dexes: t?.dexes ?? [],
       age: createdTs, ca: k, mcap: finN(t?.stock ? (t?.mcapUsd ?? tr?.mcap) : (tr?.mcap ?? t?.mcapUsd)), chg: Number.isFinite(Number(tr?.chg)) ? tr?.chg ?? null : null, athMcap: finN(tr?.ath_mcap),
-      liq: finN(liq.get(k) ?? t?.liqUsd), vol: fin(tr?.vol ?? t?.volUsd), txs: fin(tr?.txs), buys: tr?.buys ?? 0, sells: tr?.sells ?? 0, traders: tr?.traders ?? 0,
+      liq: finN(liq.get(k) ?? t?.liqUsd), vol: fin(tr?.vol ?? t?.volUsd), txs: fin(tr?.txs),
+      curve: typeof t?.curve === "number" && t.curve >= 0 && t.curve <= 100 ? t.curve : null, buys: tr?.buys ?? 0, sells: tr?.sells ?? 0, traders: tr?.traders ?? 0,
       insiders: c?.insiders ?? 0, smart: smartMap.get(k) ?? null, twitter: t?.twitter ?? null, telegram: t?.telegram ?? null, website: t?.website ?? null,
       price: tr?.p1 ? tr.p1 / 1e6 : t?.priceUsd ?? null,
     };
@@ -473,6 +474,23 @@ function Trade() {
     return base;
   }, [tab, rows, trend, clusters, favs, q, sortKey, byToken, trendMap, clusterMap, liq, logos, padF, minMc, maxMc, minVol]); // eslint-disable-line react-hooks/exhaustive-deps
   const pages = Math.max(1, Math.ceil(tableRows.length / PAGE));
+  // Top-10 ranking tint. Only meaningful while the table is actually ordered by volume and we are on page 1;
+  // 1-3 get medal hues, 4-10 fade out in the house cobalt. Tints stay under 10% alpha so ticker, numbers and
+  // chips keep their contrast — the row is marked, never shaded over.
+  const RANK_HUE: Record<number, [number, number, number]> = {
+    1: [245, 196, 81], 2: [203, 213, 225], 3: [205, 127, 66],
+  };
+  const rankOf = (i: number): number | null => (sortKey === "vol" && page === 1 && i < 10 ? i + 1 : null);
+  const rankTint = (rank: number): { accent: string; bg: string; ink: string } => {
+    const [r, g, b] = RANK_HUE[rank] ?? [46, 124, 255];
+    const fade = rank <= 3 ? 1 : Math.max(0.18, 1 - (rank - 3) / 8);          // 4th strongest of the tail, 10th barely there
+    return {
+      accent: `rgba(${r},${g},${b},${(rank <= 3 ? 0.9 : 0.55 * fade).toFixed(3)})`,
+      bg: `rgba(${r},${g},${b},${((rank <= 3 ? 0.085 : 0.05) * fade).toFixed(3)})`,
+      ink: `rgba(${r},${g},${b},${(rank <= 3 ? 0.95 : 0.75).toFixed(2)})`,
+    };
+  };
+
   const pageRows = useMemo(() => tableRows.slice((Math.min(page, pages) - 1) * PAGE, Math.min(page, pages) * PAGE), [tableRows, page, pages]);
   // lazy enrich visible rows: logos (screener index) + holder concentration (arc-scan), cached server-side
   // stats for every visible row (batch, 30 s) — the trending feed only covers the busiest tokens of the timeframe
@@ -633,9 +651,11 @@ function Trade() {
                   </thead>
                   <tbody>
                     {tableRows.length === 0 && <tr><td className="arc-mono" colSpan={11} style={{ ...cell, color: "var(--arc-muted)" }}>{q.trim() ? `Nothing in the ${tab} list matches “${q.trim()}” — see “Search all of Arc” above.` : tab === "favs" ? "No favourites yet — click ☆ on any row." : tab === "new15" ? "No launch younger than 15 minutes right now — watch New pair." : (padF !== "all" || minMc || maxMc || minVol) ? "Nothing matches these filters."  : tab === "insiders" ? "No token with 2+ insiders in the last 24h." : "Loading…"}</td></tr>}
-                    {pageRows.map((r) => (
-                      <tr className="arc-row-link" key={r.token} onClick={rowClick(r.token)} onMouseEnter={() => { void import("@/lib/arc-api").then((m) => m.tokenPage({ data: { token: r.token } })).catch(() => null); }} style={{ background: r.token.toLowerCase() === OFFICIAL_TOKEN ? "rgba(46,124,255,0.09)" : favs.has(r.token) ? "rgba(46,124,255,0.05)" : undefined, cursor: "pointer" }}>
-                        <td style={{ ...cell, paddingRight: 4 }}><button onClick={() => toggleFav(r.token)} style={{ background: "none", border: "none", color: favs.has(r.token) ? "#f5c542" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, padding: 0 }} title="favourite" type="button">{favs.has(r.token) ? "★" : "☆"}</button></td>
+                    {pageRows.map((r, ri) => (
+                      <tr className="arc-row-link" key={r.token} onClick={rowClick(r.token)} onMouseEnter={() => { void import("@/lib/arc-api").then((m) => m.tokenPage({ data: { token: r.token } })).catch(() => null); }} style={{ background: rankOf(ri) ? rankTint(rankOf(ri) as number).bg : r.token.toLowerCase() === OFFICIAL_TOKEN ? "rgba(46,124,255,0.09)" : favs.has(r.token) ? "rgba(46,124,255,0.05)" : undefined, boxShadow: rankOf(ri) ? `inset 3px 0 0 0 ${rankTint(rankOf(ri) as number).accent}` : undefined, cursor: "pointer" }}>
+                        <td style={{ ...cell, paddingRight: 4 }}>{rankOf(ri) ? (
+                          <span className="arc-mono" style={{ color: rankTint(rankOf(ri) as number).ink, display: "inline-block", fontSize: 10, minWidth: 12, textAlign: "right" }} title={`#${rankOf(ri)} by volume`}>{rankOf(ri)}</span>
+                        ) : null}<button onClick={() => toggleFav(r.token)} style={{ background: "none", border: "none", color: favs.has(r.token) ? "#f5c542" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, padding: 0 }} title="favourite" type="button">{favs.has(r.token) ? "★" : "☆"}</button></td>
                         <td className="arc-tokcell" style={{ ...cell, minWidth: 230 }}>
                           <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
                             <Link params={{ ca: r.token }} preload="intent" style={{ textDecoration: "none" }} to="/token/$ca"><TokenLogo fallback={xAvatar(r.twitter)} src={r.logo} symbol={r.symbol} /></Link>
@@ -650,6 +670,16 @@ function Trade() {
                                 <button className="arc-mono" onClick={() => void navigator.clipboard.writeText(r.token)} style={{ background: "none", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "0 4px" }} title="copy CA" type="button">⧉</button>
                                 {r.pad && <span className="arc-tokmeta" style={{ border: "1px solid var(--arc-line)", borderRadius: 3, fontSize: 9, marginLeft: 4, padding: "0 4px" }}>{r.pad}</span>}
                                 {r.traders > 0 && <span className="arc-tokmeta" style={{ marginLeft: 6 }} title="traders in window">👥{r.traders}</span>}
+                                {r.curve !== null && (
+                                  // bonding curve: how full the raise is. On a curve pad this beats market cap — it is the
+                                  // distance to graduation into a locked pool. Rendered only when the pad reports it.
+                                  <span className="arc-tokmeta" style={{ alignItems: "center", display: "inline-flex", gap: 5, marginLeft: 6 }} title={`bonding curve ${r.curve.toFixed(1)}% filled — graduates into a locked pool at 100%`}>
+                                    <span style={{ background: "rgba(255,255,255,0.14)", borderRadius: 3, display: "inline-block", height: 5, overflow: "hidden", verticalAlign: "middle", width: 46 }}>
+                                      <span style={{ background: r.curve >= 80 ? UP : "var(--arc-cobalt)", borderRadius: 3, display: "block", height: "100%", width: `${Math.max(2, Math.min(100, r.curve))}%` }} />
+                                    </span>
+                                    <span style={{ color: r.curve >= 80 ? UP : "var(--arc-muted)", fontSize: 10 }}>{r.curve >= 10 ? r.curve.toFixed(0) : r.curve.toFixed(1)}%</span>
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </div>

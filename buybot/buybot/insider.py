@@ -2105,8 +2105,10 @@ async def api_faze(request: web.Request) -> web.Response:
                 "vol24": float(c.get("volumeUsd") or 0) or None,
                 "txs24": int(c.get("trades24h") or 0), "traders24": int(c.get("traders24h") or 0),
                 "holders": int(c.get("holders") or 0),
-                "liq": round(float(c.get("curveProgressPct") or 0) * float(c.get("bondingTarget") or 0) / 1e18, 2) or None,
-                "progress": round(float(c.get("curveProgressPct") or 0) * 100, 2),
+                # curveProgressPct is already a PERCENT (20.16 = 20.16% of the raise), not a 0-1 fraction —
+                # multiplying it again put "2016%" on the wire and the UI rightly refused to draw it
+                "liq": round(min(100.0, max(0.0, float(c.get("curveProgressPct") or 0))) / 100 * float(c.get("bondingTarget") or 0) / 1e18, 2) or None,
+                "progress": round(min(100.0, max(0.0, float(c.get("curveProgressPct") or 0))), 2),
                 "state": c.get("lifecycleState"), "created": int((c.get("createdAtMs") or 0) / 1000) or None,
                 "chg": (c.get("changePct") or {}).get("h24"),
                 "url": f"https://faze.fun/coin/{c.get('mint')}",
