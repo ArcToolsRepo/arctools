@@ -2088,6 +2088,35 @@ async def api_receipt(request: web.Request) -> web.Response:
         out["error"] = str(e)[:100]
     return web.json_response(out, headers={**API_CORS, "Cache-Control": "no-store"})
 
+
+async def api_faze(request: web.Request) -> web.Response:
+    """GET /api/faze — curve-stage coins on faze.fun with the numbers that only exist on their bonding curve
+    (price, FDV, 24h volume, holders, curve progress) plus artwork. Tokens still on the curve have no Uniswap pool,
+    so the Terminal has nothing of its own to show for them until they graduate; this fills that gap."""
+    from . import faze as _faze
+    out = {}
+    for mint, c in _faze.live_rows().items():
+        try:
+            price = float(c.get("priceUsd") or 0) or None
+            out[mint] = {
+                "symbol": c.get("ticker"), "name": c.get("name"),
+                "price1m": price * 1e6 if price else None,
+                "mcap": float(c.get("fdvUsd") or 0) or None,
+                "vol24": float(c.get("volumeUsd") or 0) or None,
+                "txs24": int(c.get("trades24h") or 0), "traders24": int(c.get("traders24h") or 0),
+                "holders": int(c.get("holders") or 0),
+                "liq": round(float(c.get("curveProgressPct") or 0) * float(c.get("bondingTarget") or 0) / 1e18, 2) or None,
+                "progress": round(float(c.get("curveProgressPct") or 0) * 100, 2),
+                "state": c.get("lifecycleState"), "created": int((c.get("createdAtMs") or 0) / 1000) or None,
+                "chg": (c.get("changePct") or {}).get("h24"),
+                "url": f"https://faze.fun/coin/{c.get('mint')}",
+            }
+        except Exception:  # noqa
+            continue
+    return web.json_response({"coins": out, "n": len(out)},
+                             headers={**API_CORS, "Cache-Control": "public, max-age=15, stale-while-revalidate=60"})
+
+
 async def api_ohlc(request: web.Request) -> web.Response:
     """Swiece z wlasnego indeksu swapow (caly Arc). price1m = USDC za 1M tokenow."""
     token = _tok(request)
@@ -2375,6 +2404,7 @@ async def start_api():
     app.router.add_get("/api/insider/{wallet}", api_wallet)
     app.router.add_get("/api/ohlc", api_ohlc)
     app.router.add_get("/api/receipt", api_receipt)
+    app.router.add_get("/api/faze", api_faze)
     app.router.add_post("/api/ingest-blocks", api_ingest_blocks)
     app.router.add_get("/api/ingest-stats", api_ingest_stats)
     app.router.add_get("/udf/config", udf_config); app.router.add_get("/udf/time", udf_time); app.router.add_get("/udf/symbols", udf_symbols)

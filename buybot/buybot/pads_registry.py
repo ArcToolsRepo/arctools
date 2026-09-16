@@ -176,11 +176,15 @@ async def api_pad_tokens(req: web.Request):
 
 async def _api_pad_tokens_impl(req: web.Request):
     pad = req.query.get("pad")
-    rows = await db.fetchall(text("SELECT token, pad, factory, tx, ts, symbol FROM pad_tokens" + (" WHERE pad = :p" if pad else "") + " ORDER BY ts DESC").bindparams(**({"p": pad} if pad else {})))
+    # left-join the presentation row so a registry token carries its artwork and name, not just a ticker
+    rows = await db.fetchall(text(
+        "SELECT p.token, p.pad, p.factory, p.tx, p.ts, COALESCE(p.symbol, s.symbol) AS symbol, s.name, s.logo "
+        "FROM pad_tokens p LEFT JOIN social_tokens s ON s.token = p.token"
+        + (" WHERE p.pad = :p" if pad else "") + " ORDER BY p.ts DESC").bindparams(**({"p": pad} if pad else {})))
     out = {}
     for r in rows:
         cfg = FACTORIES.get(r["pad"], {})
-        out[r["token"]] = {"pad": cfg.get("label", r["pad"]), "padId": r["pad"], "url": cfg.get("url"), "twitter": cfg.get("twitter"), "ts": r["ts"], "tx": r["tx"], "factory": r["factory"], "symbol": r["symbol"]}
+        out[r["token"]] = {"pad": cfg.get("label", r["pad"]), "padId": r["pad"], "url": cfg.get("url"), "twitter": cfg.get("twitter"), "ts": r["ts"], "tx": r["tx"], "factory": r["factory"], "symbol": r["symbol"], "name": r["name"], "logo": r["logo"]}
     pads = [{"id": k, **{kk: vv for kk, vv in v.items() if kk != "factories"}, "factories": v["factories"], "count": sum(1 for r in rows if r["pad"] == k)} for k, v in FACTORIES.items()]
     return web.json_response({"tokens": out, "pads": pads}, headers={**CORS, "Cache-Control": "public, max-age=60"})
 

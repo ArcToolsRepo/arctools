@@ -1987,17 +1987,41 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   const apiPads = new Set([...lift, ...ellipse].map((t) => t.token.toLowerCase()));
   // launchpad registry (buybot watches each factory): tokens Lift / eve.fun / Ellipse / Sashimi / aka.fun … created — most of them
   // go straight into a Uniswap V3 pool, so they are already in the V3/screener lists; here they get their pad label + venue link
-  const registry = await memo<Record<string, { pad: string; padId: string; url: string | null; ts: number; symbol: string | null }>>("padreg", 120_000, async () =>
+  const registry = await memo<Record<string, { pad: string; padId: string; url: string | null; ts: number; symbol: string | null; name?: string | null; logo?: string | null }>>("padreg", 120_000, async () =>
     ((await fetch("https://bot-production-4200.up.railway.app/api/pad-tokens", { signal: AbortSignal.timeout(10_000) }).then((r) => r.json())) as { tokens?: Record<string, never> }).tokens ?? {},
-  (v) => Object.keys(v).length > 0).catch(() => ({} as Record<string, { pad: string; padId: string; url: string | null; ts: number; symbol: string | null }>));
+  (v) => Object.keys(v).length > 0).catch(() => ({} as Record<string, { pad: string; padId: string; url: string | null; ts: number; symbol: string | null; name?: string | null; logo?: string | null }>));
   const relabel = (t: PadToken): PadToken => {
     const r = registry[t.token.toLowerCase()];
     if (!r || !["UniswapV3", "UniswapV4", "RadarDex", "DYORSwap"].includes(t.pad)) return t;
-    return { ...t, pad: r.pad, venueUrl: r.url ? `${r.url}` : t.venueUrl, createdAt: t.createdAt ?? (r.ts ? new Date(r.ts * 1000).toISOString() : null) };
+    return { ...t, pad: r.pad, logo: t.logo ?? r.logo ?? null, name: t.name || r.name || t.name, venueUrl: r.url ? `${r.url}` : t.venueUrl, createdAt: t.createdAt ?? (r.ts ? new Date(r.ts * 1000).toISOString() : null) };
   };
   const all = [...pad, ...longs, ...lift, ...ellipse, ...order.filter((p) => p !== "RadarDex").flatMap((p) => byName.get(p as typeof ALL_PADS[number]) ?? []), ...(byName.get("RadarDex") ?? []), ...screener, ...v2]
     .filter((t) => !(apiPads.has(t.token.toLowerCase()) && t.pad !== "Lift" && t.pad !== "Ellipse"))
     .map(relabel).filter((t) => { const k = t.token.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  // faze.fun runs its own bonding curve: a coin that has not graduated has no Uniswap pool, so price, FDV, 24h
+  // volume and holders exist only on the curve. The buybot mirrors them at /api/faze; without this merge these
+  // rows show a chip and nothing else.
+  try {
+    const fz = await memo<Record<string, { symbol: string | null; name: string | null; price1m: number | null; mcap: number | null; vol24: number | null; txs24: number; holders: number; liq: number | null; progress: number; state: string | null; created: number | null; url: string }>>(
+      "faze", 20_000,
+      async () => ((await fetch("https://bot-production-4200.up.railway.app/api/faze", { signal: AbortSignal.timeout(8_000) }).then((r) => r.json())) as { coins?: Record<string, never> }).coins ?? {},
+      (v) => Object.keys(v).length > 0).catch(() => ({}));
+    const byTok = new Map(all.map((t) => [t.token.toLowerCase(), t] as const));
+    for (const [tok, c] of Object.entries(fz)) {
+      const row = byTok.get(tok);
+      const patch = {
+        logo: row?.logo ?? registry[tok]?.logo ?? null, mcapUsd: c.mcap ?? null, priceUsd: c.price1m ? c.price1m / 1e6 : null,
+        volUsd: c.vol24 ?? null, liqUsd: c.liq ?? null, venueUrl: c.url,
+      };
+      if (row) Object.assign(row, { ...patch, logo: row.logo ?? patch.logo });
+      else all.push({
+        token: tok, symbol: c.symbol ?? registry[tok]?.symbol ?? tok.slice(2, 8).toUpperCase(),
+        name: c.name ?? registry[tok]?.name ?? c.symbol ?? "", pad: "faze.fun",
+        pool: null, stage: c.state ?? null, og: false, dexes: ["curve"], website: null, twitter: null, telegram: null,
+        createdAt: c.created ? new Date(c.created * 1000).toISOString() : null, ...patch,
+      } as unknown as PadToken);
+    }
+  } catch { /* faze offline: the rest of the list is unaffected */ }
   {
     const have = new Set(all.map((t) => t.token.toLowerCase()));
     const fresh: PadToken[] = [];
@@ -2008,7 +2032,7 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
     for (const [tok, r] of Object.entries(registry)) {
       if (have.has(tok)) continue;
       if (!((r.ts ?? 0) > aliveCut || scrAlive.has(tok))) continue;
-      const row = { token: tok, symbol: r.symbol ?? tok.slice(2, 8).toUpperCase(), name: r.symbol ?? "", pad: r.pad, logo: null, mcapUsd: null, priceUsd: null, volUsd: null, pool: null, stage: null,
+      const row = { token: tok, symbol: r.symbol ?? tok.slice(2, 8).toUpperCase(), name: r.name ?? r.symbol ?? "", pad: r.pad, logo: r.logo ?? null, mcapUsd: null, priceUsd: null, volUsd: null, pool: null, stage: null,
         createdAt: r.ts ? new Date(r.ts * 1000).toISOString() : null, venueUrl: r.url ?? `/token/${tok}`, website: null, twitter: null, telegram: null, og: false, dexes: ["v3"] } as PadToken;
       all.push(row); fresh.push(row);
     }
