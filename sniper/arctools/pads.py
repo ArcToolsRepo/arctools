@@ -402,6 +402,10 @@ async def _auto_pad_uncached(token: str, amount_usdc: float) -> tuple[Pad | None
         fee = max(with_liq, key=lambda t: t[2])[0]
         log.info("auto_pad %s: V3 fee %s (liquidity only)", token[:10], fee)
         return default_pad(), {"fee": fee}
+    # our own launchpad: a token still on the curve has no pool at all, so it must be bought on the pad itself
+    curve_pad = await _curve_pad_for(token)
+    if curve_pad:
+        return curve_pad, None
     # long.supply launches: only market is a V3 pool quoted in a wrapped stock → hop USDC -> stock -> token
     hop = await resolve_stock_hop(token)
     if hop:
@@ -409,6 +413,29 @@ async def _auto_pad_uncached(token: str, amount_usdc: float) -> tuple[Pad | None
         if pad:
             return pad, hop
     return default_pad(), None
+
+
+
+async def _curve_pad_for(token: str) -> "Pad | None":
+    """Our own launchpad keeps a token on its bonding curve until it graduates, so there is no Uniswap pool to
+    quote and every probe above comes back empty — the order then fell through to the V3 router and reverted.
+    Ask each curve pad whether it actually knows this token (curve(address) reverts with "unknown token" when it
+    does not) and trade on the one that does. v3 is asked first: v1 is only kept for tokens launched before the
+    upgrade."""
+    cands = [p for p in (pad_by_name("ArcToolsPad v3"), pad_by_name("ArcToolsPad")) if p and p.router_kind == "curve"]
+    for pad in cands:
+        factory = pad.cfg.get("factory")
+        if not factory:
+            continue
+        try:
+            data = _sel("curve(address)") + abi_encode(["address"], [to_checksum_address(token)])
+            res = await CHAIN.call_any(lambda w3, d=data, f=factory: w3.eth.call({"to": to_checksum_address(f), "data": d}))
+        except Exception:  # noqa  (reverts for a token this pad never launched)
+            continue
+        if res and any(res[:128]):                      # non-empty curve state = the token trades here
+            log.info("auto_pad %s: %s curve", token[:10], pad.name)
+            return pad
+    return None
 
 
 async def resolve_stock_hop(token: str) -> dict | None:
