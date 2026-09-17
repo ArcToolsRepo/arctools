@@ -1832,6 +1832,21 @@ export const tokenLogos = createServerFn({ method: "POST" })
       const u = ipfsToHttp(icons.get(t) ?? "");
       if (u) out[t] = u;
     }
+    // our own index next: contract-embedded artwork, launchpad feeds and DexScreener owner-filled logos all live
+    // in social_tokens. The Terminal used to skip it entirely, which is why a token could show its logo on the
+    // token page (which reads this) and a blank circle in the list.
+    try {
+      const missingMeta = want.filter((t) => !out[t]);
+      for (let i = 0; i < missingMeta.length; i += 150) {
+        const chunk = missingMeta.slice(i, i + 150);
+        const j = (await fetch(`https://bot-production-4200.up.railway.app/api/token-meta?tokens=${chunk.join(",")}`, { signal: AbortSignal.timeout(8000) })
+          .then((r) => r.json())) as { meta?: Record<string, { logo?: string | null }> };
+        for (const [t, m] of Object.entries(j.meta ?? {})) {
+          const u = ipfsToHttp(String(m?.logo ?? ""));
+          if (u) out[t.toLowerCase()] = u;
+        }
+      }
+    } catch { /* bot API busy: the other sources still apply */ }
     try {
       const db = bindings().DB;
       if (db && want.length) {

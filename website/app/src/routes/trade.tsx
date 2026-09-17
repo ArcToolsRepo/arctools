@@ -472,15 +472,22 @@ function Trade() {
   }, []);
   // per-row stats for tokens outside the trending top-N (so vol / txs / chg / ATH never show as "—" just because a token is quiet)
   const [extraStats, setExtraStats] = useState<Record<string, Trend>>({});
+  // window-scoped: dropped whenever the timeframe changes, otherwise rows outside the trend list keep showing the
+  // volume of the previous window and the timeframe buttons look dead
+  const [winLoading, setWinLoading] = useState(false);
+  useEffect(() => { setExtraStats({}); setWinLoading(true); }, [tf]);
+  useEffect(() => { if (Object.keys(extraStats).length || trend.length) setWinLoading(false); }, [extraStats, trend]);
   const trendMap = useMemo(() => {
     const m = new Map<string, Trend>(Object.entries(extraStats));
     for (const t of trend) m.set(t.token.toLowerCase(), t);
+    // the Top volume tab ranks by volume since launch, so it must also display those numbers
+    if (tab === "topvol") for (const t of volAll) m.set(t.token.toLowerCase(), t);
     if (!m.has(OFFICIAL_TOKEN) && offStats) {
       const supply = 1e9; const px = offStats.price1m ? offStats.price1m / 1e6 : null;
       m.set(OFFICIAL_TOKEN, { token: OFFICIAL_TOKEN, symbol: "ARCT", txs: offStats.buys24 + offStats.sells24, vol: offStats.vol24, buys: offStats.buys24, sells: offStats.sells24, traders: offStats.traders24, p1: offStats.price1m, chg: null, first_ts: null, ath: null, txs_all: 0, supply, mcap: px ? px * supply : null, ath_mcap: null });
     }
     return m;
-  }, [trend, offStats, extraStats]);
+  }, [trend, offStats, extraStats, tab, volAll]);
   const toRow = (token: string): Row => {
     const k = token.toLowerCase();
     const t = byToken.get(k); const tr = trendMap.get(k); const c = clusterMap.get(k);
@@ -530,8 +537,9 @@ function Trade() {
       const key = ((tab === "new" || tab === "new15") || (padF !== "all" && tab !== "all")) && sortKey === "vol" ? "age" : sortKey;
       base.sort((a, b) => key === "age" ? fin(b.age) - fin(a.age) : key === "mcap" ? fin(b.mcap) - fin(a.mcap) : key === "txs" ? fin(b.txs) - fin(a.txs) : key === "chg" ? (Number.isFinite(Number(b.chg)) ? Number(b.chg) : -1e9) - (Number.isFinite(Number(a.chg)) ? Number(a.chg) : -1e9) : key === "smart" ? fin(b.smart?.net) - fin(a.smart?.net) : fin(b.vol) - fin(a.vol));
     }
-    // pin the official token on top (every tab except Holdings), regardless of sort / filter
-    if (tab !== "holdings" && (!q || matches(toRow(OFFICIAL_TOKEN)))) {
+    // pin the official token on top (every tab except Holdings and the volume leaderboard, where a pinned row
+    // would break the ranking), regardless of sort / filter
+    if (tab !== "holdings" && tab !== "topvol" && (!q || matches(toRow(OFFICIAL_TOKEN)))) {
       base = [toRow(OFFICIAL_TOKEN), ...base.filter((r) => r.token.toLowerCase() !== OFFICIAL_TOKEN)];
     }
     return base;
@@ -712,8 +720,8 @@ function Trade() {
                       <th style={hd}><button className="arc-mono" onClick={() => setSortKey("mcap")} style={{ background: "none", border: "none", color: sortKey === "mcap" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">MC ⇅</button></th>
                       <th className="arc-col-ath" style={hd}>{tr_("ATH MC")}</th>
                       <th className="arc-col-liq" style={hd}>{tr_("LIQ")}</th>
-                      <th className="arc-col-vol" style={hd}><button className="arc-mono" onClick={() => setSortKey("vol")} style={{ background: "none", border: "none", color: sortKey === "vol" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">{tfLabel(tf)} Vol ⇅</button></th>
-                      <th className="arc-col-txs" style={hd}><button className="arc-mono" onClick={() => setSortKey("txs")} style={{ background: "none", border: "none", color: sortKey === "txs" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">{tfLabel(tf)} TXs ⇅</button></th>
+                      <th className="arc-col-vol" style={hd}><button className="arc-mono" onClick={() => setSortKey("vol")} style={{ background: "none", border: "none", color: sortKey === "vol" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">{tab === "topvol" ? "ALL" : tfLabel(tf)} Vol{winLoading && tab !== "topvol" ? " …" : ""} ⇅</button></th>
+                      <th className="arc-col-txs" style={hd}><button className="arc-mono" onClick={() => setSortKey("txs")} style={{ background: "none", border: "none", color: sortKey === "txs" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase" }} type="button">{tab === "topvol" ? "ALL" : tfLabel(tf)} TXs ⇅</button></th>
                       <th style={hd} title="Token Score 0-100: deployer share, bundle, whale concentration, dev / bundle selling, deployer rug history, holders. Hover a badge for the flags. ☠ = deployer dumped a token before">{tr_("SCORE")}</th>
                       <th className="arc-col-dev" style={hd} title="Dev: deployer wallet's share of supply · Bundle: supply held by wallets that bought within 2 s of the first trade">{tr_("DEV / BUNDLE")}</th>
                       <th className="arc-col-ins" style={hd} title={`Smart money: net USDC flow of the top-100 insiders (buys − sells) in the ${tfLabel(tf)} window · distinct insiders buying/selling`}><button className="arc-mono" onClick={() => setSortKey("smart")} style={{ background: "none", border: "none", color: sortKey === "smart" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", font: "inherit", padding: 0 }}>Smart ⇅</button></th>
