@@ -11,7 +11,7 @@
  * profile is created, because the server ties an image to an existing profile and checks the signature.
  */
 import { Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { hotAddress, isUnlocked } from "@/lib/arc-hotwallet";
 import {
@@ -63,6 +63,10 @@ export function ProfileEditor() {
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [avatarUrl, setAvatarUrl] = useState("");
   const [bannerUrl, setBannerUrl] = useState("");
+  // while a picture is in flight, the periodic profile refresh must not put the OLD url back on screen
+  const [uploading, setUploading] = useState<{ avatar: boolean; banner: boolean }>({ avatar: false, banner: false });
+  const uploadingRef = useRef(uploading);
+  useEffect(() => { uploadingRef.current = uploading; }, [uploading]);
 
   const load = useCallback(async () => {
     const w = isUnlocked() ? hotAddress() : null;
@@ -77,8 +81,8 @@ export function ProfileEditor() {
       setXh(v.profile.x_handle ?? "");
       setPublicPos(!!v.profile.public_positions);
       setDelay(v.profile.feed_delay ?? 60);
-      if (v.profile.avatar) setAvatarUrl(v.profile.avatar);
-      if (v.profile.banner) setBannerUrl(v.profile.banner);
+      if (v.profile.avatar && !uploadingRef.current.avatar) setAvatarUrl(v.profile.avatar);
+      if (v.profile.banner && !uploadingRef.current.banner) setBannerUrl(v.profile.banner);
     } else {
       // no profile yet: preview the wallet's real record so the card is never an empty mock-up
       try {
@@ -124,10 +128,19 @@ export function ProfileEditor() {
     if (kind === "avatar") { setAvatarFile(f); setAvatarUrl(url); } else { setBannerFile(f); setBannerUrl(url); }
     // an existing profile can upload straight away; a new one waits for the profile to exist
     if (view?.profile && me) {
+      const h = view.profile.handle;
+      setUploading((u) => ({ ...u, [kind]: true }));
       void act(async () => {
-        const r = await uploadProfileImage(me, view.profile!.handle, kind, f);
-        if (kind === "avatar") setAvatarUrl(r.url); else setBannerUrl(r.url);
-        return `${kind} updated (${Math.round(r.bytes / 1024)} KB)`;
+        try {
+          const r = await uploadProfileImage(me, h, kind, f);
+          // the server url already carries ?v=<ts>; a second stamp guarantees the <img> refetches even if
+          // the browser cached the previous version at the same path
+          const fresh = `${r.url}${r.url.includes("?") ? "&" : "?"}r=${Date.now()}`;
+          if (kind === "avatar") setAvatarUrl(fresh); else setBannerUrl(fresh);
+          return `${kind} updated (${Math.round(r.bytes / 1024)} KB)`;
+        } finally {
+          setUploading((u) => ({ ...u, [kind]: false }));
+        }
       });
     } else {
       setMsg(`${kind} ready — it uploads when you create the profile`);
@@ -137,8 +150,9 @@ export function ProfileEditor() {
   const onSave = () => act(async () => {
     if (!me) throw new Error("unlock your trading wallet first");
     if (!/^[a-z0-9_]{3,20}$/.test(handle)) throw new Error("handle: 3-20 characters, a-z 0-9 _");
+    const adopting = !!view?.profile?.seeded;
     await saveProfile(me, handle, { display, bio, x_handle: xh.replace(/^@/, ""), public_positions: publicPos ? 1 : 0, feed_delay: delay });
-    let extra = "";
+    let extra = adopting ? " · claimed, it is yours now" : "";
     for (const [kind, file] of [["avatar", avatarFile], ["banner", bannerFile]] as const) {
       if (!file) continue;
       const r = await uploadProfileImage(me, handle, kind, file);
@@ -200,7 +214,7 @@ export function ProfileEditor() {
   return (
     <section style={{ display: "grid", gap: 12, marginBottom: 18 }}>
       <div style={{ alignItems: "baseline", display: "flex", flexWrap: "wrap", gap: 10 }}>
-        <h2 style={{ fontSize: 17, margin: 0 }}>{exists ? "Your public profile" : "Create your public profile"}</h2>
+        <h2 style={{ fontSize: 17, margin: 0 }}>{view?.profile?.seeded ? "Claim your public profile" : exists ? "Your public profile" : "Create your public profile"}</h2>
         {exists && (
           <Link className="arc-mono" params={{ handle }} style={{ color: "var(--arc-cobalt)", fontSize: 12 }} to="/u/$handle">
             /u/{handle} →
@@ -243,14 +257,19 @@ export function ProfileEditor() {
         }}>
           <label className="arc-mono" title="upload a banner from your computer or phone"
             style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 8, color: "#fff", cursor: "pointer", fontSize: 11, padding: "6px 11px", position: "absolute", right: 12, top: 12 }}>
-            <input accept="image/*" onChange={pick("banner")} style={{ display: "none" }} type="file" />
-            {bannerUrl ? "change banner" : "upload banner"}
+            <input accept="image/*" disabled={uploading.banner} onChange={pick("banner")} style={{ display: "none" }} type="file" />
+            {uploading.banner ? "uploading…" : bannerUrl ? "change banner" : "upload banner"}
           </label>
           <label title="upload an avatar from your computer or phone"
             style={{ bottom: -44, cursor: "pointer", display: "block", left: 22, position: "absolute" }}>
-            <input accept="image/*" onChange={pick("avatar")} style={{ display: "none" }} type="file" />
+            <input accept="image/*" disabled={uploading.avatar} onChange={pick("avatar")} style={{ display: "none" }} type="file" />
+            {uploading.avatar && (
+              <span className="arc-mono" style={{ background: "rgba(0,0,0,0.6)", borderRadius: "50%", color: "#fff", display: "grid", fontSize: 10, height: 100, inset: 0, placeItems: "center", position: "absolute", width: 100 }}>
+                uploading…
+              </span>
+            )}
             {avatarUrl
-              ? <img alt="" src={avatarUrl} style={{ background: "var(--arc-paper)", border: "3px solid var(--arc-bg, #0a0d14)", borderRadius: "50%", height: 100, objectFit: "cover", width: 100 }} />
+              ? <img alt="" src={avatarUrl} style={{ background: "var(--arc-paper)", border: "3px solid var(--arc-bg, #0a0d14)", borderRadius: "50%", height: 100, objectFit: "cover", objectPosition: "center top", width: 100 }} />
               : <span className="arc-mono" style={{ alignItems: "center", background: "var(--arc-line)", border: "3px solid var(--arc-bg, #0a0d14)", borderRadius: "50%", color: "var(--arc-muted)", display: "flex", fontSize: 11, height: 100, justifyContent: "center", textAlign: "center", width: 100 }}>
                   upload<br />avatar
                 </span>}
@@ -402,7 +421,7 @@ export function ProfileEditor() {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         <button className="arc-mono" disabled={busy} onClick={onSave}
           style={{ background: "var(--arc-cobalt)", border: "none", borderRadius: 8, color: "#fff", cursor: "pointer", fontSize: 12, padding: "9px 18px" }} type="button">
-          {busy ? "signing…" : exists ? "save changes" : "create profile"}
+          {busy ? "signing…" : view?.profile?.seeded ? "claim this profile" : exists ? "save changes" : "create profile"}
         </button>
         {exists && (
           <>

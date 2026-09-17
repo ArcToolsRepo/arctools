@@ -21,6 +21,7 @@ export type Profile = {
   public_positions: number;
   feed_delay: number;
   created: number;
+  seeded?: number;
 };
 
 export type ProfileStats = {

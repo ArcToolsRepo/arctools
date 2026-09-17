@@ -281,6 +281,12 @@ function ProfilePage() {
                 <span>Joined {joined(p?.created)}</span>
               </div>
               {p?.bio && <p style={{ color: "var(--arc-muted)", margin: "10px 0 0" }}>{p.bio}</p>}
+              {!!p?.seeded && (
+                <p className="arc-mono" style={{ background: "rgba(217,164,65,0.10)", border: "1px solid rgba(217,164,65,0.45)", borderRadius: 10, color: "#d9a441", fontSize: 11, margin: "12px 0 0", padding: "8px 12px" }}>
+                  Unclaimed. This page was created from the wallet's public record on Arc; the numbers are real, the name is a placeholder.
+                  If this wallet is yours, unlock it on <Link style={{ color: "#d9a441" }} to="/profile">/profile</Link> and save the profile once — the signature makes it yours.
+                </p>
+              )}
             </div>
           </section>
 

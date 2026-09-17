@@ -50,6 +50,12 @@ async def init():
         created BIGINT, updated BIGINT)"""))
     await db.execute(text("""CREATE TABLE IF NOT EXISTS profile_wallets (
         wallet VARCHAR(64) PRIMARY KEY, handle VARCHAR(20), proved_ts BIGINT)"""))
+    for stmt in ("ALTER TABLE profile_wallets ADD COLUMN IF NOT EXISTS claimable SMALLINT DEFAULT 0",
+                 "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS seeded SMALLINT DEFAULT 0"):
+        try:
+            await db.execute(text(stmt))
+        except Exception:  # noqa
+            pass
     await db.execute(text("""CREATE TABLE IF NOT EXISTS profile_follows (
         follower VARCHAR(64), handle VARCHAR(20), ts BIGINT, PRIMARY KEY (follower, handle))"""))
     await db.execute(text("""CREATE TABLE IF NOT EXISTS profile_images (
@@ -80,9 +86,23 @@ def _recover(action: str, handle: str, wallet: str, ts: int, sig: str) -> bool:
 
 
 async def _owner(handle: str, wallet: str) -> bool:
-    r = await db.fetchone(text("SELECT 1 x FROM profile_wallets WHERE handle = :h AND wallet = :w")
+    r = await db.fetchone(text("SELECT COALESCE(claimable, 0) c FROM profile_wallets WHERE handle = :h AND wallet = :w")
                           .bindparams(h=handle, w=wallet.lower()))
-    return bool(r)
+    return bool(r) and not r["c"]
+
+
+async def _claim_if_seeded(handle: str, wallet: str) -> bool:
+    """A seeded profile belongs to whoever proves the wallet: the first valid signature from that wallet adopts it.
+    The stats were always theirs — only the name and picture were placeholders."""
+    r = await db.fetchone(text("SELECT COALESCE(claimable, 0) c FROM profile_wallets WHERE handle = :h AND wallet = :w")
+                          .bindparams(h=handle, w=wallet.lower()))
+    if not r or not r["c"]:
+        return False
+    now = int(time.time())
+    await db.execute(text("UPDATE profile_wallets SET claimable = 0, proved_ts = :n WHERE handle = :h AND wallet = :w")
+                     .bindparams(n=now, h=handle, w=wallet.lower()))
+    await db.execute(text("UPDATE profiles SET seeded = 0, updated = :n WHERE handle = :h").bindparams(n=now, h=handle))
+    return True
 
 
 async def _auth(req: web.Request, action: str) -> tuple[dict | None, web.Response | None]:
@@ -230,7 +250,7 @@ async def api_get(req: web.Request):
     if not HANDLE_RE.match(handle or ""):
         return web.json_response({"error": "handle"}, status=400, headers=CORS)
     p = await db.fetchone(text("""SELECT handle, display, bio, avatar, banner, x_handle, x_verified,
-                                         public_positions, feed_delay, created
+                                         public_positions, feed_delay, created, COALESCE(seeded, 0) seeded
                                   FROM profiles WHERE handle = :h""").bindparams(h=handle))
     if not p:
         return web.json_response({"profile": None}, headers={**CORS, "Cache-Control": "public, max-age=30"})
@@ -250,7 +270,8 @@ async def api_save(req: web.Request):
     exists = await db.fetchone(text("SELECT handle, x_handle FROM profiles WHERE handle = :h").bindparams(h=handle))
     if exists:
         if not await _owner(handle, wallet):
-            return web.json_response({"error": "this wallet does not belong to that profile"}, status=403, headers=CORS)
+            if not await _claim_if_seeded(handle, wallet):
+                return web.json_response({"error": "this wallet does not belong to that profile"}, status=403, headers=CORS)
     else:
         taken = await db.fetchone(text("SELECT handle FROM profile_wallets WHERE wallet = :w").bindparams(w=wallet))
         if taken:
@@ -738,7 +759,43 @@ async def api_card(req: web.Request):
     return web.Response(body=data, content_type="image/png", headers={**CORS, "Cache-Control": "public, max-age=300"})
 
 
+async def api_seed(req: web.Request):
+    """Create placeholder profiles for wallets from the public record — the first faces on the board.
+
+    Only the operator can call it (INGEST_KEY). The profile carries the wallet's real, chain-computed numbers;
+    the name and bio are placeholders that say so, and the real owner adopts the page by signing once."""
+    import os
+    key = req.headers.get("X-Admin-Key") or req.query.get("key") or ""
+    if not key or key != (os.getenv("INGEST_KEY") or ""):
+        return web.json_response({"error": "auth"}, status=401, headers=CORS)
+    try:
+        body = await req.json()
+    except Exception:  # noqa
+        return web.json_response({"error": "bad json"}, status=400, headers=CORS)
+    made = []
+    now = int(time.time())
+    for it in (body.get("profiles") or [])[:20]:
+        handle = str(it.get("handle") or "").lower()
+        wallet = str(it.get("wallet") or "").lower()
+        if not HANDLE_RE.match(handle) or not (wallet.startswith("0x") and len(wallet) == 42):
+            continue
+        if await db.fetchone(text("SELECT 1 x FROM profile_wallets WHERE wallet = :w").bindparams(w=wallet)):
+            continue                     # a real or seeded profile already owns this wallet
+        if await db.fetchone(text("SELECT 1 x FROM profiles WHERE handle = :h").bindparams(h=handle)):
+            continue
+        await db.execute(text("""
+            INSERT INTO profiles (handle, display, bio, avatar, banner, x_handle, public_positions, feed_delay, created, updated, seeded)
+            VALUES (:h, :d, :b, :a, :bn, NULL, 1, 60, :n, :n, 1)""").bindparams(
+            h=handle, d=str(it.get("display") or handle)[:40], b=str(it.get("bio") or "")[:280],
+            a=str(it.get("avatar") or "")[:300], bn=str(it.get("banner") or "")[:300], n=now))
+        await db.execute(text("INSERT INTO profile_wallets (wallet, handle, proved_ts, claimable) VALUES (:w, :h, NULL, 1)")
+                         .bindparams(w=wallet, h=handle))
+        made.append(handle)
+    return web.json_response({"ok": True, "created": made}, headers=CORS)
+
+
 def register(app: web.Application):
+    app.router.add_post("/api/profiles/seed", api_seed)
     app.router.add_get("/api/profile", api_get)
     app.router.add_post("/api/profile/save", api_save)
     app.router.add_post("/api/profile/wallet", api_wallet)
