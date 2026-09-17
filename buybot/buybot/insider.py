@@ -577,8 +577,9 @@ async def v4_bootstrap():
     asyncio.create_task(v4_quote_backfill(), name="v4-quote-backfill")
     asyncio.create_task(v4_keys_backfill(), name="v4-keys-backfill")
     await warm_supply_cache()
-    from .warm import warm_loop
+    from .warm import trending_warm_loop, warm_loop
     asyncio.create_task(warm_loop(), name="site-warm")
+    asyncio.create_task(trending_warm_loop(), name="trending-warm")
     from .referrals import init_tables as _ref_init
     await _ref_init()
     from .risk_score import init as _score_init

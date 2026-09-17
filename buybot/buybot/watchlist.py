@@ -466,19 +466,28 @@ async def _api_trending_impl(request: web.Request) -> web.Response:
         WITH w AS (
           SELECT token, ts, log_index, side, usdc, wallet, price1m,
                  ROW_NUMBER() OVER (PARTITION BY token ORDER BY ts ASC, log_index ASC) AS rn_first,
-                 ROW_NUMBER() OVER (PARTITION BY token ORDER BY ts DESC, log_index DESC) AS rn_last
+                 ROW_NUMBER() OVER (PARTITION BY token ORDER BY ts DESC, log_index DESC) AS rn_last,
+                 -- opening price is taken from the first print worth at least a dollar: a $0.20 dust trade at a
+                 -- nonsense price used to become the window's baseline and produced +13,000% on a flat token
+                 ROW_NUMBER() OVER (PARTITION BY token, (usdc >= 1) ORDER BY ts ASC, log_index ASC) AS rn_first_real
           FROM swaps WHERE ts > :since AND usdc >= 0.2 AND token <> '0x3600000000000000000000000000000000000000'
         ), agg AS (
           SELECT token, COUNT(*) AS txs, SUM(usdc) AS vol,
                  SUM(CASE WHEN side='buy' THEN 1 ELSE 0 END) AS buys, SUM(CASE WHEN side='sell' THEN 1 ELSE 0 END) AS sells,
                  COUNT(DISTINCT wallet) AS traders,
-                 MAX(CASE WHEN rn_first = 1 THEN price1m END) AS p0, MAX(CASE WHEN rn_last = 1 THEN price1m END) AS p1
+                 MAX(CASE WHEN rn_first = 1 THEN price1m END) AS p0_any,
+                 MAX(CASE WHEN usdc >= 1 AND rn_first_real = 1 THEN price1m END) AS p0,
+                 MAX(CASE WHEN rn_last = 1 THEN price1m END) AS p1
           FROM w GROUP BY token
         ), life AS (
-          SELECT token, MIN(ts) AS first_ts, MAX(price1m) AS ath, COUNT(*) AS txs_all FROM swaps WHERE price1m > 0 AND usdc >= 0.5 GROUP BY token
+          -- only the tokens that actually appear in this window; this used to scan the whole swaps table (3M rows)
+          -- on every request, which is why a 5-minute window took longer than a 24-hour one
+          SELECT token, MIN(ts) AS first_ts, MAX(price1m) AS ath, COUNT(*) AS txs_all
+          FROM swaps WHERE price1m > 0 AND usdc >= 0.5 AND token IN (SELECT token FROM agg) GROUP BY token
         )
-        SELECT a.token, sym.symbol, a.txs, a.vol, a.buys, a.sells, a.traders, a.p0, a.p1,
-               CASE WHEN a.p0 > 0 THEN (a.p1 - a.p0) / a.p0 * 100 ELSE NULL END AS chg,
+        SELECT a.token, sym.symbol, a.txs, a.vol, a.buys, a.sells, a.traders, COALESCE(a.p0, a.p0_any) AS p0, a.p1,
+               CASE WHEN a.p0 > 0 AND a.p1 > 0 AND (a.p1 - a.p0) / a.p0 * 100 BETWEEN -100 AND 100000
+                    THEN (a.p1 - a.p0) / a.p0 * 100 ELSE NULL END AS chg,
                l.first_ts, l.ath, l.txs_all
         FROM agg a LEFT JOIN token_symbols sym ON sym.token = a.token LEFT JOIN life l ON l.token = a.token
         ORDER BY a.vol DESC LIMIT :l""").bindparams(since=(now - mins * 60) if mins else 0, l=limit))

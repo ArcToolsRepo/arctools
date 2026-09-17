@@ -114,9 +114,21 @@ function Trade() {
   const [flashOn, setFlashOn] = useState(true);
   const [flash, setFlash] = useState<Record<string, { side: "buy" | "sell"; at: number; usdc: number }>>({});
   const flashOnRef = useRef(true);
+  // Only trades worth real money should light a row — at $1 the table would strobe on spray-bot dust all day.
+  const FLASH_STEPS = [100, 500, 1_000, 5_000, 25_000] as const;
+  const [flashMin, setFlashMin] = useState<number>(1_000);
+  const flashMinRef = useRef(1_000);
   useEffect(() => {
-    try { setFlashOn(localStorage.getItem("arctools_flash") !== "0"); } catch { /* private mode */ }
+    try {
+      setFlashOn(localStorage.getItem("arctools_flash") !== "0");
+      const m = Number(localStorage.getItem("arctools_flash_min"));
+      if (Number.isFinite(m) && m > 0) setFlashMin(m);
+    } catch { /* private mode */ }
   }, []);
+  useEffect(() => {
+    flashMinRef.current = flashMin;
+    try { localStorage.setItem("arctools_flash_min", String(flashMin)); } catch { /* private mode */ }
+  }, [flashMin]);
   useEffect(() => {
     flashOnRef.current = flashOn;
     try { localStorage.setItem("arctools_flash", flashOn ? "1" : "0"); } catch { /* private mode */ }
@@ -211,12 +223,15 @@ function Trade() {
         const idx = new Map(prev.map((r, i) => [r.token.toLowerCase(), i]));
         let next: Trend[] | null = null;
         if (flashOnRef.current) {
-          const now = Date.now();
-          setFlash((f) => {
-            const n = { ...f };
-            for (const t of ok) n[t.token.toLowerCase()] = { at: now, side: t.side, usdc: t.usdc };
-            return n;
-          });
+          const big = ok.filter((t) => (t.usdc ?? 0) >= flashMinRef.current);
+          if (big.length) {
+            const now = Date.now();
+            setFlash((f) => {
+              const n = { ...f };
+              for (const t of big) n[t.token.toLowerCase()] = { at: now, side: t.side, usdc: t.usdc };
+              return n;
+            });
+          }
         }
         for (const t of ok) {
           const i = idx.get(t.token.toLowerCase()); if (i == null) continue;
@@ -649,7 +664,12 @@ function Trade() {
               ))}
               <span style={{ marginLeft: "auto" }}>
                 {[1, 5, 60, 360, 1440, 0].map((m) => <button key={m} className="arc-mono" onClick={() => setTf(m)} style={{ background: tf === m ? "rgba(255,255,255,0.08)" : "transparent", border: "1px solid " + (tf === m ? "var(--arc-line)" : "transparent"), borderRadius: 4, color: tf === m ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, marginLeft: 2, padding: "4px 9px" }} type="button">{tfLabel(m)}</button>)}
-                <button className="arc-mono" onClick={() => setFlashOn((v) => !v)} style={{ background: flashOn ? "rgba(34,197,128,0.12)" : "transparent", border: "1px solid " + (flashOn ? "var(--arc-up)" : "var(--arc-line)"), borderRadius: 6, color: flashOn ? "var(--arc-up)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, marginRight: 6, padding: "3px 8px" }} title="Flash a row green on a buy and red on a sell, live" type="button">flash {flashOn ? "on" : "off"}</button>
+                <button className="arc-mono" onClick={() => setFlashOn((v) => !v)} style={{ background: flashOn ? "rgba(34,197,128,0.12)" : "transparent", border: "1px solid " + (flashOn ? "var(--arc-up)" : "var(--arc-line)"), borderRadius: 6, borderBottomRightRadius: flashOn ? 0 : 6, borderTopRightRadius: flashOn ? 0 : 6, color: flashOn ? "var(--arc-up)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, marginRight: flashOn ? 0 : 6, padding: "3px 8px" }} title="Flash a row green on a buy and red on a sell, live" type="button">flash {flashOn ? "on" : "off"}</button>
+                {flashOn && (
+                  <button className="arc-mono" onClick={() => setFlashMin((m) => FLASH_STEPS[(FLASH_STEPS.indexOf(m as typeof FLASH_STEPS[number]) + 1) % FLASH_STEPS.length])}
+                    style={{ background: "rgba(34,197,128,0.06)", border: "1px solid var(--arc-up)", borderLeft: "none", borderRadius: 6, borderBottomLeftRadius: 0, borderTopLeftRadius: 0, color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, marginRight: 6, padding: "3px 8px" }}
+                    title="Minimum trade size that lights a row — click to change" type="button">≥ {flashMin >= 1000 ? `$${flashMin / 1000}K` : `$${flashMin}`}</button>
+                )}
                 <button className="arc-mono" onClick={toggleToasts} style={{ background: toastsOn ? "rgba(34,197,128,0.12)" : "transparent", border: "1px solid " + (toastsOn ? "var(--arc-up)" : "var(--arc-line)"), borderRadius: 4, color: toastsOn ? "var(--arc-up)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, marginLeft: 8, padding: "3px 8px" }} title="Live buy/sell pop-ups for the tokens on screen" type="button">{toastsOn ? (liveFeed ? "● live" : "🔔 live") : "🔕 live"}</button>
               </span>
             </div>
@@ -729,7 +749,7 @@ function Trade() {
                             </div>
                           </div>
                         </td>
-                        <td className="arc-mono" style={cell}><div style={{ color: "var(--arc-cobalt)", fontWeight: 700 }}>{usd(r.mcap)}</div>{r.chg != null && Math.abs(r.chg) <= 99_999 && <div style={{ color: r.chg >= 0 ? UP : DOWN, fontSize: 11 }}>{r.chg >= 0 ? "+" : ""}{r.chg.toFixed(1)}%</div>}</td>
+                        <td className="arc-mono" style={cell}><div style={{ color: "var(--arc-cobalt)", fontWeight: 700 }}>{usd(r.mcap)}</div>{r.chg != null && Math.abs(r.chg) <= 99_999 && <div title={r.age && Date.now() / 1000 - r.age < tf * 60 ? `${r.chg.toFixed(1)}% since this token's first trade: it is younger than the ${tfLabel(tf)} window` : `${r.chg.toFixed(1)}% over the ${tfLabel(tf)} window, measured from the first trade above $1`} style={{ color: r.chg >= 0 ? UP : DOWN, fontSize: 11 }}>{r.chg >= 0 ? "+" : ""}{r.chg.toFixed(1)}%</div>}</td>
                         <td className="arc-mono arc-col-ath" style={{ ...cell, color: "var(--arc-cobalt)" }}>{usd(r.athMcap)}</td>
                         <td className="arc-mono arc-col-liq" style={cell}>{r.liq != null && r.liq > 0 ? usd(r.liq) : "—"}</td>
                         <td className="arc-mono arc-col-vol" style={{ ...cell, color: "#f5c542" }}>{r.vol > 0 ? usd(r.vol) : "—"}</td>
