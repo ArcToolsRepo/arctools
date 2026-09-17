@@ -61,7 +61,7 @@ export function ProfileEditor() {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const w = hotAddress();
+    const w = isUnlocked() ? hotAddress() : null;   // a remembered address cannot sign; only an unlocked key can
     setMe(w);
     if (!w) return;
     const v = await getProfileByWallet(w);
@@ -77,7 +77,12 @@ export function ProfileEditor() {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    let stop = () => {};
+    void import("@/lib/arc-hotwallet").then((m) => { stop = m.onHotChange(() => void load()); });
+    return () => stop();
+  }, [load]);
 
   const act = async (fn: () => Promise<string>) => {
     setBusy(true); setMsg("");
@@ -124,7 +129,7 @@ export function ProfileEditor() {
     fontSize: 13, padding: "8px 10px", width: "100%",
   };
 
-  if (!me && !isUnlocked()) {
+  if (!me) {
     return (
       <section style={{ border: "1px solid var(--arc-line)", borderRadius: 12, padding: 16 }}>
         <h2 style={{ fontSize: 15, margin: "0 0 6px" }}>Public profile</h2>
