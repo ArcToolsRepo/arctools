@@ -178,24 +178,39 @@ function Profile() {
 
             {addr && (
               <>
-                {/* summary */}
-                <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", marginBottom: 14 }}>
-                  {[
-                    ["Total equity", usd(totals.equity), "USDC + positions at last price"],
-                    ["PnL realized", usd(totals.realized), `${closed.length} closed position${closed.length === 1 ? "" : "s"} + partial sells`],
-                    ["PnL total", usd(totals.total), "realized + open, every token ever traded"],
-                    ["USDC balance", bal !== null ? `${bal.toFixed(2)}` : "…", "available to trade or withdraw"],
-                    ["Positions value", usd(totals.value), `${pos.length} tokens held`],
-                    ["Unrealized PnL", usd(totals.unreal), "vs average entry", totals.unreal],
-                    ["Realized 30d", totals.s30 ? usd(totals.s30.pnl_realized) : "—", totals.s30 ? `win-rate ${Math.round(totals.s30.winrate)}% · ${totals.s30.closed} closed` : "no closed positions yet", totals.s30?.pnl_realized],
-                    ["Volume all-time", usd((hist?.summary.bought ?? 0) + (hist?.summary.sold ?? 0)), `${hist?.summary.n ?? 0} trades · ${hist?.summary.tokens ?? 0} tokens`],
-                  ].map(([k, v, sub, sign]) => (
-                    <div key={k as string} style={card}>
-                      <p style={{ color: "var(--arc-muted)", fontSize: 12, margin: 0 }}>{k}</p>
-                      <p className="arc-mono" style={{ color: typeof sign === "number" ? (sign >= 0 ? UP : DOWN) : "var(--arc-ink)", fontSize: 22, margin: "6px 0 2px" }}>{v}</p>
-                      <p style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0 }}>{sub}</p>
+                {/* One card that leads with the number you came for, instead of eight identical boxes mostly
+                    printing $0.00. Secondary figures stay, but as a supporting row rather than as peers. */}
+                <div style={{ background: "var(--arc-paper, #0f1218)", border: "1px solid var(--arc-line)", borderRadius: 18, marginBottom: 14, padding: "20px 22px" }}>
+                  <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between" }}>
+                    <div>
+                      <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, textTransform: "uppercase" }}>total equity</div>
+                      <div style={{ fontSize: 38, fontWeight: 800, letterSpacing: -0.8 }}>{usd(totals.equity)}</div>
+                      <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginTop: 6 }}>
+                        {bal !== null ? `${bal.toFixed(2)} USDC` : "… USDC"} + {usd(totals.value)} in {pos.length} token{pos.length === 1 ? "" : "s"}
+                      </div>
                     </div>
-                  ))}
+                    <div style={{ textAlign: "right" }}>
+                      <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, textTransform: "uppercase" }}>pnl total</div>
+                      <div style={{ color: totals.total >= 0 ? UP : DOWN, fontSize: 26, fontWeight: 700 }}>
+                        {totals.total >= 0 ? "+" : ""}{usd(totals.total)}
+                      </div>
+                      <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginTop: 4 }}>realized + open</div>
+                    </div>
+                  </div>
+                  <div style={{ borderTop: "1px solid var(--arc-line)", display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", marginTop: 18, paddingTop: 14 }}>
+                    {([
+                      ["realized", usd(totals.realized), `${closed.length} closed`, totals.realized],
+                      ["unrealized", usd(totals.unreal), "vs average entry", totals.unreal],
+                      ["realized 30d", totals.s30 ? usd(totals.s30.pnl_realized) : "—", totals.s30 ? `win-rate ${Math.round(totals.s30.winrate)}%` : "no closed positions yet", totals.s30?.pnl_realized],
+                      ["volume all-time", usd((hist?.summary.bought ?? 0) + (hist?.summary.sold ?? 0)), `${hist?.summary.n ?? 0} trades · ${hist?.summary.tokens ?? 0} tokens`, undefined],
+                    ] as Array<[string, string, string, number | undefined]>).map(([k, v, sub, sign]) => (
+                      <div key={k}>
+                        <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, textTransform: "uppercase" }}>{k}</div>
+                        <div className="arc-mono" style={{ color: typeof sign === "number" ? (sign >= 0 ? UP : DOWN) : "var(--arc-ink)", fontSize: 19, fontWeight: 700, margin: "3px 0 2px" }}>{v}</div>
+                        <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10 }}>{sub}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 {/* tabs */}
