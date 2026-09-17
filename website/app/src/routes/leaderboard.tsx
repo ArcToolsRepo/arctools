@@ -61,6 +61,15 @@ function Leaderboard() {
       </div>
 
       <div style={{ border: "1px solid var(--arc-line)", borderRadius: 12, overflow: "hidden" }}>
+        <div className="arc-mono" style={{ alignItems: "center", background: "rgba(255,255,255,0.02)", borderBottom: "1px solid var(--arc-line)", color: "var(--arc-muted)", display: "flex", fontSize: 10, gap: 12, padding: "8px 14px", textTransform: "uppercase" }}>
+          <span style={{ width: 22 }}>#</span>
+          <span style={{ width: 28 }} />
+          <span style={{ flex: 1 }}>trader</span>
+          <span style={{ textAlign: "right", width: 100 }}>pnl</span>
+          <span style={{ textAlign: "right", width: 70 }}>roi</span>
+          <span style={{ textAlign: "right", width: 60 }}>win</span>
+          <span style={{ textAlign: "right", width: 84 }}>volume</span>
+        </div>
         {loading && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: 16 }}>reading the chain…</p>}
         {!loading && !rows.length && (
           <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: 16 }}>
@@ -69,11 +78,12 @@ function Leaderboard() {
         )}
         {rows.map((r, i) => (
           <Link
+            className="arc-lb-row"
             key={r.handle}
             params={{ handle: r.handle }}
             style={{
               alignItems: "center", borderTop: i ? "1px solid var(--arc-line)" : "none", color: "var(--arc-ink)",
-              display: "flex", gap: 12, padding: "10px 14px", textDecoration: "none",
+              display: "flex", gap: 12, padding: "10px 14px", textDecoration: "none", transition: "background 120ms ease",
             }}
             to="/u/$handle"
           >

@@ -61,14 +61,12 @@ function Profile() {
       .then((mv: { rows?: Move[] }) => setMoves((mv?.rows ?? []).filter((x) => x.wallet.toLowerCase() === w)))
       .catch(() => null);
     const [b, p, h, chain] = await Promise.all([
-      hotBalance(a).catch(() => null),
+      Promise.resolve<number | null>(null),   // balance has its own reader below
       fetch(`${API}/api/positions?wallet=${w}`).then((r) => r.json()).catch(() => null),
       fetch(`${API}/api/wallet-trades?wallet=${w}&limit=300`).then((r) => r.json()).catch(() => null),
       getPortfolio({ data: { wallet: a } }).catch(() => null),   // arc-scan indexer: EVERY erc20 the wallet holds
     ]);
     if (my !== seq.current) return;
-    // a refresh that failed keeps the last good number instead of blanking the tile
-    if (b != null) setBal(b);
     // merge: on-chain balances are the source of truth for amount/value; the swap index adds avg entry + realized PnL
     const idx = new Map<string, Position>(((p?.positions ?? []) as Position[]).map((x) => [x.token.toLowerCase(), x]));
     const merged: Position[] = [];
@@ -102,11 +100,31 @@ function Profile() {
         .sort((x, y) => Math.abs(y.realized ?? 0) - Math.abs(x.realized ?? 0)));
     }
     // one quick retry when a source failed, so the first paint is not stuck on "…" for 20 seconds
-    if ((b == null || !h || !gotSomething) && my === seq.current) {
+    if ((!h || !gotSomething) && my === seq.current) {
       setTimeout(() => { if (my === seq.current) void load(); }, 2500);
     }
   }, []);
   useEffect(() => { void load(); const id = setInterval(load, 20_000); const off = onHotChange(() => void load()); return () => { clearInterval(id); off(); }; }, [load]);
+  // The balance gets its own reader. It used to ride along with the big load(), where a single failed round —
+  // or the 20 s interval bumping the sequence guard — left the tile on "…" while the wallet panel next to it,
+  // which reads on its own, showed the number fine. Retries fast until it has a value, then settles.
+  useEffect(() => {
+    let alive = true;
+    let tries = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      const a = isUnlocked() ? hotAddress() : null;
+      if (!alive) return;
+      if (!a) { setBal(null); timer = setTimeout(tick, 4000); return; }
+      const b = await hotBalance(a).catch(() => null);
+      if (!alive) return;
+      if (b != null) { setBal(b); tries = 0; timer = setTimeout(tick, 15_000); }
+      else { tries += 1; timer = setTimeout(tick, Math.min(8000, 1500 * tries)); }
+    };
+    void tick();
+    const off = onHotChange(() => { if (timer) clearTimeout(timer); void tick(); });
+    return () => { alive = false; if (timer) clearTimeout(timer); off(); };
+  }, []);
 
   const totals = useMemo(() => {
     const value = pos.reduce((s, p) => s + (p.value ?? 0), 0);
@@ -342,7 +360,7 @@ function Profile() {
         </div>
       </section>
       {/* the public profile is built AFTER the wallet exists, so it sits below it */}
-      <section className="arc-section" style={{ maxWidth: 1560, paddingTop: 10 }}>
+      <section className="arc-section" style={{ maxWidth: 1760, paddingTop: 10 }}>
         <ProfileEditor />
         <FollowingFeed />
       </section>

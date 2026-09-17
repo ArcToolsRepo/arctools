@@ -985,3 +985,6 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
 /* trader rails: rows are links, so they should answer the cursor */
 .arc-u-grid aside a:hover { background: rgba(255, 255, 255, 0.04); }
 .arc-u-grid aside a { transition: background 120ms ease; }
+
+/* leaderboard rows are links */
+.arc-lb-row:hover { background: rgba(255, 255, 255, 0.04); }
