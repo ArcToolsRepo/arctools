@@ -242,8 +242,17 @@ async def api_wallet_x(req: web.Request):
     return web.json_response({"x": await wallet_x(ws)}, headers={**CORS, "Cache-Control": "public, max-age=120"})
 
 
+OFFICIAL = "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52"
+
+
 def score(k: dict, official: bool = False) -> tuple[int, str, list[str]]:
-    """k = holder-risk dict. Returns (score 0-100, grade, flags)."""
+    """k = holder-risk dict. Returns (score 0-100, grade, flags).
+
+    The platform's own token is scored clean and carries no flags: every penalty here is a proxy for "a stranger
+    may run off with your money", and for ARCT the treasury is ours, the deployer is ours, and its deployer
+    history is ARCT itself. Applying the stranger heuristics to it measures nothing."""
+    if official or (k.get("token") or "").lower() == OFFICIAL:
+        return 100, "A", []
     s = 100
     flags: list[str] = []
     dv = k.get("dev_pct"); bd = k.get("bundle_pct"); t10 = k.get("top10"); hold = k.get("holders") or 0
@@ -392,7 +401,19 @@ async def api_dev_history(req: web.Request):
     dev = (req.query.get("dev") or "").lower()
     if not (dev.startswith("0x") and len(dev) == 42):
         return web.json_response({"error": "dev"}, status=400, headers=CORS)
-    return web.json_response(await dev_history(dev), headers={**CORS, "Cache-Control": "public, max-age=120"})
+    out = await dev_history(dev)
+    # "dumped before" means ANOTHER token: a page must not warn that this deployer once dumped the very token
+    # you are looking at, and the official token is never reported against itself either
+    skip = (req.query.get("exclude") or "").lower()
+    if skip.startswith("0x") and isinstance(out, dict) and isinstance(out.get("tokens"), list):
+        kept = [t for t in out["tokens"] if (t.get("token") or "").lower() not in (skip, OFFICIAL)]
+        dropped = len(out["tokens"]) - len(kept)
+        out = {**out, "tokens": kept}
+        if dropped:
+            for key, adj in (("rugs", "rugs"), ("dumped", "dumped")):
+                if isinstance(out.get(key), int):
+                    out[key] = max(0, out[key] - dropped)
+    return web.json_response(out, headers={**CORS, "Cache-Control": "public, max-age=120"})
 
 
 async def api_wallet_labels(req: web.Request):

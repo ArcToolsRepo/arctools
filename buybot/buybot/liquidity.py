@@ -329,8 +329,8 @@ async def _risk_compute(s: aiohttp.ClientSession, token: str) -> dict:
                "top1": round(shares[0] * 100, 2) if shares else None,
                "dev": dev, "dev_pct": dev_pct, "bundle_pct": bundle_pct, "bundlers": bundlers,
                "bundle_wallets": sorted(early)[:30], "dev_rugs": rugs, "dev_launches": launches, **act}
-        from .risk_score import score as _score
-        out["score"], out["grade"], out["flags"] = _score(out)
+        from .risk_score import OFFICIAL as _OFFICIAL, score as _score
+        out["score"], out["grade"], out["flags"] = _score({**out, "token": token}, official=token.lower() == _OFFICIAL)
         _risk_cache[token] = (time.time(), out)
         # persist: a buybot restart / redeploy must not empty the Score column for minutes
         try:
@@ -378,6 +378,10 @@ async def api_holder_risk(req: web.Request):
                 out[t] = _risk_cache[t][1]; pending.remove(t)
             if not pending:
                 break
+    # a row persisted before the exemption existed must not serve a stale grade for our own token
+    from .risk_score import OFFICIAL as _OFF
+    if isinstance(out, dict) and isinstance(out.get(_OFF), dict):
+        out[_OFF] = {**out[_OFF], "score": 100, "grade": "A", "flags": []}
     return web.json_response({"risk": out, "pending": pending},
                              headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-store"})
 

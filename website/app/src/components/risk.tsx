@@ -62,7 +62,7 @@ export function RiskCard({ token, official = false }: { token: string; official?
     const load = () => fetch(`${API}/api/holder-risk?tokens=${token.toLowerCase()}`).then((r) => r.json()).then((j) => {
       if (!alive) return;
       const k = j.risk?.[token.toLowerCase()] as Risk | undefined;
-      if (k) { setRisk(k); if (k.dev) void fetch(`${API}/api/dev-history?dev=${k.dev}`).then((r) => r.json()).then((h) => alive && setHist(h)).catch(() => null); }
+      if (k) { setRisk(k); if (k.dev) void fetch(`${API}/api/dev-history?dev=${k.dev}&exclude=${token}`).then((r) => r.json()).then((h) => alive && setHist(h)).catch(() => null); }
       else setErr(true);
     }).catch(() => alive && setErr(true));
     void load();

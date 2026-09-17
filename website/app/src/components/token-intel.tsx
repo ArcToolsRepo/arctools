@@ -175,7 +175,7 @@ export function DevTokens({ dev, current }: { dev: string | null | undefined; cu
   useEffect(() => {
     if (!dev) { setH(null); return; }
     let alive = true;
-    fetch(`${API}/api/dev-history?dev=${dev}`).then((r) => r.json()).then((j) => alive && setH(j.tokens ? j : null)).catch(() => alive && setH(null));
+    fetch(`${API}/api/dev-history?dev=${dev}&exclude=${current}`).then((r) => r.json()).then((j) => alive && setH(j.tokens ? j : null)).catch(() => alive && setH(null));
     return () => { alive = false; };
   }, [dev]);
   if (!dev) return <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: 16 }}>Deployer unknown for this token (no factory event indexed).</p>;
