@@ -10,6 +10,7 @@ import { RiskCard, StockCard, Tags, useWalletLabels } from "@/components/risk";
 import { TokenLogo } from "@/components/token-logo";
 import { TvChart, type Candle } from "@/components/tv-chart";
 import { TvAdvanced, advancedAvailable } from "../components/tv-advanced";
+import { TokenClaim } from "@/components/token-claim";
 import { DevTokens, KolBadge, KolMentions, MarkerLegend, MyPosition, TopTraders, useTokenEvents } from "@/components/token-intel";
 import { ARC_V4_ROUTER, SWAP_FEE_ROUTER, tokenPage, venueData, type PadToken, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
 import { creditRef } from "@/lib/arc-ref";
@@ -935,6 +936,7 @@ function TokenPage() {
         )}
         <SocialCheck deployer={info.deployer} tg={info.telegram} token={ca} web={info.website} x={info.twitter} />
         <SmartFollowers x={info.twitter} />
+        <TokenClaim hasLogo={!!info.logo} token={ca} />
         <KolMentions token={ca} />
 
         {/* ---------- tabs ---------- */}

@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 
 from buybot.config import CFG
-from buybot import bridge_keeper, contract_socials, faze, identity, padfeeds, balances, bridge_watch, insider_alerts, rules, watchlist, db, insider, social, watcher, trending, kols, rpc_monitor, logos
+from buybot import bridge_keeper, claims, contract_socials, faze, identity, padfeeds, balances, bridge_watch, insider_alerts, rules, watchlist, db, insider, social, watcher, trending, kols, rpc_monitor, logos
 from buybot.handlers import router
 
 logging.getLogger("web3.manager.RequestManager").setLevel(logging.CRITICAL)  # failover jest obslugiwany w chain.py; ERROR to szum
@@ -55,6 +55,7 @@ async def main():
     bridge_watch.bot = bot
     watchlist.bot = bot
     rules.bot = bot
+    await claims.init()          # token claim + suggestion tables
     await insider.start_api()
     tasks = [
         asyncio.create_task(watcher.watcher_loop(), name="watcher"),
