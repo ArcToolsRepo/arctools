@@ -122,12 +122,27 @@ def _score_author(author: dict, symbol: str, name: str) -> float:
     return sc
 
 
+
+def _norm_user(u: dict) -> dict:
+    """twitterapi.io returns two different user shapes: tweet authors use userName/followers/profilePicture,
+    while /user/search uses screen_name/followers_count/profile_image_url_https. Normalise to one."""
+    return {
+        "userName": u.get("userName") or u.get("screen_name") or u.get("username"),
+        "name": u.get("name"),
+        "description": u.get("description") or "",
+        "url": u.get("url") or "",
+        "followers": u.get("followers") or u.get("followers_count") or 0,
+        "statusesCount": u.get("statusesCount") or u.get("statuses_count") or 0,
+        "isBlueVerified": u.get("isBlueVerified") or u.get("verified") or False,
+        "profilePicture": u.get("profilePicture") or u.get("profile_image_url_https") or "",
+    }
+
+
 def _owns_name(handle: str, display: str, sym: str) -> bool:
     """Does this account look like it IS the project, rather than someone talking about it?
 
-    Substring matching is not enough — "BoAsoba" contains "boa". We require the ticker to be the start of the
-    handle, the whole handle, or a standalone word in the display name.
-    """
+    Substring matching is not enough — "BoAsoba" contains "boa". The ticker has to start the handle, be the whole
+    handle, or stand as its own word in the display name."""
     if not sym or len(sym) < 3:
         return False
     s_ = sym.lower()
@@ -138,45 +153,76 @@ def _owns_name(handle: str, display: str, sym: str) -> bool:
     return bool(re.search(rf"(^|[^a-z0-9]){re.escape(s_)}([^a-z0-9]|$)", d))
 
 
-async def from_x(token: str, symbol: str | None, name: str | None) -> dict:
-    """One accepted pattern only: an account that POSTED THIS CONTRACT and whose own handle or display name is the
-    ticker. That combination is the project announcing itself.
+async def _posted_ca(handle: str, token: str) -> bool:
+    """Has this specific account ever posted this contract address? That is the proof of ownership we want."""
+    j = await _tw("/twitter/tweet/advanced_search", query=f"from:{handle} {token}", queryType="Latest")
+    for t in ((j or {}).get("tweets") or []):
+        if token.lower() in (t.get("text") or "").lower():
+            return True
+    return False
 
-    Everything looser was tried and produced wrong logos — searching "$BOA" returns an unrelated account called
-    BoAsoba, and whoever merely posts a contract address is usually a caller channel, not the team. A wrong logo on
-    a token is worse than an empty circle, so unproven candidates are dropped and the deployer-signed claim on the
-    token page stays the reliable route.
+
+async def from_x(token: str, symbol: str | None, name: str | None) -> dict:
+    """Search the other way round, then demand proof.
+
+    Searching the contract address finds caller channels, not projects — ARCAT's address is posted by accounts with
+    tens of thousands of followers that have nothing to do with it. So we start from accounts that *carry the
+    ticker* (user search), and accept one only when that same account has itself posted the contract address, or
+    put it in its bio. Ticker in the name plus the contract in their own timeline is the project announcing itself;
+    anything less stays blank, because a wrong logo is worse than an empty circle.
     """
     sym = (symbol or "").strip().lstrip("$")
-    j = await _tw("/twitter/tweet/advanced_search", query=token, queryType="Latest")
-    tweets = (j or {}).get("tweets") or []
-    best, best_sc = None, 0.0
-    for t in tweets[:25]:
-        a = t.get("author") or {}
-        txt = t.get("text") or ""
-        if token.lower() not in txt.lower():
-            continue
-        if not _owns_name(a.get("userName") or "", a.get("name") or "", sym):
-            continue
-        sc = _score_author(a, sym, name or "") + 3
-        if sc > best_sc:
-            best, best_sc = a, sc
-    if not best or best_sc < 6:
+    if len(sym) < 3:
         return {}
-    out: dict = {"src": "x", "x_handle": best.get("userName")}
-    avatar = (best.get("profilePicture") or "").replace("_normal", "")
-    if avatar:
-        out["logo"] = avatar
-    desc = best.get("description") or ""
-    if m := TG_RE.search(desc):
-        out["tg_handle"] = m.group(1)
-    web = best.get("url") or ""
-    if not web:
-        if m := WEB_RE.search(desc):
-            web = m.group(0)
-    if web and "x.com/" not in web and "twitter.com/" not in web:
-        out["domain"] = web[:160]
-    return out
+
+    cands: list[dict] = []
+    for q in (f"{sym} arc", sym):
+        j = await _tw("/twitter/user/search", query=q)
+        users = (j or {}).get("users") or (j or {}).get("data") or []
+        for raw in users[:12]:
+            u = _norm_user(raw)
+            if _owns_name(u["userName"] or "", u["name"] or "", sym):
+                cands.append(u)
+        if cands:
+            break
+    # the tweet-search path can still contribute a candidate, as long as it is name-matched
+    if not cands:
+        j = await _tw("/twitter/tweet/advanced_search", query=token, queryType="Latest")
+        for t in ((j or {}).get("tweets") or [])[:25]:
+            a = _norm_user(t.get("author") or {})
+            if token.lower() in (t.get("text") or "").lower() and _owns_name(a["userName"] or "", a["name"] or "", sym):
+                cands.append(a)
+
+    seen: set[str] = set()
+    ranked = []
+    for c in cands:
+        h = (c.get("userName") or "").lower()
+        if not h or h in seen:
+            continue
+        seen.add(h)
+        ranked.append(c)
+    ranked.sort(key=lambda c: -_score_author(c, sym, name or ""))
+
+    for c in ranked[:4]:
+        handle = c.get("userName")
+        bio = (c.get("description") or "") + " " + (c.get("url") or "")
+        proof = token.lower() in bio.lower() or await _posted_ca(handle, token)
+        if not proof:
+            continue
+        out: dict = {"src": "x", "x_handle": handle}
+        avatar = (c.get("profilePicture") or "").replace("_normal", "")
+        if avatar:
+            out["logo"] = avatar
+        if m := TG_RE.search(c.get("description") or ""):
+            out["tg_handle"] = m.group(1)
+        web = c.get("url") or ""
+        if not web:
+            if m := WEB_RE.search(c.get("description") or ""):
+                web = m.group(0)
+        if web and "x.com/" not in web and "twitter.com/" not in web:
+            out["domain"] = web[:160]
+        return out
+    return {}
 
 
 # ---------------------------------------------------------------- one token
@@ -192,6 +238,16 @@ async def from_deployer(token: str) -> dict:
     if row and int(row["n"] or 0) >= 2:
         return {"src": "deployer", "x_handle": row["x_handle"]}
     return {}
+
+
+async def from_wallet_link(token: str) -> dict:
+    """We already map some wallets to X handles (risk_score's wallet_x, 248 links). If the wallet that deployed
+    this token is one of them, that handle is the project's own. Socials only — a dev's avatar is not the token's
+    artwork, so the logo is left to the contract or to X's project account."""
+    row = await db.fetchone(text("""
+        SELECT w.handle FROM social_tokens s JOIN wallet_x w ON lower(w.wallet) = lower(s.deployer)
+        WHERE s.token = :t LIMIT 1""").bindparams(t=token))
+    return {"src": "walletlink", "x_handle": row["handle"]} if row and row["handle"] else {}
 
 
 async def identify(s: aiohttp.ClientSession, row: dict) -> dict:
@@ -215,6 +271,9 @@ async def identify(s: aiohttp.ClientSession, row: dict) -> dict:
     if not found.get("logo") and not row.get("logo"):
         found.update({k: v for k, v in (await from_explorer(s, token)).items() if k not in found})
 
+    if not (row.get("x_handle") or found.get("x_handle")):
+        for k, v in (await from_wallet_link(token)).items():
+            found.setdefault(k, v)
     if not (row.get("x_handle") or found.get("x_handle")):
         for k, v in (await from_deployer(token)).items():
             found.setdefault(k, v)
