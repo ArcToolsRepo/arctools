@@ -981,3 +981,7 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
   .arc-u-grid > div { order: 0; }
   .arc-u-grid > aside:last-of-type { order: 0; }
 }
+
+/* trader rails: rows are links, so they should answer the cursor */
+.arc-u-grid aside a:hover { background: rgba(255, 255, 255, 0.04); }
+.arc-u-grid aside a { transition: background 120ms ease; }

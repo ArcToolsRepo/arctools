@@ -15,6 +15,8 @@ import {
   follow, getLeaderboard, getProfile, getProfileTrades,
 } from "@/lib/arc-profile";
 import { hotAddress } from "@/lib/arc-hotwallet";
+import { ArcNav } from "@/components/arc-nav";
+import "../arc-site.css";
 
 export const Route = createFileRoute("/u/$handle")({
   component: ProfilePage,
@@ -89,6 +91,11 @@ function ProfilePage() {
   const [boardSort, setBoardSort] = useState<"pnl" | "volume">("pnl");
   const [delay, setDelay] = useState(0);
   const [rank, setRank] = useState<number | null>(null);
+  // "loaded" is not the same as "empty": showing $0.00 or "nothing open yet" before the answer arrives is how a
+  // healthy profile looked broken for the first second
+  const [posLoaded, setPosLoaded] = useState(false);
+  const [topLoaded, setTopLoaded] = useState(false);
+  const [boardLoaded, setBoardLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -99,10 +106,12 @@ function ProfilePage() {
     try {
       const p = (await fetch(`/bot/api/profile/positions?handle=${handle}`).then((r) => r.json())) as typeof pos;
       setPos({ open: p.open || [], closed: p.closed || [] });
+      setPosLoaded(true);
     } catch { /* positions are a bonus */ }
     try {
       const tt = (await fetch(`/bot/api/profiles/top-trades?handle=${handle}`).then((r) => r.json())) as { rows?: TopTrade[] };
       setTop(tt.rows ?? []);
+      setTopLoaded(true);
     } catch { /* ditto */ }
   }, [handle, range]);
 
@@ -112,7 +121,7 @@ function ProfilePage() {
     let alive = true;
     void getLeaderboard(range, boardSort, true).then((j) => {
       if (!alive) return;
-      setBoard(j.rows || []);
+      setBoard(j.rows || []); setBoardLoaded(true);
       const i = (j.rows || []).findIndex((r) => r.handle === handle);
       setRank(i >= 0 ? i + 1 : null);
     });
@@ -154,22 +163,32 @@ function ProfilePage() {
   });
 
   return (
-    <main style={{
-      display: "grid", gap: 14, margin: "0 auto", maxWidth: 1560, padding: "16px 14px 96px",
-      gridTemplateColumns: "minmax(0, 1fr)",
-    }}>
-      <div style={{ alignItems: "center", display: "flex", gap: 12 }}>
-        <Link className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 999, color: "var(--arc-ink)", fontSize: 12, padding: "6px 14px", textDecoration: "none" }} to="/profile">
-          ← back to my profile
+    <main className="arc-site" style={{ minHeight: "100dvh" }}>
+      <ArcNav active="/leaderboard" />
+      {/* a bar that stays put while you scroll a long record: who you are looking at, and the way out */}
+      <div style={{
+        alignItems: "center", backdropFilter: "blur(10px)", background: "rgba(10,13,20,0.82)",
+        borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 12, padding: "10px 16px",
+        position: "sticky", top: 0, zIndex: 40,
+      }}>
+        <Link className="arc-mono" style={{ alignItems: "center", border: "1px solid var(--arc-line)", borderRadius: 999, color: "var(--arc-ink)", display: "inline-flex", fontSize: 12, gap: 6, padding: "6px 14px", textDecoration: "none" }} to="/leaderboard">
+          ← Traders
         </Link>
-        <Link className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, textDecoration: "none" }} to="/trade">Terminal</Link>
-        <Link className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, textDecoration: "none" }} to="/leaderboard">Traders</Link>
+        <Link className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 999, color: "var(--arc-muted)", fontSize: 12, padding: "6px 14px", textDecoration: "none" }} to="/profile">
+          my profile
+        </Link>
+        {p?.avatar ? <img alt="" src={p.avatar} style={{ borderRadius: "50%", height: 22, objectFit: "cover", width: 22 }} /> : null}
+        <strong style={{ fontSize: 14 }}>{p?.display || `@${handle}`}</strong>
+        <span className="arc-mono" style={{ color: profit >= 0 ? UP : DOWN, fontSize: 13, marginLeft: "auto" }}>
+          {profit >= 0 ? "+" : ""}{usd(profit)}
+        </span>
       </div>
+      <section className="arc-section" style={{ display: "grid", gap: 14, maxWidth: 1560, paddingBottom: 96, paddingTop: 16 }}>
 
       <div className="arc-u-grid" style={{ display: "grid", gap: 14 }}>
         {/* LEFT — the ranking */}
         <aside style={{ ...CARD, alignSelf: "start", overflow: "hidden" }}>
-          <div style={{ alignItems: "center", display: "flex", gap: 14, padding: "14px 16px 6px" }}>
+          <div style={{ alignItems: "center", display: "flex", gap: 14, padding: "18px 16px 8px" }}>
             <h2 style={{ fontSize: 17, margin: 0 }}>Top Profit</h2>
             <button className="arc-mono" onClick={() => setBoardSort(boardSort === "pnl" ? "volume" : "pnl")}
               style={{ background: "transparent", border: "none", color: boardSort === "volume" ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 15 }} type="button">
@@ -185,7 +204,14 @@ function ProfilePage() {
             ))}
           </div>
           <div style={{ maxHeight: 760, overflowY: "auto" }}>
-            {!board.length && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: "10px 16px" }}>no ranked traders yet</p>}
+            {!boardLoaded && [0, 1, 2, 3, 4].map((i) => (
+              <div key={i} style={{ alignItems: "center", display: "flex", gap: 10, padding: "8px 16px" }}>
+                <span style={{ background: "var(--arc-line)", borderRadius: "50%", height: 24, opacity: 0.5, width: 24 }} />
+                <span style={{ background: "var(--arc-line)", borderRadius: 4, height: 9, opacity: 0.5, width: 90 }} />
+                <span style={{ background: "var(--arc-line)", borderRadius: 4, height: 9, marginLeft: "auto", opacity: 0.5, width: 46 }} />
+              </div>
+            ))}
+            {boardLoaded && !board.length && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: "10px 16px" }}>no ranked traders yet</p>}
             {board.map((r, i) => (
               <Link key={r.handle} params={{ handle: r.handle }} to="/u/$handle"
                 style={{
@@ -209,11 +235,13 @@ function ProfilePage() {
         <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
           <section style={{ ...CARD, overflow: "hidden" }}>
             <div style={{
-              background: p?.banner ? `center/cover no-repeat url(${p.banner})` : "linear-gradient(160deg, #1b2a4a, #0d1524)",
+              background: p?.banner
+                ? `linear-gradient(180deg, rgba(0,0,0,0) 45%, rgba(8,10,16,0.75) 100%), center/cover no-repeat url(${p.banner})`
+                : "linear-gradient(135deg, #1d2b4d 0%, #14203a 45%, #0c1322 100%)",
               height: 176, position: "relative",
             }}>
               <div style={{ bottom: -44, left: 22, position: "absolute" }}>
-                <span style={{ border: "3px solid var(--arc-bg, #0a0d14)", borderRadius: "50%", display: "block" }}>
+                <span style={{ background: "linear-gradient(140deg, var(--arc-cobalt), rgba(34,197,128,0.7))", borderRadius: "50%", boxShadow: "0 8px 24px rgba(0,0,0,0.45)", display: "block", padding: 3 }}>
                   <Avatar label={handle} size={98} src={p?.avatar} />
                 </span>
               </div>
@@ -259,7 +287,9 @@ function ProfilePage() {
           <section style={{ ...CARD, padding: "20px 22px" }}>
             <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: 14, justifyContent: "space-between" }}>
               <div>
-                <div style={{ fontSize: 38, fontWeight: 800, letterSpacing: -0.8 }}>{usd(value, 2)}</div>
+                <div style={{ fontSize: 38, fontWeight: 800, letterSpacing: -0.8, opacity: posLoaded ? 1 : 0.45 }}>
+                  {posLoaded ? usd(value, 2) : "…"}
+                </div>
                 <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, marginTop: 8, textTransform: "uppercase" }}>profit</div>
                 <div style={{ color: profit >= 0 ? UP : DOWN, fontSize: 17, fontWeight: 700 }}>
                   {profit >= 0 ? "+" : ""}{usd(profit, 2)}{st?.roi == null ? "" : ` (${st.roi >= 0 ? "+" : ""}${st.roi.toFixed(2)}%)`}{" "}
@@ -301,7 +331,13 @@ function ProfilePage() {
                 <div className="arc-mono" style={{ borderBottom: "1px solid var(--arc-line)", color: "var(--arc-muted)", display: "flex", fontSize: 10, gap: 10, padding: "8px 16px", textTransform: "uppercase" }}>
                   <span style={{ flex: 1 }}>token</span><span>profit</span>
                 </div>
-                {!(tab === "open" ? pos.open : pos.closed).length && (
+                {!posLoaded && [0, 1].map((i) => (
+                  <div key={i} style={{ borderTop: "1px solid var(--arc-line)", display: "grid", gap: 8, padding: "13px 16px" }}>
+                    <span style={{ background: "var(--arc-line)", borderRadius: 4, height: 11, opacity: 0.5, width: 160 }} />
+                    <span style={{ background: "var(--arc-line)", borderRadius: 4, height: 9, opacity: 0.35, width: 260 }} />
+                  </div>
+                ))}
+                {posLoaded && !(tab === "open" ? pos.open : pos.closed).length && (
                   <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: 16 }}>nothing {tab} yet</p>
                 )}
                 {(tab === "open" ? pos.open : pos.closed).map((r) => (
@@ -355,9 +391,12 @@ function ProfilePage() {
 
         {/* RIGHT — best calls */}
         <aside style={{ ...CARD, alignSelf: "start", overflow: "hidden" }}>
-          <h2 style={{ fontSize: 17, margin: 0, padding: "14px 16px 8px" }}>Top trades</h2>
+          <h2 style={{ fontSize: 17, margin: 0, padding: "18px 16px 10px" }}>Top trades</h2>
           <div style={{ display: "grid", gap: 8, maxHeight: 820, overflowY: "auto", padding: "0 12px 12px" }}>
-            {!top.length && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: "6px 4px" }}>no trades to rank yet</p>}
+            {!topLoaded && [0, 1, 2].map((i) => (
+              <div key={i} style={{ border: "1px solid var(--arc-line)", borderRadius: 12, height: 74, opacity: 0.4 }} />
+            ))}
+            {topLoaded && !top.length && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: "6px 4px" }}>no trades to rank yet</p>}
             {top.map((r, i) => (
               <div key={r.token} style={{ border: "1px solid var(--arc-line)", borderRadius: 12, padding: 10, position: "relative" }}>
                 <span className="arc-mono" style={{
@@ -390,13 +429,28 @@ function ProfilePage() {
               </div>
             ))}
           </div>
+          <div style={{ borderTop: "1px solid var(--arc-line)", padding: "12px 16px 16px" }}>
+            <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, marginBottom: 8, textTransform: "uppercase" }}>
+              wallets · proved by signature
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {(st?.wallets ?? []).map((w) => (
+                <a className="arc-mono" href={`/insider/${w}`} key={w}
+                  style={{ border: "1px solid var(--arc-line)", borderRadius: 8, color: "var(--arc-cobalt)", fontSize: 11, padding: "5px 9px", textDecoration: "none" }}>
+                  {w.slice(0, 6)}…{w.slice(-4)}
+                </a>
+              ))}
+              {!(st?.wallets ?? []).length && <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>—</span>}
+            </div>
+          </div>
         </aside>
       </div>
 
-      <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>
+      <p className="arc-mono" style={{ borderTop: "1px solid var(--arc-line)", color: "var(--arc-muted)", fontSize: 11, paddingTop: 12 }}>
         Computed from Arc swaps by ArcTools. The owner sets the picture and the bio, never the record.{" "}
         <Link style={{ color: "var(--arc-cobalt)" }} to="/leaderboard">Full leaderboard →</Link>
       </p>
+      </section>
     </main>
   );
 }

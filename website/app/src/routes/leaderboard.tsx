@@ -9,6 +9,8 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { type LeaderRow, getLeaderboard } from "@/lib/arc-profile";
+import { ArcNav } from "@/components/arc-nav";
+import "../arc-site.css";
 
 export const Route = createFileRoute("/leaderboard")({ component: Leaderboard });
 
@@ -37,7 +39,9 @@ function Leaderboard() {
   });
 
   return (
-    <main className="arc-wrap" style={{ display: "grid", gap: 16, padding: "28px 20px 60px" }}>
+    <main className="arc-site" style={{ minHeight: "100dvh" }}>
+      <ArcNav active="/leaderboard" />
+      <section className="arc-section" style={{ display: "grid", gap: 16, maxWidth: 1180, paddingBottom: 80, paddingTop: 118 }}>
       <header>
         <h1 style={{ fontSize: 30, margin: 0 }}>Traders</h1>
         <p style={{ color: "var(--arc-muted)", margin: "6px 0 0" }}>
@@ -106,6 +110,7 @@ function Leaderboard() {
       <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>
         Columns: PnL · ROI on volume · win rate · volume. Seasons reset the window, never the record.
       </p>
+      </section>
     </main>
   );
 }
