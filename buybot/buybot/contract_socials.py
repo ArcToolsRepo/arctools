@@ -91,7 +91,7 @@ async def read_contract(s: aiohttp.ClientSession, token: str) -> dict:
     return found
 
 
-async def sweep_once(limit: int = 60) -> tuple[int, int]:
+async def sweep_once(limit: int = 250) -> tuple[int, int]:
     """One batch of tokens that trade on a plain pool and still have no socials."""
     rows = await db.fetchall(text("""
         SELECT s.token, s.x_handle, s.tg_handle, s.domain, s.logo
@@ -142,7 +142,7 @@ async def sweep_once(limit: int = 60) -> tuple[int, int]:
             else:
                 await db.execute(text("UPDATE social_tokens SET csocials_checked = :now WHERE token = :t")
                                  .bindparams(t=tok, now=int(time.time())))
-            await asyncio.sleep(0.15)                     # stay polite to the node
+            await asyncio.sleep(0.04)                     # the node is next door now; keep a small gap anyway
     return len(rows), hits
 
 
@@ -155,9 +155,13 @@ async def csocials_loop() -> None:
         log.warning("csocials init: %s", str(e)[:100])
     while True:
         try:
+            from .insider import _lag
+            if (_lag.get("blocks") or 0) > 25:            # live ingest always wins
+                await asyncio.sleep(20)
+                continue
             seen, hits = await sweep_once()
             if seen:
                 log.info("contract socials: %s checked, %s filled", seen, hits)
         except Exception as e:  # noqa
             log.warning("csocials loop: %s", str(e)[:120])
-        await asyncio.sleep(120)
+        await asyncio.sleep(20)

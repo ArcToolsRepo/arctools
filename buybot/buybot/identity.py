@@ -291,7 +291,7 @@ async def identify(s: aiohttp.ClientSession, row: dict) -> dict:
     return found
 
 
-async def sweep_once(limit: int = 40) -> tuple[int, int]:
+async def sweep_once(limit: int = 150) -> tuple[int, int]:
     """Highest-volume unidentified tokens first, so the Terminal's visible rows fill in before the long tail."""
     now = int(time.time())
     rows = await db.fetchall(text("""
@@ -345,7 +345,7 @@ async def sweep_once(limit: int = 40) -> tuple[int, int]:
             if got.get("logo"):
                 await db.execute(text("UPDATE social_tokens SET logo_checked = :far, logo_src = COALESCE(logo_src, :src) WHERE token = :t")
                                  .bindparams(t=row["token"], far=now + 10 * 365 * 86400, src=src or "ident"))
-            await asyncio.sleep(0.4)                     # X search is pay-per-call: stay deliberate
+            await asyncio.sleep(0.12)                    # X search is pay-per-call, but credits are topped up
     return len(rows), hits
 
 
@@ -355,7 +355,7 @@ async def identity_loop() -> None:
     while True:
         try:
             from .insider import _lag
-            if (_lag.get("blocks") or 0) > 40:
+            if (_lag.get("blocks") or 0) > 25:
                 await asyncio.sleep(30)
                 continue
             n, h = await sweep_once()
@@ -363,7 +363,7 @@ async def identity_loop() -> None:
                 log.info("identity: %s checked, %s identified (%s)", n, h, stats["by"])
         except Exception as e:  # noqa
             log.warning("identity loop: %s", str(e)[:120])
-        await asyncio.sleep(90)
+        await asyncio.sleep(30)
 
 
 async def api_identity_stats(request):

@@ -312,7 +312,7 @@ async def init():
             pass
 
 
-async def hunt_once(limit: int = 400) -> tuple[int, int]:
+async def hunt_once(limit: int = 900) -> tuple[int, int]:
     """Tokens that traded in the last 7 days, no logo, not checked in the last 24 h — most volume first.
 
     A token whose logo we DID find gets logo_checked pushed ten years out by identity.py, so it never comes back
@@ -328,7 +328,7 @@ async def hunt_once(limit: int = 400) -> tuple[int, int]:
     if not rows:
         return 0, 0
     found = 0
-    sem = asyncio.Semaphore(12)
+    sem = asyncio.Semaphore(24)
     async with aiohttp.ClientSession() as s:
         async def one(r):
             nonlocal found
@@ -361,14 +361,14 @@ async def hunt_loop():
     while True:
         try:
             from .insider import _lag
-            if (_lag.get("blocks") or 0) > 40:            # the live index has priority on DB + node
+            if (_lag.get("blocks") or 0) > 25:            # the live index has priority on DB + node
                 await asyncio.sleep(30); continue
             n, f = await hunt_once()
             if n:
                 log.info("logos: %s/%s found (%s)", f, n, stats["by"])
         except Exception as e:  # noqa
             log.warning("logos: %s", e)
-        await asyncio.sleep(25)
+        await asyncio.sleep(12)
 
 
 async def api_logo_stats(_req):
