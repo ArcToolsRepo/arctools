@@ -111,10 +111,15 @@ async def _handle_free(handle: str, x_handle: str | None) -> tuple[bool, str]:
 
 # ---------------------------------------------------------------- stats
 
-async def profile_stats(handle: str, rng: str = "all") -> dict:
-    """Everything the profile shows, summed over its wallets and computed from the chain."""
-    ws = await db.fetchall(text("SELECT wallet FROM profile_wallets WHERE handle = :h").bindparams(h=handle))
-    wallets = [w["wallet"] for w in ws]
+async def profile_stats(handle: str, rng: str = "all", wallets: list[str] | None = None) -> dict:
+    """Everything the profile shows, summed over its wallets and computed from the chain.
+
+    `wallets` can be passed directly, which is how the create form previews the real record of a wallet that
+    has not been attached to any profile yet — the person sees their own numbers before they commit to a
+    public handle, instead of filling a form blind."""
+    if wallets is None:
+        ws = await db.fetchall(text("SELECT wallet FROM profile_wallets WHERE handle = :h").bindparams(h=handle))
+        wallets = [w["wallet"] for w in ws]
     if not wallets:
         return {"wallets": [], "trades": 0}
     rng = rng if rng in ("7d", "30d", "all") else "all"
@@ -139,6 +144,40 @@ async def profile_stats(handle: str, rng: str = "all") -> dict:
             wr_num += (r["winrate"] or 0) * (r["closed"] or 0); wr_den += r["closed"] or 0
         if (r["best_pnl"] or 0) > best[1]:
             best = (r["best_symbol"] or "", r["best_pnl"] or 0.0)
+    # wallet_stats only covers wallets the indexer has already summarised. A wallet nobody has looked at yet
+    # would otherwise preview as all zeros next to positions worth thousands, so compute it from the swaps.
+    if not rows or (agg["trades"] == 0 and agg["volume"] == 0):
+        raw = await db.fetchall(text("""
+            SELECT s.token,
+                   SUM(CASE WHEN s.side = 'buy' THEN s.tokens ELSE 0 END) bought,
+                   SUM(CASE WHEN s.side = 'sell' THEN s.tokens ELSE 0 END) sold,
+                   SUM(CASE WHEN s.side = 'buy' THEN s.usdc ELSE 0 END) cost,
+                   SUM(CASE WHEN s.side = 'sell' THEN s.usdc ELSE 0 END) proceeds,
+                   COUNT(*) n,
+                   (SELECT price1m FROM swaps p WHERE p.token = s.token AND p.price1m > 0 AND p.usdc >= 0.5
+                    ORDER BY p.ts DESC LIMIT 1) price1m
+            FROM swaps s WHERE s.wallet = ANY(:w) GROUP BY s.token LIMIT 500""").bindparams(w=wallets))
+        realized = unreal = vol = 0.0
+        trades = closed = wins = 0
+        for r in raw:
+            bought, sold = r["bought"] or 0, r["sold"] or 0
+            cost, proceeds = r["cost"] or 0, r["proceeds"] or 0
+            trades += r["n"] or 0
+            vol += cost
+            avg = cost / bought if bought > 0 else 0
+            realized += proceeds - sold * avg
+            held = max(0.0, bought - sold)
+            if held > bought * 0.01:
+                unreal += held * ((r["price1m"] or 0) / 1e6) - held * avg
+            elif cost > 0:
+                closed += 1
+                if proceeds > cost:
+                    wins += 1
+        agg.update({"pnl_realized": round(realized, 2), "pnl_unrealized": round(unreal, 2),
+                    "pnl_total": round(realized + unreal, 2), "volume": round(vol, 2),
+                    "trades": trades, "closed": closed})
+        wr_num, wr_den = (wins, closed) if closed else (0, 0)
+
     agg["winrate"] = round(wr_num / wr_den, 4) if wr_den else None
     # ROI against money actually put to work, not against the largest single position
     agg["roi"] = round(100 * agg["pnl_total"] / agg["volume"], 2) if agg["volume"] > 0 else None
@@ -182,6 +221,10 @@ async def api_get(req: web.Request):
     if wallet and not handle:
         r = await db.fetchone(text("SELECT handle FROM profile_wallets WHERE wallet = :w").bindparams(w=wallet))
         if not r:
+            if req.query.get("preview"):
+                st = await profile_stats("", rng, wallets=[wallet])
+                return web.json_response({"profile": None, "stats": st, "badges": [], "followers": 0, "preview": True},
+                                         headers={**CORS, "Cache-Control": "no-store"})
             return web.json_response({"profile": None}, headers={**CORS, "Cache-Control": "public, max-age=30"})
         handle = r["handle"]
     if not HANDLE_RE.match(handle or ""):
@@ -467,8 +510,12 @@ async def api_image_get(req: web.Request):
 async def api_positions(req: web.Request):
     """Open and closed positions across every wallet on the profile, from the swap index."""
     handle = (req.query.get("handle") or "").lower()
-    ws = await db.fetchall(text("SELECT wallet FROM profile_wallets WHERE handle = :h").bindparams(h=handle))
-    wallets = [w["wallet"] for w in ws]
+    one = (req.query.get("wallet") or "").lower()
+    if one.startswith("0x") and len(one) == 42:
+        wallets = [one]
+    else:
+        ws = await db.fetchall(text("SELECT wallet FROM profile_wallets WHERE handle = :h").bindparams(h=handle))
+        wallets = [w["wallet"] for w in ws]
     if not wallets:
         return web.json_response({"open": [], "closed": []}, headers=CORS)
     rows = await db.fetchall(text("""
