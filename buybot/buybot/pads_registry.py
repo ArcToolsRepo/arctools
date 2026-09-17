@@ -137,6 +137,36 @@ async def scan_factory(s: aiohttp.ClientSession, pad: str, factory: str, full: b
     return found
 
 
+async def audit_registry() -> int:
+    """Drop registry rows that are not tokens at all.
+
+    Two kinds sneak in: a front-end feed that hands us a placeholder address (creo's API returned the classic
+    0x1234…7890), and contracts that answer symbol() with empty bytes and have no code behind them. Both show up
+    in the list as a nameless "?" row, which is exactly what the data-quality check is meant to catch — so they
+    have to leave the registry rather than have the check taught to ignore them."""
+    rows = await db.fetchall(text(
+        "SELECT token FROM pad_tokens WHERE symbol IS NULL OR symbol = '' OR symbol = '?' LIMIT 300"))
+    if not rows:
+        return 0
+    gone = []
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as s:
+        for r in rows:
+            tok = r["token"]
+            try:
+                code = await _rpc(s, "eth_getCode", [tok, "latest"])
+            except Exception:  # noqa
+                continue
+            if not isinstance(code, str) or len(code) <= 4:      # no contract there
+                gone.append(tok); continue
+            sym = await _symbol(s, tok)
+            if not sym:                                          # a contract that will not name itself
+                gone.append(tok)
+    if gone:
+        await db.execute(text("DELETE FROM pad_tokens WHERE token = ANY(:t)").bindparams(t=gone))
+        log.info("registry audit: dropped %s non-token rows", len(gone))
+    return len(gone)
+
+
 async def registry_loop():
     await asyncio.sleep(45)
     first = True
@@ -169,6 +199,10 @@ async def registry_loop():
                     log.info("pads: symbols filled %s/%s", fixed, len(rows))
         except Exception as e:  # noqa
             log.warning("pads symbol backfill: %s", e)
+        try:
+            await audit_registry()          # keep placeholder / unnamed entries out of the public list
+        except Exception as e:  # noqa
+            log.debug("registry audit: %s", e)
         await asyncio.sleep(180)
 
 
@@ -182,9 +216,13 @@ async def _api_pad_tokens_impl(req: web.Request):
     pad = req.query.get("pad")
     # left-join the presentation row so a registry token carries its artwork and name, not just a ticker
     rows = await db.fetchall(text(
-        "SELECT p.token, p.pad, p.factory, p.tx, p.ts, COALESCE(p.symbol, s.symbol) AS symbol, s.name, s.logo "
+        "SELECT p.token, p.pad, p.factory, p.tx, p.ts, COALESCE(p.symbol, s.symbol) AS symbol, "
+        "COALESCE(NULLIF(s.name, ''), NULLIF(p.symbol, ''), s.symbol) AS name, s.logo "
         "FROM pad_tokens p LEFT JOIN social_tokens s ON s.token = p.token"
-        + (" WHERE p.pad = :p" if pad else "") + " ORDER BY p.ts DESC").bindparams(**({"p": pad} if pad else {})))
+        # a row nobody can name is not shown: the symbol backfill writes '?' when the contract answers
+        # symbol() with nothing, and a "?" row is noise in the table and a false alarm in the quality check
+        " WHERE COALESCE(NULLIF(p.symbol, ''), NULLIF(s.symbol, ''), '?') <> '?'"
+        + (" AND p.pad = :p" if pad else "") + " ORDER BY p.ts DESC").bindparams(**({"p": pad} if pad else {})))
     out = {}
     for r in rows:
         cfg = FACTORIES.get(r["pad"], {})

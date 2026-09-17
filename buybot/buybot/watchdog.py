@@ -107,7 +107,9 @@ async def chk_tokens_api(s):
     # and got cached → purge the lists so the next compute (with the metadata memory) heals it
     toks = (j or {}).get("tokens") or []
     if toks:
-        garbled = sum(1 for t in toks if not t.get("name") or t.get("symbol") in ("?", ""))
+        # a row is corrupt when we cannot even name the asset; a missing display NAME while the symbol is
+        # present is normal for chain-wide coverage and is not a lost upstream chunk
+        garbled = sum(1 for t in toks if not (t.get("symbol") or "").strip() or t.get("symbol") == "?")
         logos = sum(1 for t in toks if t.get("logo"))
         cov = logos / len(toks)
         prev = _healed.get("_logo_cov", cov)
