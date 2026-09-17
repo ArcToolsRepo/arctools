@@ -9,7 +9,10 @@ import * as secp from "@noble/secp256k1";
 const STORE = "arctools_hot_v1";
 const CHAIN_ID = 5042n;
 const SEND_RPCS = ["/api/rpc"];   // Worker proxy (public Arc RPCs have no CORS for browsers)
-const READ_RPC = "https://rpc-production-ba7a.up.railway.app";
+// reads go through our own Worker proxy: the public relay bans browser IPs and answers with the bare word
+// "banned", which is not JSON — that is why the USDC balance tile sat on "…" forever
+const READ_RPC = "/api/rpc";
+const READ_FALLBACK = "https://rpc-production-ba7a.up.railway.app";
 const UNLOCK_MS = 30 * 60_000;
 
 type Stored = { addr: string; iv: string; salt: string; ct: string; createdAt: number; riv?: string; rsalt?: string; rct?: string };
@@ -154,10 +157,31 @@ export function forgetWallet() { localStorage.removeItem(STORE); lock(); _addr =
 
 // ---------------- RPC ----------------
 async function rpc(method: string, params: unknown[], url = READ_RPC): Promise<any> {
-  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params }) });
-  const j = await r.json();
-  if (j.error) throw new Error(j.error.message ?? "rpc error");
-  return j.result;
+  let lastErr = "";
+  for (const endpoint of url === READ_RPC ? [READ_RPC, READ_FALLBACK] : [url]) {
+    let body = "";
+    try {
+      const r = await fetch(endpoint, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params }),
+      });
+      body = await r.text();
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "network error";
+      continue;
+    }
+    let j: { result?: any; error?: { message?: string } };
+    try {
+      j = JSON.parse(body);
+    } catch {
+      // a blocked or rate-limited endpoint replies in plain text; never let that reach JSON.parse unguarded
+      lastErr = body.trim().slice(0, 40) || "empty response";
+      continue;
+    }
+    if (j.error) throw new Error(j.error.message ?? "rpc error");
+    return j.result;
+  }
+  throw new Error(`rpc unavailable (${lastErr})`);
 }
 export async function hotBalance(addr = hotAddress()): Promise<number> {
   if (!addr) return 0;

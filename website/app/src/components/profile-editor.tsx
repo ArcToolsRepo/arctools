@@ -23,7 +23,22 @@ const UP = "var(--arc-up)", DOWN = "var(--arc-down, #f0534f)";
 const usd = (n?: number | null, dp = 2) =>
   n == null ? "—" : `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: dp, minimumFractionDigits: dp })}`;
 
-type Position = { token: string; symbol: string | null; logo: string | null; value?: number; pnl: number; pnl_pct: number | null };
+type Position = {
+  token: string; symbol: string | null; logo: string | null; value?: number; held?: number; cost?: number;
+  proceeds?: number; n?: number; last_ts?: number; pnl: number; pnl_pct: number | null;
+};
+type TopTrade = {
+  token: string; symbol: string | null; logo: string | null; closed: boolean; last_ts: number;
+  spent: number; value: number; pnl: number; entry_mc: number | null; now_mc: number | null;
+};
+const cap = (n?: number | null) =>
+  n == null ? "—" : n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M`
+    : n >= 1e3 ? `$${(n / 1e3).toFixed(1)}K` : `$${n.toFixed(0)}`;
+const ago = (ts?: number) => {
+  if (!ts) return "—";
+  const d = Math.max(0, Date.now() / 1000 - ts);
+  return d < 3600 ? `${Math.round(d / 60)}m` : d < 172800 ? `${Math.round(d / 3600)}h` : `${Math.round(d / 86400)}d`;
+};
 
 export function ProfileEditor() {
   const [me, setMe] = useState<string | null>(null);
@@ -38,6 +53,9 @@ export function ProfileEditor() {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<Position[]>([]);
+  const [closedPos, setClosedPos] = useState<Position[]>([]);
+  const [topTrades, setTopTrades] = useState<TopTrade[]>([]);
+  const [tab, setTab] = useState<"open" | "closed">("open");
 
   // chosen pictures live here until there is a profile to attach them to
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -69,8 +87,12 @@ export function ProfileEditor() {
     }
     try {
       const q = v.profile ? `handle=${v.profile.handle}` : `wallet=${w.toLowerCase()}`;
-      const p = (await fetch(`/bot/api/profile/positions?${q}`).then((r) => r.json())) as { open?: Position[] };
-      setOpen(p.open ?? []);
+      const p = (await fetch(`/bot/api/profile/positions?${q}`).then((r) => r.json())) as { open?: Position[]; closed?: Position[] };
+      setOpen(p.open ?? []); setClosedPos(p.closed ?? []);
+      if (v.profile) {
+        const tt = (await fetch(`/bot/api/profiles/top-trades?handle=${v.profile.handle}`).then((r) => r.json())) as { rows?: TopTrade[] };
+        setTopTrades(tt.rows ?? []);
+      }
     } catch { /* positions are a bonus */ }
   }, []);
 
@@ -255,6 +277,75 @@ export function ProfileEditor() {
           ))}
         </div>
       </div>
+
+      {/* the same tabs and rows the public page shows, so nothing about the result is a surprise */}
+      <div style={{ display: "flex", gap: 8 }}>
+        {([["open", `Open${open.length ? ` ${open.length}` : ""}`], ["closed", `Closed${closedPos.length ? ` ${closedPos.length}` : ""}`]] as const).map(([k, label]) => (
+          <button className="arc-mono" key={k} onClick={() => setTab(k)} type="button"
+            style={{ background: tab === k ? "rgba(255,255,255,0.06)" : "transparent", border: `1px solid ${tab === k ? UP : "var(--arc-line)"}`, borderRadius: 999, color: tab === k ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "6px 15px" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ ...cardBox, overflow: "hidden" }}>
+        <div className="arc-mono" style={{ borderBottom: "1px solid var(--arc-line)", color: "var(--arc-muted)", display: "flex", fontSize: 10, gap: 10, padding: "8px 16px", textTransform: "uppercase" }}>
+          <span style={{ flex: 1 }}>token</span><span style={{ width: 80, textAlign: "right" }}>size</span>
+          <span style={{ width: 100, textAlign: "right" }}>position</span><span style={{ width: 110, textAlign: "right" }}>profit</span>
+        </div>
+        {!(tab === "open" ? open : closedPos).length && (
+          <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: 14 }}>nothing {tab} yet</p>
+        )}
+        {(tab === "open" ? open : closedPos).slice(0, 12).map((r) => (
+          <div key={r.token} style={{ borderTop: "1px solid var(--arc-line)", padding: "9px 16px" }}>
+            <div style={{ alignItems: "center", display: "flex", gap: 10 }}>
+              {r.logo
+                ? <img alt="" src={r.logo} style={{ borderRadius: "50%", height: 26, width: 26 }} />
+                : <span className="arc-mono" style={{ alignItems: "center", background: "var(--arc-line)", borderRadius: "50%", display: "flex", fontSize: 9, height: 26, justifyContent: "center", width: 26 }}>{(r.symbol || "?").slice(0, 2).toUpperCase()}</span>}
+              <div style={{ display: "grid", flex: 1, minWidth: 0 }}>
+                <a href={`/token/${r.token}`} style={{ color: "var(--arc-ink)", fontSize: 13, fontWeight: 600, textDecoration: "none" }}>{r.symbol || `${r.token.slice(0, 6)}…`}</a>
+                <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10 }}>
+                  {tab === "open" ? `Last trade ${ago(r.last_ts)}` : `Closed ${ago(r.last_ts)} ago`} · Spent {usd(r.cost)}
+                </span>
+              </div>
+              <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, textAlign: "right", width: 80 }}>
+                {tab === "open" ? (r.held ? `${(r.held / 1e6).toFixed(1)}M` : "—") : "closed"}
+              </span>
+              <span className="arc-mono" style={{ fontSize: 12, textAlign: "right", width: 100 }}>{usd(tab === "open" ? r.value : r.proceeds)}</span>
+              <span className="arc-mono" style={{ color: r.pnl >= 0 ? UP : DOWN, fontSize: 12, textAlign: "right", width: 110 }}>
+                {r.pnl >= 0 ? "+" : ""}{usd(r.pnl)}{r.pnl_pct == null ? "" : ` (${r.pnl_pct.toFixed(0)}%)`}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {!!topTrades.length && (
+        <div style={{ ...cardBox, overflow: "hidden" }}>
+          <h3 style={{ fontSize: 15, margin: 0, padding: "12px 16px 6px" }}>Top trades</h3>
+          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", padding: "0 12px 12px" }}>
+            {topTrades.slice(0, 6).map((r, i) => (
+              <div key={r.token} style={{ border: "1px solid var(--arc-line)", borderRadius: 12, padding: 10, position: "relative" }}>
+                <span className="arc-mono" style={{ background: i < 3 ? "#d9a441" : "var(--arc-line)", borderRadius: 6, color: i < 3 ? "#1a1204" : "var(--arc-muted)", fontSize: 10, left: 10, padding: "1px 6px", position: "absolute", top: -9 }}>#{i + 1}</span>
+                <div style={{ alignItems: "center", display: "flex", gap: 9, marginTop: 4 }}>
+                  {r.logo
+                    ? <img alt="" src={r.logo} style={{ borderRadius: "50%", height: 28, width: 28 }} />
+                    : <span className="arc-mono" style={{ alignItems: "center", background: "var(--arc-line)", borderRadius: "50%", display: "flex", fontSize: 9, height: 28, justifyContent: "center", width: 28 }}>{(r.symbol || "?").slice(0, 2).toUpperCase()}</span>}
+                  <div style={{ display: "grid", flex: 1, minWidth: 0 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{r.symbol || `${r.token.slice(0, 6)}…`}</span>
+                    <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10 }}>{r.closed ? `Closed ${ago(r.last_ts)} ago` : `Last trade ${ago(r.last_ts)}`}</span>
+                  </div>
+                  <span className="arc-mono" style={{ color: r.pnl >= 0 ? UP : DOWN, fontSize: 12, fontWeight: 700 }}>{r.pnl >= 0 ? "+" : ""}{usd(r.pnl)}</span>
+                </div>
+                <div className="arc-mono" style={{ borderTop: "1px solid var(--arc-line)", color: "var(--arc-muted)", display: "flex", flexWrap: "wrap", fontSize: 10, gap: "3px 8px", justifyContent: "space-between", marginTop: 8, paddingTop: 7 }}>
+                  <span>Spent {usd(r.spent)}</span>
+                  {r.entry_mc && r.now_mc ? <span>Avg entry {cap(r.entry_mc)} MC → {cap(r.now_mc)} MC</span> : <span>{r.closed ? "closed" : `holding ${usd(r.value)}`}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* privacy, then commit */}
       <p className="arc-mono" style={{ background: "rgba(240,83,79,0.08)", border: "1px solid rgba(240,83,79,0.3)", borderRadius: 8, color: "var(--arc-muted)", fontSize: 11, margin: 0, padding: "8px 10px" }}>
