@@ -495,7 +495,7 @@ function Trade() {
     return {
       token: k, symbol: tr?.symbol ?? t?.symbol ?? short(k), name: t?.name ?? tr?.symbol ?? "", logo: t?.logo ?? logos[k] ?? xAvatar(t?.twitter) ?? null, pad: t?.pad ?? "", og: !!t?.og, stock: !!t?.stock, quoteSymbol: t?.quoteSymbol ?? null, dexes: t?.dexes ?? [],
       age: createdTs, ca: k, mcap: finN(t?.stock ? (t?.mcapUsd ?? tr?.mcap) : (tr?.mcap ?? t?.mcapUsd)), chg: Number.isFinite(Number(tr?.chg)) ? tr?.chg ?? null : null, athMcap: finN(tr?.ath_mcap),
-      liq: finN(liq.get(k) ?? t?.liqUsd), vol: fin(tr?.vol ?? t?.volUsd), txs: fin(tr?.txs),
+      liq: finN(liq.get(k) ?? t?.liqUsd), vol: fin(tr?.vol ?? (tf === 0 || tab === "topvol" ? t?.volUsd : 0)), txs: fin(tr?.txs),
       curve: typeof t?.curve === "number" && t.curve >= 0 && t.curve <= 100 ? t.curve : null, buys: tr?.buys ?? 0, sells: tr?.sells ?? 0, traders: tr?.traders ?? 0,
       insiders: c?.insiders ?? 0, smart: smartMap.get(k) ?? null, twitter: t?.twitter ?? null, telegram: t?.telegram ?? null, website: t?.website ?? null,
       price: tr?.p1 ? tr.p1 / 1e6 : t?.priceUsd ?? null,
@@ -505,7 +505,7 @@ function Trade() {
   const matches = (r: Row) => !q || `${r.name} ${r.symbol} ${r.token}`.toLowerCase().includes(q.toLowerCase());
   const tableRows: Row[] = useMemo(() => {
     let base: Row[];
-    if (tab === "all") base = rows.map((t) => toRow(t.token));   // every token we know (all sources), or every token of the selected launchpad
+    if (tab === "all") base = (tf !== 0 && padF === "all" ? trend : rows).map((t) => toRow(t.token));   // with a window selected the server-ranked window list is the honest candidate set
     else if (tab === "new") base = rows.map((t) => toRow(t.token)).sort((a, b) => (b.age ?? 0) - (a.age ?? 0));
     else if (tab === "new15") {
       // freshest launches: under 15 minutes old — the snipe window
@@ -543,7 +543,7 @@ function Trade() {
       base = [toRow(OFFICIAL_TOKEN), ...base.filter((r) => r.token.toLowerCase() !== OFFICIAL_TOKEN)];
     }
     return base;
-  }, [tab, rows, trend, volAll, clusters, favs, q, sortKey, byToken, trendMap, clusterMap, liq, logos, padF, minMc, maxMc, minVol]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, rows, trend, volAll, clusters, favs, q, sortKey, byToken, trendMap, clusterMap, liq, logos, padF, minMc, maxMc, minVol, tf]); // eslint-disable-line react-hooks/exhaustive-deps
   const pages = Math.max(1, Math.ceil(tableRows.length / PAGE));
   // Top-10 ranking tint. Only meaningful while the table is actually ordered by volume and we are on page 1;
   // 1-3 get medal hues, 4-10 fade out in the house cobalt. Tints stay under 10% alpha so ticker, numbers and
