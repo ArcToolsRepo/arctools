@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { BOT_API } from "@/lib/bot-api";
+import { FollowingFeed, ProfileEditor } from "@/components/profile-editor";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
@@ -149,6 +150,8 @@ function Profile() {
 
   return (
     <main className="arc-site" style={{ minHeight: "100dvh" }}>
+      <ProfileEditor />
+      <FollowingFeed />
       <ArcNav active="/profile" />
       <section className="arc-section" style={{ maxWidth: 1360, paddingTop: 118 }}>
         <div className="arc-2col" style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr) 340px" }}>

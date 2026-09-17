@@ -53,6 +53,26 @@ export function StockCard({ stock, token }: { stock: { symbol: string; usd: numb
   );
 }
 
+function DeployerProfile({ dev }: { dev: string | null | undefined }) {
+  const [p, setP] = useState<{ handle: string; display: string | null; avatar: string | null; x_verified: number } | null>(null);
+  useEffect(() => {
+    if (!dev) return;
+    let alive = true;
+    void import("@/lib/arc-profile").then((m) => m.getProfileByWallet(dev)).then((v) => {
+      if (alive && v.profile) setP({ handle: v.profile.handle, display: v.profile.display, avatar: v.profile.avatar, x_verified: v.profile.x_verified });
+    });
+    return () => { alive = false; };
+  }, [dev]);
+  if (!p) return null;
+  // a deployer with a public profile carries their launch history on a name, not on a throwaway address
+  return (
+    <a className="arc-mono" href={`/u/${p.handle}`} style={{ alignItems: "center", color: "var(--arc-cobalt)", display: "inline-flex", fontSize: 11, gap: 5, marginLeft: 6, textDecoration: "none" }}>
+      {p.avatar ? <img alt="" src={p.avatar} style={{ borderRadius: "50%", height: 14, width: 14 }} /> : null}
+      @{p.handle}{p.x_verified ? " ✓" : ""}
+    </a>
+  );
+}
+
 export function RiskCard({ token, official = false }: { token: string; official?: boolean }) {
   const [risk, setRisk] = useState<Risk | null>(null);
   const [hist, setHist] = useState<DevHistory | null>(null);
@@ -112,6 +132,7 @@ export function RiskCard({ token, official = false }: { token: string; official?
             <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginTop: 4 }}>
               deployer <a href={`https://arc-scan.org/address/${risk.dev}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)" }} target="_blank">{risk.dev.slice(0, 8)}…{risk.dev.slice(-4)}</a>
               {" · "}<a href={`/wallets?add=${risk.dev}`} style={{ color: "var(--arc-cobalt)" }}>watch</a>
+              <DeployerProfile dev={risk.dev} />
             </div>
           )}
           {hist && hist.tokens.filter((t) => t.dumped).length > 0 && (

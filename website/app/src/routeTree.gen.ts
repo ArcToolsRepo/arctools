@@ -18,6 +18,7 @@ import { Route as RewardsRouteImport } from './routes/rewards'
 import { Route as ReferralsRouteImport } from './routes/referrals'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
+import { Route as LeaderboardRouteImport } from './routes/leaderboard'
 import { Route as LaunchpadRouteImport } from './routes/launchpad'
 import { Route as IntelRouteImport } from './routes/intel'
 import { Route as InsidersRouteImport } from './routes/insiders'
@@ -27,6 +28,7 @@ import { Route as BridgeRouteImport } from './routes/bridge'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as XHandleRouteImport } from './routes/x.$handle'
+import { Route as UHandleRouteImport } from './routes/u.$handle'
 import { Route as TokenCaRouteImport } from './routes/token.$ca'
 import { Route as PadCaRouteImport } from './routes/pad.$ca'
 import { Route as InsiderWalletRouteImport } from './routes/insider.$wallet'
@@ -92,6 +94,11 @@ const PortfolioRoute = PortfolioRouteImport.update({
   path: '/portfolio',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LeaderboardRoute = LeaderboardRouteImport.update({
+  id: '/leaderboard',
+  path: '/leaderboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LaunchpadRoute = LaunchpadRouteImport.update({
   id: '/launchpad',
   path: '/launchpad',
@@ -135,6 +142,11 @@ const IndexRoute = IndexRouteImport.update({
 const XHandleRoute = XHandleRouteImport.update({
   id: '/x/$handle',
   path: '/x/$handle',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UHandleRoute = UHandleRouteImport.update({
+  id: '/u/$handle',
+  path: '/u/$handle',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TokenCaRoute = TokenCaRouteImport.update({
@@ -242,6 +254,7 @@ export interface FileRoutesByFullPath {
   '/insiders': typeof InsidersRoute
   '/intel': typeof IntelRoute
   '/launchpad': typeof LaunchpadRoute
+  '/leaderboard': typeof LeaderboardRoute
   '/portfolio': typeof PortfolioRoute
   '/profile': typeof ProfileRoute
   '/referrals': typeof ReferralsRoute
@@ -268,6 +281,7 @@ export interface FileRoutesByFullPath {
   '/insider/$wallet': typeof InsiderWalletRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
+  '/u/$handle': typeof UHandleRoute
   '/x/$handle': typeof XHandleRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
   '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
@@ -281,6 +295,7 @@ export interface FileRoutesByTo {
   '/insiders': typeof InsidersRoute
   '/intel': typeof IntelRoute
   '/launchpad': typeof LaunchpadRoute
+  '/leaderboard': typeof LeaderboardRoute
   '/portfolio': typeof PortfolioRoute
   '/profile': typeof ProfileRoute
   '/referrals': typeof ReferralsRoute
@@ -307,6 +322,7 @@ export interface FileRoutesByTo {
   '/insider/$wallet': typeof InsiderWalletRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
+  '/u/$handle': typeof UHandleRoute
   '/x/$handle': typeof XHandleRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
   '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
@@ -321,6 +337,7 @@ export interface FileRoutesById {
   '/insiders': typeof InsidersRoute
   '/intel': typeof IntelRoute
   '/launchpad': typeof LaunchpadRoute
+  '/leaderboard': typeof LeaderboardRoute
   '/portfolio': typeof PortfolioRoute
   '/profile': typeof ProfileRoute
   '/referrals': typeof ReferralsRoute
@@ -347,6 +364,7 @@ export interface FileRoutesById {
   '/insider/$wallet': typeof InsiderWalletRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
+  '/u/$handle': typeof UHandleRoute
   '/x/$handle': typeof XHandleRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
   '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
@@ -362,6 +380,7 @@ export interface FileRouteTypes {
     | '/insiders'
     | '/intel'
     | '/launchpad'
+    | '/leaderboard'
     | '/portfolio'
     | '/profile'
     | '/referrals'
@@ -388,6 +407,7 @@ export interface FileRouteTypes {
     | '/insider/$wallet'
     | '/pad/$ca'
     | '/token/$ca'
+    | '/u/$handle'
     | '/x/$handle'
     | '/api/pad-logo/$ca'
     | '/api/logo/ipfs/$cid'
@@ -401,6 +421,7 @@ export interface FileRouteTypes {
     | '/insiders'
     | '/intel'
     | '/launchpad'
+    | '/leaderboard'
     | '/portfolio'
     | '/profile'
     | '/referrals'
@@ -427,6 +448,7 @@ export interface FileRouteTypes {
     | '/insider/$wallet'
     | '/pad/$ca'
     | '/token/$ca'
+    | '/u/$handle'
     | '/x/$handle'
     | '/api/pad-logo/$ca'
     | '/api/logo/ipfs/$cid'
@@ -440,6 +462,7 @@ export interface FileRouteTypes {
     | '/insiders'
     | '/intel'
     | '/launchpad'
+    | '/leaderboard'
     | '/portfolio'
     | '/profile'
     | '/referrals'
@@ -466,6 +489,7 @@ export interface FileRouteTypes {
     | '/insider/$wallet'
     | '/pad/$ca'
     | '/token/$ca'
+    | '/u/$handle'
     | '/x/$handle'
     | '/api/pad-logo/$ca'
     | '/api/logo/ipfs/$cid'
@@ -480,6 +504,7 @@ export interface RootRouteChildren {
   InsidersRoute: typeof InsidersRoute
   IntelRoute: typeof IntelRoute
   LaunchpadRoute: typeof LaunchpadRoute
+  LeaderboardRoute: typeof LeaderboardRoute
   PortfolioRoute: typeof PortfolioRoute
   ProfileRoute: typeof ProfileRoute
   ReferralsRoute: typeof ReferralsRoute
@@ -506,6 +531,7 @@ export interface RootRouteChildren {
   InsiderWalletRoute: typeof InsiderWalletRoute
   PadCaRoute: typeof PadCaRoute
   TokenCaRoute: typeof TokenCaRoute
+  UHandleRoute: typeof UHandleRoute
   XHandleRoute: typeof XHandleRoute
   ApiPadLogoCaRoute: typeof ApiPadLogoCaRoute
   ApiLogoIpfsCidRoute: typeof ApiLogoIpfsCidRoute
@@ -576,6 +602,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortfolioRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/leaderboard': {
+      id: '/leaderboard'
+      path: '/leaderboard'
+      fullPath: '/leaderboard'
+      preLoaderRoute: typeof LeaderboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/launchpad': {
       id: '/launchpad'
       path: '/launchpad'
@@ -637,6 +670,13 @@ declare module '@tanstack/react-router' {
       path: '/x/$handle'
       fullPath: '/x/$handle'
       preLoaderRoute: typeof XHandleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/u/$handle': {
+      id: '/u/$handle'
+      path: '/u/$handle'
+      fullPath: '/u/$handle'
+      preLoaderRoute: typeof UHandleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/token/$ca': {
@@ -784,6 +824,7 @@ const rootRouteChildren: RootRouteChildren = {
   InsidersRoute: InsidersRoute,
   IntelRoute: IntelRoute,
   LaunchpadRoute: LaunchpadRoute,
+  LeaderboardRoute: LeaderboardRoute,
   PortfolioRoute: PortfolioRoute,
   ProfileRoute: ProfileRoute,
   ReferralsRoute: ReferralsRoute,
@@ -810,6 +851,7 @@ const rootRouteChildren: RootRouteChildren = {
   InsiderWalletRoute: InsiderWalletRoute,
   PadCaRoute: PadCaRoute,
   TokenCaRoute: TokenCaRoute,
+  UHandleRoute: UHandleRoute,
   XHandleRoute: XHandleRoute,
   ApiPadLogoCaRoute: ApiPadLogoCaRoute,
   ApiLogoIpfsCidRoute: ApiLogoIpfsCidRoute,

@@ -15,6 +15,20 @@ import { DexBadge } from "@/components/dex-badge";
 type DsMeta = { ds_enhanced?: boolean; ds_url?: string | null; logo?: string | null; twitter?: string | null; telegram?: string | null; website?: string | null };
 
 /** One token-meta lookup per page, shared by the badge and the header avatar. */
+/** Trades made by wallets that belong to a public profile — drawn on the chart as avatars. */
+function useProfileMarks(ca: string | null | undefined) {
+  const [marks, setMarks] = useState<Array<{ ts: number; side: string; usdc: number; handle: string; avatar: string | null }>>([]);
+  useEffect(() => {
+    if (!ca) return;
+    let alive = true;
+    void import("@/lib/arc-profile").then((m) => m.getChartProfiles(ca)).then((j) => {
+      if (alive) setMarks((j.marks || []).map((x) => ({ ts: x.ts, side: x.side, usdc: x.usdc, handle: x.handle, avatar: x.avatar })));
+    });
+    return () => { alive = false; };
+  }, [ca]);
+  return marks;
+}
+
 function useDsMeta(ca: string | null | undefined) {
   const [meta, setMeta] = useState<DsMeta | null>(null);
   useEffect(() => {
@@ -272,6 +286,20 @@ function TokenPage() {
 
   const ca = info?.token ?? "";
   const dsMeta = useDsMeta(ca || params.ca);   // shared by the DEX badge and the header artwork
+  const profileMarks = useProfileMarks(ca);   // avatars of public traders who bought or sold this token
+  // merged into the chart's existing channels: a labelled marker on the bar, plus the trader's picture above it
+  const proMarkers = useMemo(() => profileMarks
+    .filter((m) => (m.usdc ?? 0) >= 50)
+    .slice(0, 40)
+    .map((m) => ({ t: m.ts, side: (m.side === "sell" ? "sell" : "buy") as "buy" | "sell", kind: "pro" as const,
+                   text: `@${m.handle}`, title: `@${m.handle} ${m.side} $${Math.round(m.usdc).toLocaleString()}` })),
+    [profileMarks]);
+  const proAvatars = useMemo(() => profileMarks
+    .filter((m) => m.avatar && (m.usdc ?? 0) >= 50)
+    .slice(0, 24)
+    .map((m) => ({ t: m.ts, url: m.avatar as string, title: `@${m.handle} ${m.side} $${Math.round(m.usdc).toLocaleString()}`,
+                   href: `/u/${m.handle}`, label: `@${m.handle}` })),
+    [profileMarks]);
   const { markers: chartMarkers, avatars: chartAvatars, data: eventsData } = useTokenEvents(ca || null, 14, candles[0]?.t ?? 0);
   const [markersVisible, setMarkersVisible] = useState<number | null>(null);
   const dec = info?.decimals ?? 18;
@@ -794,7 +822,7 @@ function TokenPage() {
             {adv ? (
               <TvAdvanced height={Math.max(460, Number((typeof localStorage !== "undefined" && localStorage.getItem("arc_chart_h")) || 520))} interval={tf} light={typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light"} mode={mode} onFail={() => setAdv(false)} token={params.ca.toLowerCase()} />
             ) : (
-              <><div id="chart" style={{ scrollMarginTop: 70 }} /><TvChart avatars={chartAvatars} candles={effCandles} interval={tf} markers={chartMarkers} mode={effMode} onVisible={setMarkersVisible} orderLines={orderLines} scale={scale} storageKey={params.ca} symbol={info ? `${info.symbol}/${pairSym}` : undefined} /></>
+              <><div id="chart" style={{ scrollMarginTop: 70 }} /><TvChart avatars={[...chartAvatars, ...proAvatars]} candles={effCandles} interval={tf} markers={[...chartMarkers, ...proMarkers]} mode={effMode} onVisible={setMarkersVisible} orderLines={orderLines} scale={scale} storageKey={params.ca} symbol={info ? `${info.symbol}/${pairSym}` : undefined} /></>
             )}
             <MarkerLegend data={eventsData} visible={markersVisible} />
           </div>
