@@ -7,7 +7,10 @@ import { bindings } from "@/lib/bindings.server";
  * browsers, so gas estimation and raw-tx broadcast go through this Worker route. Only two methods are allowed;
  * the raw transaction is already signed client-side — this route never sees a key.
  */
-const ALLOWED = new Set(["eth_estimateGas", "eth_sendRawTransaction", "eth_getTransactionCount", "eth_gasPrice"]);
+const ALLOWED = new Set(["eth_estimateGas", "eth_sendRawTransaction", "eth_getTransactionCount", "eth_gasPrice",
+  // reads the page needs (staking allowance, balances, receipts): they used to go from the browser straight
+  // to the relay, which bans browser IPs and replies with the bare word "banned"
+  "eth_call", "eth_getBalance", "eth_getTransactionReceipt", "eth_blockNumber", "eth_chainId", "eth_getCode"]);
 const RELAY = "https://rpc-production-ba7a.up.railway.app";   // our Railway relay: not rate-limited for Cloudflare IPs; sends need X-Send-Auth
 
 export const Route = createFileRoute("/api/rpc")({

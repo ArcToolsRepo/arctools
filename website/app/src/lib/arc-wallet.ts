@@ -252,14 +252,39 @@ export async function sendTx(tx: { to: string; data: string; value?: bigint; fro
 }
 
 async function relay(method: string, params: unknown[]): Promise<unknown> {
-  const r = await fetch(RPC_URL, {
-    body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params }),
-    headers: { "Content-Type": "application/json" },
-    method: "POST",
-  });
-  const j = (await r.json()) as { result?: unknown; error?: { message?: string } };
-  if (j.error) throw new Error(j.error.message ?? "rpc error");
-  return j.result;
+  // same-origin proxy first: it runs on Cloudflare IPs the relay trusts, so the browser is never the banned party.
+  // The public relay stays as a fallback for the rare case the Worker route itself is unavailable.
+  const endpoints = ["/api/rpc", RPC_URL];
+  let lastErr = "";
+  for (const url of endpoints) {
+    let body = "";
+    try {
+      const r = await fetch(url, {
+        body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      body = await r.text();
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "network error";
+      continue;
+    }
+    // a rate-limited or blocked endpoint answers in plain text ("banned", "too many requests", an HTML page);
+    // parsing that blind is what put `Unexpected token 'b'` in front of the user
+    let j: { result?: unknown; error?: { message?: string } };
+    try {
+      j = JSON.parse(body) as typeof j;
+    } catch {
+      const hint = body.trim().slice(0, 40).toLowerCase();
+      lastErr = hint.includes("banned") || hint.includes("too many") || hint.includes("rate")
+        ? "RPC is rate-limiting this connection"
+        : `RPC returned ${hint || "an empty response"}`;
+      continue;
+    }
+    if (j.error) throw new Error(j.error.message ?? "rpc error");
+    return j.result;
+  }
+  throw new Error(`${lastErr || "RPC unavailable"} — retry in a moment`);
 }
 
 /** Receipt polling: our own Arc node first (no per-IP limit — a browser doing 1 poll/s got 429s from the public relay
