@@ -10,11 +10,20 @@ On the other side of the screen we keep 1,016 KOL accounts in the database — 1
 
 The point of holding all that: when one of those accounts posts a contract address, the token gets flagged on the chart within minutes. A marker on the candle, while the move is still happening — not a screenshot in a group chat an hour later.
 
+More shipping today. We are not done with this one.
+
 arctools.fun
 
 ## Alt text
 
 ArcTools gArc card: 1,016 KOLs in the database, 105.3M followers, $244.7M 24h volume indexed, 2.57M swaps, 110,267 wallets trading.
+
+## Closing-line variants (pick one)
+
+- More shipping today. We are not done with this one.
+- Several more changes land before the day is out.
+- Today is not finished — more goes live in a few hours.
+- Keep the tab open, more lands today.
 
 ## Thread continuation (optional)
 
