@@ -951,3 +951,20 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
 .arc-nav__help { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 8px; border: 1px dashed var(--arc-line); background: transparent; color: var(--arc-muted); cursor: pointer; font-size: 12px; width: 100%; }
 .arc-nav__help:hover { color: var(--arc-ink); border-color: var(--arc-cobalt); }
 .arc-nav:not(.arc-nav--side) .arc-nav__help { width: auto; margin: 0 0 0 6px; padding: 6px 10px; }
+
+/* the feed's live lamp: a soft double blink plus a halo, so it reads as "this is breathing" rather than a static bullet */
+@keyframes arc-live-blink {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 128, 0.55), 0 0 6px 1px rgba(34, 197, 128, 0.7); opacity: 1; }
+  45%      { box-shadow: 0 0 0 5px rgba(34, 197, 128, 0); opacity: 0.35; }
+  70%      { box-shadow: 0 0 0 0 rgba(34, 197, 128, 0.4), 0 0 5px 1px rgba(34, 197, 128, 0.55); opacity: 0.9; }
+}
+.arc-live-dot {
+  animation: arc-live-blink 1.8s ease-in-out infinite;
+  background: var(--arc-up, #22c580);
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+  height: 8px;
+  width: 8px;
+}
+@media (prefers-reduced-motion: reduce) { .arc-live-dot { animation: none; } }

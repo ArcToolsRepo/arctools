@@ -68,7 +68,10 @@ export function ArcFeed({ onBuy, buyAmount }: { onBuy?: (token: string) => void;
   return (
     <section style={{ border: "1px solid var(--arc-line)", borderRadius: 10, marginTop: 12, overflow: "hidden" }}>
       <header style={{ alignItems: "center", borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 8, justifyContent: "space-between", padding: "10px 12px" }}>
-        <strong style={{ fontSize: 13 }}>Arc feed</strong>
+        <span style={{ alignItems: "center", display: "flex", gap: 7 }}>
+          <span aria-hidden className="arc-live-dot" />
+          <strong style={{ fontSize: 13 }}>Arc feed</strong>
+        </span>
         <div style={{ display: "flex", gap: 4 }}>
           {tabs.map(([k, label]) => (
             <button
