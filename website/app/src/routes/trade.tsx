@@ -11,6 +11,7 @@ import { hotAddress, hotCall, hotSend, hotWait } from "@/lib/arc-hotwallet";
 import { TokenLogo } from "@/components/token-logo";
 import { QuickBuy } from "@/components/quick-buy";
 import { TradeToasts } from "@/components/trade-toasts";
+import { ArcFeed } from "@/components/arc-feed";
 import { ChainSearch } from "@/components/chain-search";
 import { ScoreBadge, type Risk } from "@/components/risk";
 import { creditRef } from "@/lib/arc-ref";
@@ -915,6 +916,8 @@ function Trade() {
                 <li>Sell 25/50/100% from Holdings. Withdraw or export the key any time.</li>
               </ol>
             </div>
+            {/* Arc voices on X + crypto headlines; a post naming an Arc token buys it with the amount above */}
+            <ArcFeed buyAmount={buyAmt} onBuy={(token) => void buy(token, byToken.get(token.toLowerCase())?.symbol || "")} />
           </div>
         </div>
       </section>

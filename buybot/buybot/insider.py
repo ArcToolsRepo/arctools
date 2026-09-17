@@ -2528,6 +2528,8 @@ async def start_api():
     _ref.register(app)
     from . import kols as _kols
     _kols.register(app)
+    from . import xfeed as _xfeed          # Arc voices on X + crypto headlines, with a buy button per post
+    _xfeed.register(app)
     from . import token_intel as _ti
     _ti.register(app)
     from . import pads_registry as _pads
