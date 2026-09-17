@@ -106,6 +106,28 @@ async def _verify(s: aiohttp.ClientSession, url: str) -> bool:
         return False
 
 
+
+GATEWAYS = ("https://ipfs.io/ipfs/", "https://cloudflare-ipfs.com/ipfs/", "https://dweb.link/ipfs/")
+
+
+async def verify_any(s: aiohttp.ClientSession, url: str) -> str | None:
+    """First URL that really serves an image. For an ipfs:// asset try several gateways: one gateway being down
+    must not cost us a logo we have already located."""
+    if not url:
+        return None
+    cands = [url]
+    if "/ipfs/" in url:
+        cid = url.split("/ipfs/", 1)[1]
+        cands = [g + cid for g in GATEWAYS]
+    for u in cands:
+        try:
+            if await _verify(s, u):
+                return u
+        except Exception:  # noqa
+            continue
+    return None
+
+
 async def _from_json_meta(s: aiohttp.ClientSession, u: str) -> str | None:
     """u is a metadata URL / data: URI → image field."""
     try:
@@ -291,7 +313,10 @@ async def init():
 
 
 async def hunt_once(limit: int = 400) -> tuple[int, int]:
-    """Tokens that traded in the last 7 days, no logo, not checked in the last 6 h — most volume first."""
+    """Tokens that traded in the last 7 days, no logo, not checked in the last 24 h — most volume first.
+
+    A token whose logo we DID find gets logo_checked pushed ten years out by identity.py, so it never comes back
+    into this queue: one successful lookup per token, for good."""
     now = int(time.time())
     rows = await db.fetchall(text("""
         WITH act AS (SELECT token, SUM(usdc) v FROM swaps WHERE ts > :since GROUP BY token)
@@ -299,7 +324,7 @@ async def hunt_once(limit: int = 400) -> tuple[int, int]:
         FROM act a LEFT JOIN social_tokens st ON st.token = a.token
         WHERE (st.logo IS NULL OR st.logo = '') AND COALESCE(st.logo_checked, 0) < :recheck
           AND a.token <> '0x3600000000000000000000000000000000000000'
-        ORDER BY a.v DESC LIMIT :l""").bindparams(since=now - 7 * 86400, recheck=now - 6 * 3600, l=limit))
+        ORDER BY a.v DESC LIMIT :l""").bindparams(since=now - 7 * 86400, recheck=now - 24 * 3600, l=limit))
     if not rows:
         return 0, 0
     found = 0

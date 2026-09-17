@@ -2476,6 +2476,8 @@ async def start_api():
     app.router.add_get("/api/receipt", api_receipt)
     app.router.add_get("/api/faze", api_faze)
     app.router.add_get("/api/arct-burn", api_arct_burn)
+    from .identity import api_identity_stats
+    app.router.add_get("/api/identity-stats", api_identity_stats)
     from .bridge_keeper import api_bridge_pending
     app.router.add_get("/api/bridge-pending", api_bridge_pending)
     app.router.add_post("/api/ingest-blocks", api_ingest_blocks)
