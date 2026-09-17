@@ -361,7 +361,7 @@
   .arc-link-tick { white-space: nowrap; font-size: 12px; }
   .arc-wallet { white-space: nowrap; padding: 7px 10px; font-size: 11px; margin-left: auto; }
   /* ticker flows under the nav instead of floating */
-  .arc-ticker { position: static; height: 28px; }
+  .arc-ticker { position: static; height: 28px; width: 100vw; max-width: 100vw; overflow: hidden; }
   .arc-ticker__item { padding: 0 14px; font-size: 11px; }
   /* content: no fixed-nav clearance needed anymore */
   .arc-section {
@@ -676,7 +676,7 @@
   .arc-nav__social-label { display: none !important; }
   .arc-wallet { order: 2; }
   .arc-site, .arc-site:has(.arc-nav--side) { padding-left: 0 !important; }
-  .arc-ticker { position: static !important; left: 0 !important; width: 100% !important; height: 28px; }
+  .arc-ticker { position: static !important; left: 0 !important; width: 100vw !important; max-width: 100vw !important; height: 28px; overflow: hidden !important; }
   .arc-section { padding-top: 20px !important; padding-left: 14px !important; padding-right: 14px !important; }
   .arc-2col { grid-template-columns: 1fr !important; }
   .arc-aside { position: static !important; }
@@ -988,3 +988,43 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
 
 /* leaderboard rows are links */
 .arc-lb-row:hover { background: rgba(255, 255, 255, 0.04); }
+
+/* arc-mobile-guard: a phone must never scroll sideways. Tables keep their minimum width but scroll INSIDE a
+   wrapper; anything else that cannot fit wraps or shrinks. */
+@media (max-width: 900px) {
+  html, body { overflow-x: hidden; max-width: 100vw; }
+  .arc-site { overflow-x: hidden; }
+  .arc-section { max-width: 100vw !important; box-sizing: border-box; }
+  /* long hex strings, urls, handles */
+  .arc-mono { overflow-wrap: anywhere; }
+  .arc-site p, .arc-site span, .arc-site a { overflow-wrap: anywhere; }
+  /* grids declared inline with fixed rails collapse to one column */
+  .arc-u-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .arc-site [style*="gridTemplateColumns"] { grid-template-columns: minmax(0, 1fr) !important; }
+  /* a table wider than the screen scrolls inside its own box instead of pushing the page */
+  .arc-site table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .arc-site table > * { display: table; min-width: 640px; width: 100%; }
+  /* images never exceed their box */
+  .arc-site img { max-width: 100%; }
+  /* the QR and deposit block */
+  .arc-site canvas, .arc-site svg { max-width: 100%; height: auto; }
+}
+
+/* arc-mobile-prefs: the fixed preference pill is a desktop convenience; on a phone it covered the wallet form.
+   Keep language + theme, drop the burn counter into the ticker's job. */
+@media (max-width: 900px) {
+  .arc-prefs--fixed { top: auto !important; bottom: 12px !important; right: 12px !important; left: auto !important; gap: 4px !important; }
+  .arc-prefs--fixed .arc-burn, .arc-prefs--fixed a[href^="/token/0x1ea1e4f9"] { display: none !important; }
+  .arc-ticker__track { animation-duration: 28s; }
+}
+
+/* on a phone the action buttons leave the banner's bottom edge (the avatar lives there) and sit under it */
+@media (max-width: 640px) {
+  /* top-right of the banner: the avatar owns the bottom-left, so the two can never meet */
+  .arc-u-actions { bottom: auto !important; top: 12px; right: 12px; flex-wrap: wrap; justify-content: flex-end; max-width: calc(100% - 24px); }
+  .arc-u-actions > * { font-size: 11px !important; padding: 6px 10px !important; }
+}
+/* fixed corner widgets must not cover the last lines of a page */
+@media (max-width: 900px) {
+  .arc-section:last-of-type { padding-bottom: 96px !important; }
+}

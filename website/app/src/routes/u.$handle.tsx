@@ -245,7 +245,7 @@ function ProfilePage() {
                   <Avatar label={handle} size={98} src={p?.avatar} />
                 </span>
               </div>
-              <div style={{ bottom: 12, display: "flex", gap: 8, position: "absolute", right: 14 }}>
+              <div className="arc-u-actions" style={{ bottom: 12, display: "flex", gap: 8, position: "absolute", right: 14 }}>
                 <button className="arc-mono" onClick={() => { void navigator.clipboard?.writeText(`${location.origin}/u/${handle}`); setMsg("link copied"); }}
                   style={{ background: "rgba(0,0,0,0.5)", border: "1px solid var(--arc-line)", borderRadius: 10, color: "var(--arc-ink)", cursor: "pointer", fontSize: 12, padding: "7px 12px" }} type="button">
                   share

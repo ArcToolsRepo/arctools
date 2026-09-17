@@ -65,6 +65,9 @@ export function HelpDrawer() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    // no cursor to follow on a touch screen; parking the button at 75% of the viewport put it on top of the
+    // wallet form's primary button. It stays in its corner there.
+    if (!window.matchMedia("(pointer: fine)").matches) return;
     let want = window.innerHeight - 70;
     let have = want;
     let raf = 0;
