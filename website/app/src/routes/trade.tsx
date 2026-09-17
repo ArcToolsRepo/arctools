@@ -164,7 +164,20 @@ function Trade() {
   const [amount, setAmount] = useState(5);
   const [custom, setCustom] = useState("");
   const [slip, setSlip] = useState(5);
-  const [tab, setTab] = useState<"all" | "new" | "new15" | "trending" | "insiders" | "favs" | "holdings" | "alpha">("trending");
+  const [tab, setTab] = useState<"all" | "new" | "new15" | "trending" | "insiders" | "favs" | "holdings" | "alpha" | "topvol">("trending");
+  // Top vol ranks by volume since the token's first trade, so it answers "what are the biggest markets on Arc"
+  // instead of "what is hot in the last hour" — Trending already covers the second question. Its own fetch, its
+  // own cache: opening the tab never disturbs the live list.
+  const [volAll, setVolAll] = useState<Trend[]>([]);
+  useEffect(() => {
+    if (tab !== "topvol" || volAll.length) return;
+    let alive = true;
+    fetch(`${API}/api/trending?minutes=0&limit=400`)
+      .then((r) => r.json())
+      .then((j: { rows?: Trend[] }) => { if (alive && j.rows?.length) setVolAll(j.rows); })
+      .catch(() => null);
+    return () => { alive = false; };
+  }, [tab, volAll.length]);
   // ---- ⚡ Alpha: composite screener from our own data (smart money, clusters, buyer acceleration, KOLs, clean risk).
   // Top 3 visible to everyone; the full list unlocks for ARCT stakers (same gate as /insiders).
   type AlphaRow = { mode?: string; token: string; symbol: string | null; score: number; reasons: string[]; age_s: number | null; vol_6h: number; buyers_30m: number; sm_wallets: number; sm_usd: number; cluster: number; liq: number | null; price1m: number | null; mcap: number | null; first_ts: number | null; first_score: number | null; first_mcap: number | null; since_call: number | null };
@@ -494,6 +507,7 @@ function Trade() {
         .sort((a, b) => (b.age ?? 0) - (a.age ?? 0));
     }
     else if (tab === "trending") base = trend.map((t) => toRow(t.token));
+    else if (tab === "topvol") base = [...volAll].sort((a, b) => (b.vol ?? 0) - (a.vol ?? 0)).map((t) => toRow(t.token));
     else if (tab === "insiders") base = clusters.map((c) => toRow(c.token));
     else if (tab === "favs") base = [...favs].map((t) => toRow(t));
     else base = [];
@@ -512,7 +526,7 @@ function Trade() {
     if (lo) base = base.filter((r) => (r.mcap ?? 0) >= lo);
     if (hi) base = base.filter((r) => (r.mcap ?? 0) > 0 && (r.mcap ?? 0) <= hi);
     if (mv) base = base.filter((r) => r.vol >= mv);
-    if ((tab !== "new" && tab !== "new15" && (padF === "all" || tab === "all")) || sortKey !== "vol") {
+    if (tab !== "topvol" && ((tab !== "new" && tab !== "new15" && (padF === "all" || tab === "all")) || sortKey !== "vol")) {
       const key = ((tab === "new" || tab === "new15") || (padF !== "all" && tab !== "all")) && sortKey === "vol" ? "age" : sortKey;
       base.sort((a, b) => key === "age" ? fin(b.age) - fin(a.age) : key === "mcap" ? fin(b.mcap) - fin(a.mcap) : key === "txs" ? fin(b.txs) - fin(a.txs) : key === "chg" ? (Number.isFinite(Number(b.chg)) ? Number(b.chg) : -1e9) - (Number.isFinite(Number(a.chg)) ? Number(a.chg) : -1e9) : key === "smart" ? fin(b.smart?.net) - fin(a.smart?.net) : fin(b.vol) - fin(a.vol));
     }
@@ -521,7 +535,7 @@ function Trade() {
       base = [toRow(OFFICIAL_TOKEN), ...base.filter((r) => r.token.toLowerCase() !== OFFICIAL_TOKEN)];
     }
     return base;
-  }, [tab, rows, trend, clusters, favs, q, sortKey, byToken, trendMap, clusterMap, liq, logos, padF, minMc, maxMc, minVol]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, rows, trend, volAll, clusters, favs, q, sortKey, byToken, trendMap, clusterMap, liq, logos, padF, minMc, maxMc, minVol]); // eslint-disable-line react-hooks/exhaustive-deps
   const pages = Math.max(1, Math.ceil(tableRows.length / PAGE));
   // Top-10 ranking tint. Only meaningful while the table is actually ordered by volume and we are on page 1;
   // 1-3 get medal hues, 4-10 fade out in the house cobalt. Tints stay under 10% alpha so ticker, numbers and
@@ -659,7 +673,7 @@ function Trade() {
               {(padF !== "all" || minMc || maxMc || minVol || q) && <button className="arc-mono" onClick={() => { setPadF("all"); setMinMc(""); setMaxMc(""); setMinVol(""); setQ(""); }} style={{ background: "transparent", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, textDecoration: "underline" }} type="button">clear</button>}
             </div>
             <div className="arc-tabs" style={{ display: "flex", gap: 4, marginBottom: 10, padding: 4, border: "1px solid var(--arc-line)", borderRadius: 12, background: "rgba(255,255,255,0.025)", alignItems: "center" }}>
-              {([["all", padF === "all" ? tr_("All") : `${tr_("All")} · ${PADS.find(([k]) => k === padF)?.[1] ?? padF}`], ["new", tr_("New pair")], ["new15", tr_("New <15m")], ["trending", tr_("Trending")], ["alpha", "⚡ Alpha"], ["insiders", tr_("Insider picks")], ["favs", `${tr_("★ Watchlist")}${favs.size ? ` (${favs.size})` : ""}`], ["holdings", `${tr_("Holdings")}${positions.length ? ` (${positions.length})` : ""}`]] as const).map(([k, l]) => (
+              {([["all", padF === "all" ? tr_("All") : `${tr_("All")} · ${PADS.find(([k]) => k === padF)?.[1] ?? padF}`], ["new", tr_("New pair")], ["new15", tr_("New <15m")], ["trending", tr_("Trending")], ["topvol", tr_("Top volume")], ["alpha", "⚡ Alpha"], ["insiders", tr_("Insider picks")], ["favs", `${tr_("★ Watchlist")}${favs.size ? ` (${favs.size})` : ""}`], ["holdings", `${tr_("Holdings")}${positions.length ? ` (${positions.length})` : ""}`]] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setTab(k)} style={{ background: tab === k ? "linear-gradient(180deg, rgba(34,197,94,0.22), rgba(34,197,94,0.10))" : "transparent", border: "1px solid " + (tab === k ? "rgba(34,197,94,0.55)" : "transparent"), borderRadius: 9, boxShadow: tab === k ? "0 0 0 1px rgba(34,197,94,0.15) inset, 0 2px 10px rgba(34,197,94,0.15)" : "none", color: tab === k ? "var(--arc-ink)" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, fontWeight: tab === k ? 700 : 500, padding: "7px 14px", transition: "background .15s, color .15s" }} type="button">{l}</button>
               ))}
               <span style={{ marginLeft: "auto" }}>
