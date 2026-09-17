@@ -151,14 +151,17 @@ function Profile() {
   return (
     <main className="arc-site" style={{ minHeight: "100dvh" }}>
       <ArcNav active="/profile" />
-      <section className="arc-section" style={{ maxWidth: 1360, paddingTop: 118 }}>
+      {/* the editor gets the full page width: it is the profile being built, not a side form */}
+      <section className="arc-section" style={{ maxWidth: 1560, paddingBottom: 0, paddingTop: 118 }}>
+        <ProfileEditor />
+        <FollowingFeed />
+      </section>
+      <section className="arc-section" style={{ maxWidth: 1360, paddingTop: 8 }}>
         <div className="arc-2col" style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr) 340px" }}>
           <div>
             <h1 style={{ fontSize: 26, margin: "0 0 4px" }}>Profile</h1>
             <p style={{ color: "var(--arc-muted)", fontSize: 13, margin: "0 0 14px" }}>Your trading wallet: what is in it, what it is worth, what it did. {addr && <span className="arc-mono">{addr}</span>}</p>
 
-            <ProfileEditor />
-            <FollowingFeed />
 
             {!addr && (
               <div style={{ ...card, border: "1px solid var(--arc-cobalt)" }}>

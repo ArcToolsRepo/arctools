@@ -15,8 +15,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { hotAddress, isUnlocked } from "@/lib/arc-hotwallet";
 import {
-  type ProfileView, addWallet, finishXVerify, getProfileByWallet, removeWallet, saveProfile, startXVerify,
-  uploadProfileImage,
+  type LeaderRow, type ProfileView, addWallet, finishXVerify, getProfileByWallet, removeWallet, saveProfile, startXVerify,
+  getLeaderboard, uploadProfileImage,
 } from "@/lib/arc-profile";
 
 const UP = "var(--arc-up)", DOWN = "var(--arc-down, #f0534f)";
@@ -56,6 +56,7 @@ export function ProfileEditor() {
   const [closedPos, setClosedPos] = useState<Position[]>([]);
   const [topTrades, setTopTrades] = useState<TopTrade[]>([]);
   const [tab, setTab] = useState<"open" | "closed">("open");
+  const [board, setBoard] = useState<LeaderRow[]>([]);
 
   // chosen pictures live here until there is a profile to attach them to
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -94,6 +95,10 @@ export function ProfileEditor() {
         setTopTrades(tt.rows ?? []);
       }
     } catch { /* positions are a bonus */ }
+  }, []);
+
+  useEffect(() => {
+    void getLeaderboard("all", "pnl", true).then((j) => setBoard(j.rows || []));
   }, []);
 
   useEffect(() => {
@@ -193,7 +198,29 @@ export function ProfileEditor() {
   const cardBox: React.CSSProperties = { background: "var(--arc-paper, #0f1218)", border: "1px solid var(--arc-line)", borderRadius: 18 };
 
   return (
-    <section style={{ display: "grid", gap: 12, marginBottom: 18 }}>
+    <section className="arc-u-grid" style={{ display: "grid", gap: 14, marginBottom: 18 }}>
+      {/* left rail: who else is on the board, same list the public profile shows */}
+      <aside style={{ ...cardBox, alignSelf: "start", order: 2, overflow: "hidden" }}>
+        <h3 style={{ fontSize: 16, margin: 0, padding: "14px 16px 8px" }}>Top Profit</h3>
+        <div style={{ maxHeight: 420, overflowY: "auto" }}>
+          {!board.length && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: "6px 16px 14px" }}>no ranked traders yet</p>}
+          {board.map((r, i) => (
+            <a href={`/u/${r.handle}`} key={r.handle}
+              style={{ alignItems: "center", color: "var(--arc-ink)", display: "flex", gap: 10, padding: "7px 16px", textDecoration: "none" }}>
+              <span className="arc-mono" style={{ color: i < 3 ? "#d9a441" : "var(--arc-muted)", fontSize: 12, width: 18 }}>{i + 1}</span>
+              {r.avatar
+                ? <img alt="" src={r.avatar} style={{ borderRadius: "50%", height: 24, objectFit: "cover", width: 24 }} />
+                : <span className="arc-mono" style={{ alignItems: "center", background: "var(--arc-line)", borderRadius: "50%", display: "flex", fontSize: 9, height: 24, justifyContent: "center", width: 24 }}>{r.handle.slice(0, 2).toUpperCase()}</span>}
+              <span style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.display || r.handle}</span>
+              <span className="arc-mono" style={{ color: (r.pnl_total ?? 0) >= 0 ? UP : DOWN, fontSize: 12, marginLeft: "auto" }}>
+                {(r.pnl_total ?? 0) >= 0 ? "+" : ""}{usd(r.pnl_total, 0)}
+              </span>
+            </a>
+          ))}
+        </div>
+      </aside>
+
+      <div style={{ display: "grid", gap: 12, minWidth: 0, order: 1 }}>
       <div style={{ alignItems: "center", display: "flex", gap: 10 }}>
         <h2 style={{ fontSize: 15, margin: 0 }}>{exists ? "Your public profile" : "Create your public profile"}</h2>
         {exists && (
@@ -411,6 +438,36 @@ export function ProfileEditor() {
           ))}
         </div>
       )}
+      </div>
+
+      {/* right rail: the best calls, exactly as the public page ranks them */}
+      <aside style={{ ...cardBox, alignSelf: "start", order: 3, overflow: "hidden" }}>
+        <h3 style={{ fontSize: 16, margin: 0, padding: "14px 16px 8px" }}>Top trades</h3>
+        <div style={{ display: "grid", gap: 8, maxHeight: 520, overflowY: "auto", padding: "0 12px 12px" }}>
+          {!topTrades.length && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: "2px 4px" }}>no trades to rank yet</p>}
+          {topTrades.slice(0, 8).map((r, i) => (
+            <div key={r.token} style={{ border: "1px solid var(--arc-line)", borderRadius: 12, padding: 10, position: "relative" }}>
+              <span className="arc-mono" style={{ background: i < 3 ? "#d9a441" : "var(--arc-line)", borderRadius: 6, color: i < 3 ? "#1a1204" : "var(--arc-muted)", fontSize: 10, left: 10, padding: "1px 6px", position: "absolute", top: -9 }}>#{i + 1}</span>
+              <div style={{ alignItems: "center", display: "flex", gap: 9, marginTop: 4 }}>
+                {r.logo
+                  ? <img alt="" src={r.logo} style={{ borderRadius: "50%", height: 28, width: 28 }} />
+                  : <span className="arc-mono" style={{ alignItems: "center", background: "var(--arc-line)", borderRadius: "50%", display: "flex", fontSize: 9, height: 28, justifyContent: "center", width: 28 }}>{(r.symbol || "?").slice(0, 2).toUpperCase()}</span>}
+                <div style={{ display: "grid", flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{r.symbol || `${r.token.slice(0, 6)}…`}</span>
+                  <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10 }}>{r.closed ? `Closed ${ago(r.last_ts)} ago` : `Last trade ${ago(r.last_ts)}`}</span>
+                </div>
+                <span className="arc-mono" style={{ color: r.pnl >= 0 ? UP : DOWN, fontSize: 12, fontWeight: 700 }}>{r.pnl >= 0 ? "+" : ""}{usd(r.pnl)}</span>
+              </div>
+              <div className="arc-mono" style={{ borderTop: "1px solid var(--arc-line)", color: "var(--arc-muted)", display: "flex", flexWrap: "wrap", fontSize: 10, gap: "3px 8px", justifyContent: "space-between", marginTop: 8, paddingTop: 7 }}>
+                <span>Spent {usd(r.spent)}</span>
+                {r.entry_mc && r.now_mc ? <span>Avg entry {cap(r.entry_mc)} MC → {cap(r.now_mc)} MC</span> : <span>{r.closed ? "closed" : `holding ${usd(r.value)}`}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </aside>
+
+      
     </section>
   );
 }
