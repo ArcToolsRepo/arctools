@@ -526,7 +526,8 @@ async def api_token_meta(req: web.Request):
     toks = [t.strip().lower() for t in (req.query.get("tokens") or "").split(",") if t.strip().startswith("0x") and len(t.strip()) == 42][:300]
     if not toks:
         return web.json_response({"meta": {}})
-    rows = await db.fetchall(text("SELECT token, symbol, name, logo, x_handle, tg_handle, domain, launchpad FROM social_tokens WHERE token = ANY(:t)").bindparams(t=toks))
+    rows = await db.fetchall(text("SELECT token, symbol, name, logo, x_handle, tg_handle, domain, launchpad, ds_enhanced, ds_url FROM social_tokens WHERE token = ANY(:t)").bindparams(t=toks))
     meta = {r["token"]: {"symbol": r["symbol"], "name": r["name"], "logo": r["logo"], "twitter": r["x_handle"], "telegram": r["tg_handle"],
+                                 "ds_enhanced": bool(r["ds_enhanced"]), "ds_url": r["ds_url"],
                          "website": r["domain"], "launchpad": r["launchpad"]} for r in rows}
     return web.json_response({"meta": meta}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=120"})

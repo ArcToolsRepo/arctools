@@ -103,6 +103,8 @@ V4_POOL_MANAGER = "0x8366a39cc670b4001a1121b8f6a443a643e40951"
 V4_SWAP_TOPIC = "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f"
 # known V4 hook addresses -> launchpad names (extend as pads appear)
 V4_HOOKS = {
+    "0x173c4bdd5cf95a935d2b5636c573c5f4df062044": "peach.ag",          # peach launchpad hook (graduated curves)
+
     "0x47e7936ae9891e61c5123db720593c05de7120cc": "faze.fun",          # faze LaunchpadHook — graduated curve coins
 
     "0xa368005ad249fbebcd5baa7396c9e3b3e44e6044": "Arguspad",

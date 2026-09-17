@@ -10,6 +10,7 @@ import { RiskCard, StockCard, Tags, useWalletLabels } from "@/components/risk";
 import { TokenLogo } from "@/components/token-logo";
 import { TvChart, type Candle } from "@/components/tv-chart";
 import { TvAdvanced, advancedAvailable } from "../components/tv-advanced";
+import { DexBadge } from "@/components/dex-badge";
 import { DevTokens, KolBadge, KolMentions, MarkerLegend, MyPosition, TopTraders, useTokenEvents } from "@/components/token-intel";
 import { ARC_V4_ROUTER, SWAP_FEE_ROUTER, tokenPage, venueData, type PadToken, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
 import { creditRef } from "@/lib/arc-ref";
@@ -717,6 +718,7 @@ function TokenPage() {
               <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 8 }}>
                 <h1 className="arc-h3" style={{ margin: 0 }}>{info.name}</h1>
                 <KolBadge token={ca} />
+                <DexBadge hasSocials={!!(info.twitter || info.telegram || info.website)} token={ca} />
                 <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 13 }}>${info.symbol}</span>
                 <span className="arc-mono" title={info.stock ? "Custodial IOU of a stock (long.supply) — trades against USDC" : `Trading pair: ${info.symbol}/${pairSym}${pairSym !== "USDC" ? " — quoted in a wrapped stock, routed USDC → " + pairSym + " → " + info.symbol : ""}`} style={{ border: "1px solid var(--arc-line)", borderRadius: 4, color: pairSym !== "USDC" ? "#7cc4ff" : "var(--arc-muted)", fontSize: 10.5, padding: "2px 6px" }}>
                   {info.symbol}/{info.stock ? "USDC · IOU" : pairSym}

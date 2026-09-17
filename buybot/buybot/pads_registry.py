@@ -47,6 +47,7 @@ FACTORIES: dict[str, dict] = {
     "faze":     {"label": "faze.fun",    "url": "https://faze.fun",     "twitter": "fazedotfun",     "factories": ["0x6a62919ccbf0c19e0c4e084f986b582b4492dda4", "0x47e7936ae9891e61c5123db720593c05de7120cc", "0x7c8de42426a058b778dce8530537cd62ef0178c4"], "model": "own bonding curve, graduates into a locked Uniswap V4 pool (LP NFT burned)"},
     "sharc":    {"label": "sharc.fun",   "url": "https://sharc.fun",    "twitter": "sharcdotfun",    "factories": [], "model": "multichain curve launchpad, liquidity burned at graduation (tokens attributed from their public feed)"},
     "creo":     {"label": "creo.family", "url": "https://creo.family",  "twitter": "creodotfamily",  "factories": [], "model": "cinematic AI launchpad; launches through the o1 Launchpad factory on Arc, attributed from their own feed"},
+    "peach":    {"label": "peach.ag",    "url": "https://www.peach.ag/arc/launchpad", "twitter": "peachdotag", "factories": ["0x7e462d220b6b0a4c55b205b613133dc1c1cc9dc1", "0x7b9720bc177e8b6f96962e9b15891f27108cad40", "0x173c4bdd5cf95a935d2b5636c573c5f4df062044"], "model": "own bonding curve in USDC, graduates into a locked Uniswap V4 pool"},
     "ubi":      {"label": "UBI.fun",     "url": "https://ubi.fun",       "twitter": "ubidotfun",       "factories": ["0xee3e862efde6dcd6df5648af0e2731b9d1df4605", "0xe07f7ca66ec795592385018dd998f0b50b8a2834"], "model": "V4 pool, hooks 0x20eead6d… / 0xc780c0f4…"},
 }
 

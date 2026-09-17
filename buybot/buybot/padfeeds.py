@@ -68,6 +68,10 @@ def _meta_socials(meta: dict | None) -> tuple[str | None, str | None, str | None
 
 
 
+def _ipfs(u: str) -> str:
+    return "https://ipfs.io/ipfs/" + u[7:] if u.startswith("ipfs://") else u
+
+
 def _num(v, default: float = 0.0) -> float:
     """sharc returns every number as a string ("2097036047"); creo mixes both."""
     try:
@@ -116,6 +120,65 @@ async def sync_sharc(s: aiohttp.ClientSession) -> int:
     return n
 
 
+
+PEACH_API = "https://api.peach.ag/arc/v1/launchpad/tokens"
+PEACH_CURVE_SUPPLY = 8e26          # dex_supply_threshold: tokens that must sell off the curve to graduate
+
+
+async def sync_peach(s: aiohttp.ClientSession) -> int:
+    """peach.ag runs its own bonding curve on Arc with a proper public API: artwork on their CDN, live market cap,
+    volume and how much of the curve is left before graduation. Socials are not in their payload, so those keep
+    coming from the contract scanner."""
+    # their API caps limit at 100 and paginates with an opaque cursor; limit=200 is a hard 400
+    n, cursor, pages = 0, "", 0
+    while pages < 12:                                  # up to 1200 tokens per pass; their catalogue is ~700
+        try:
+            params = {"limit": "100"}
+            if cursor:
+                params["cursor"] = cursor
+            async with s.get(PEACH_API, params=params, timeout=aiohttp.ClientTimeout(total=25)) as r:
+                if r.status != 200:
+                    log.warning("peach api %s", r.status)
+                    break
+                j = await r.json(content_type=None)
+        except Exception as e:  # noqa
+            log.warning("peach api: %s", str(e)[:90])
+            break
+        items = j.get("items") or []
+        if not items:
+            break
+        for c in items:
+            tok = (c.get("token") or "").lower()
+            if not (tok.startswith("0x") and len(tok) == 42):
+                continue
+            logo = c.get("image_url") or (_ipfs(c.get("image_uri")) if c.get("image_uri") else None)
+            created = int(_num(c.get("created_at"), time.time()))
+            remaining = _num(c.get("tokens_remaining_to_graduation"))
+            threshold = _num(c.get("dex_supply_threshold")) or PEACH_CURVE_SUPPLY
+            progress = max(0.0, min(100.0, (1 - remaining / threshold) * 100)) if threshold else 0.0
+            graduated = str(c.get("status") or "").upper() not in ("BONDING", "")
+            _live[tok] = {
+                "symbol": c.get("symbol"), "name": c.get("name"),
+                "price1m": _num(c.get("price_usd")) * 1e6 or None,
+                "mcap": _num(c.get("market_cap_usd")) or None,
+                "vol24": _num(c.get("buy_volume_24h_usd")) + _num(c.get("sell_volume_24h_usd")) or None,
+                "txs24": int(_num(c.get("buy_trades_24h")) + _num(c.get("sell_trades_24h"))),
+                "holders": int(_num(c.get("holders_count"))),
+                "liq": _num(c.get("liquidity_usd")) or _num(c.get("raised_amount_usd")) or None,
+                "progress": round(progress, 2),
+                "state": "graduated" if graduated else "curve-trading",
+                "url": f"https://www.peach.ag/arc/launchpad/{c.get('token')}",
+            }
+            await _upsert(tok, "peach", c.get("symbol"), c.get("name"), logo, None, None, None,
+                          c.get("creator"), created)
+            n += 1
+        cursor = j.get("next_cursor") or ""
+        pages += 1
+        if not cursor or len(items) < 100:
+            break
+    return n
+
+
 async def sync_creo(s: aiohttp.ClientSession) -> int:
     async with s.get("https://www.creo.family/api/launches", timeout=aiohttp.ClientTimeout(total=25)) as r:
         if r.status != 200:
@@ -140,7 +203,7 @@ async def padfeeds_loop() -> None:
     await asyncio.sleep(35)
     while True:
         async with aiohttp.ClientSession(headers=UA) as s:
-            for name, fn in (("sharc", sync_sharc), ("creo", sync_creo)):
+            for name, fn in (("sharc", sync_sharc), ("creo", sync_creo), ("peach", sync_peach)):
                 try:
                     got = await fn(s)
                     if got:
