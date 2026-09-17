@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { BOT_API } from "@/lib/bot-api";
 import { FollowingFeed, ProfileEditor } from "@/components/profile-editor";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
 import { WalletPanel } from "@/components/wallet-panel";
@@ -48,7 +48,9 @@ function Profile() {
   const [sendTok, setSendTok] = useState<{ token: string; to: string; pct: number } | null>(null);
   const [tradeFilter, setTradeFilter] = useState("");
 
+  const seq = useRef(0);
   const load = useCallback(async () => {
+    const my = ++seq.current;
     const a = isUnlocked() ? hotAddress() : null;
     setAddr(a);
     if (!a) { setPos([]); setHist(null); setBal(null); return; }
@@ -64,7 +66,9 @@ function Profile() {
       fetch(`${API}/api/wallet-trades?wallet=${w}&limit=300`).then((r) => r.json()).catch(() => null),
       getPortfolio({ data: { wallet: a } }).catch(() => null),   // arc-scan indexer: EVERY erc20 the wallet holds
     ]);
-    setBal(b);
+    if (my !== seq.current) return;
+    // a refresh that failed keeps the last good number instead of blanking the tile
+    if (b != null) setBal(b);
     // merge: on-chain balances are the source of truth for amount/value; the swap index adds avg entry + realized PnL
     const idx = new Map<string, Position>(((p?.positions ?? []) as Position[]).map((x) => [x.token.toLowerCase(), x]));
     const merged: Position[] = [];
@@ -89,11 +93,18 @@ function Profile() {
     // index positions the indexer did not list (indexer lag right after a buy): keep them until the next refresh
     for (const [k, ix] of idx) if (!seen.has(k) && ix.net > 0 && (ix.value ?? 0) >= 0.01 && holdings.length === 0) merged.push(ix);
     merged.sort((x, y) => (y.value ?? 0) - (x.value ?? 0));
-    setPos(merged.filter((x) => (x.value ?? 0) >= 0.005 || x.external));
-    setHist(h);
+    const gotSomething = holdings.length > 0 || ((p?.positions ?? []) as Position[]).length > 0;
+    if (gotSomething) setPos(merged.filter((x) => (x.value ?? 0) >= 0.005 || x.external));
+    if (h) setHist(h);
     // every token the wallet ever traded — closed ones carry realized PnL even with nothing left to show as a holding
-    setClosed(((p?.positions ?? []) as Position[]).filter((x) => x.net <= 0.000001 && Math.abs(x.realized ?? 0) >= 0.01)
-      .sort((x, y) => Math.abs(y.realized ?? 0) - Math.abs(x.realized ?? 0)));
+    if (p?.positions) {
+      setClosed(((p?.positions ?? []) as Position[]).filter((x) => x.net <= 0.000001 && Math.abs(x.realized ?? 0) >= 0.01)
+        .sort((x, y) => Math.abs(y.realized ?? 0) - Math.abs(x.realized ?? 0)));
+    }
+    // one quick retry when a source failed, so the first paint is not stuck on "…" for 20 seconds
+    if ((b == null || !h || !gotSomething) && my === seq.current) {
+      setTimeout(() => { if (my === seq.current) void load(); }, 2500);
+    }
   }, []);
   useEffect(() => { void load(); const id = setInterval(load, 20_000); const off = onHotChange(() => void load()); return () => { clearInterval(id); off(); }; }, [load]);
 

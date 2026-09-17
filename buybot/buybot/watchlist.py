@@ -383,7 +383,21 @@ async def api_wallet_trades(request: web.Request) -> web.Response:
     st = await db.fetchall(text("SELECT range, pnl_realized, pnl_unrealized, pnl_total, winrate, closed, volume FROM wallet_stats WHERE wallet = :w").bindparams(w=w))
     out = [dict(r) for r in rows]
     await _fill_symbols(out)
-    return web.json_response({"wallet": w, "trades": out, "summary": dict(agg) if agg else {}, "stats": [dict(x) for x in st]}, headers=API_CORS)
+    stats = [dict(x) for x in st]
+    if not stats:
+        # wallet_stats only holds wallets the summariser has already walked. A fresh wallet would report
+        # "PnL $0.00 · 0 trades" next to positions worth thousands, so compute the same numbers from the swaps.
+        try:
+            from .profiles import profile_stats
+            live = await profile_stats("", "all", wallets=[w])
+            if live.get("trades"):
+                stats = [{"range": "all", "pnl_realized": live.get("pnl_realized"),
+                          "pnl_unrealized": live.get("pnl_unrealized"), "pnl_total": live.get("pnl_total"),
+                          "winrate": live.get("winrate"), "closed": live.get("closed"),
+                          "volume": live.get("volume"), "live": 1}]
+        except Exception as e:  # noqa
+            log.debug("wallet-trades live stats: %s", e)
+    return web.json_response({"wallet": w, "trades": out, "summary": dict(agg) if agg else {}, "stats": stats}, headers=API_CORS)
 
 
 async def api_stats(request: web.Request) -> web.Response:

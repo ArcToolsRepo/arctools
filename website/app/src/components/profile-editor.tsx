@@ -83,16 +83,16 @@ export function ProfileEditor() {
       // no profile yet: preview the wallet's real record so the card is never an empty mock-up
       try {
         const prev = (await fetch(`/bot/api/profile?wallet=${w.toLowerCase()}&preview=1`).then((r) => r.json())) as ProfileView;
-        setView(prev);
+        if (prev.stats || prev.profile) setView(prev);
       } catch { /* preview is a nicety */ }
     }
     try {
       const q = v.profile ? `handle=${v.profile.handle}` : `wallet=${w.toLowerCase()}`;
       const p = (await fetch(`/bot/api/profile/positions?${q}`).then((r) => r.json())) as { open?: Position[]; closed?: Position[] };
-      setOpen(p.open ?? []); setClosedPos(p.closed ?? []);
+      if (p.open || p.closed) { setOpen(p.open ?? []); setClosedPos(p.closed ?? []); }
       if (v.profile) {
         const tt = (await fetch(`/bot/api/profiles/top-trades?handle=${v.profile.handle}`).then((r) => r.json())) as { rows?: TopTrade[] };
-        setTopTrades(tt.rows ?? []);
+        if (tt.rows) setTopTrades(tt.rows);
       }
     } catch { /* positions are a bonus */ }
   }, []);
