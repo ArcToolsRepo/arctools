@@ -198,9 +198,22 @@ export function ProfileEditor() {
   const cardBox: React.CSSProperties = { background: "var(--arc-paper, #0f1218)", border: "1px solid var(--arc-line)", borderRadius: 18 };
 
   return (
-    <section className="arc-u-grid" style={{ display: "grid", gap: 14, marginBottom: 18 }}>
+    <section style={{ display: "grid", gap: 12, marginBottom: 18 }}>
+      <div style={{ alignItems: "baseline", display: "flex", flexWrap: "wrap", gap: 10 }}>
+        <h2 style={{ fontSize: 17, margin: 0 }}>{exists ? "Your public profile" : "Create your public profile"}</h2>
+        {exists && (
+          <Link className="arc-mono" params={{ handle }} style={{ color: "var(--arc-cobalt)", fontSize: 12 }} to="/u/$handle">
+            /u/{handle} →
+          </Link>
+        )}
+        <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: "auto" }}>
+          this is exactly what strangers will see
+        </span>
+      </div>
+
+      <div className="arc-u-grid" style={{ display: "grid", gap: 14 }}>
       {/* left rail: who else is on the board, same list the public profile shows */}
-      <aside style={{ ...cardBox, alignSelf: "start", order: 2, overflow: "hidden" }}>
+      <aside style={{ ...cardBox, alignSelf: "start", overflow: "hidden" }}>
         <h3 style={{ fontSize: 16, margin: 0, padding: "14px 16px 8px" }}>Top Profit</h3>
         <div style={{ maxHeight: 420, overflowY: "auto" }}>
           {!board.length && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: "6px 16px 14px" }}>no ranked traders yet</p>}
@@ -220,18 +233,7 @@ export function ProfileEditor() {
         </div>
       </aside>
 
-      <div style={{ display: "grid", gap: 12, minWidth: 0, order: 1 }}>
-      <div style={{ alignItems: "center", display: "flex", gap: 10 }}>
-        <h2 style={{ fontSize: 15, margin: 0 }}>{exists ? "Your public profile" : "Create your public profile"}</h2>
-        {exists && (
-          <Link className="arc-mono" params={{ handle }} style={{ color: "var(--arc-cobalt)", fontSize: 11 }} to="/u/$handle">
-            /u/{handle} →
-          </Link>
-        )}
-        <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: "auto" }}>
-          this is exactly what strangers will see
-        </span>
-      </div>
+      <div style={{ display: "grid", gap: 12, minWidth: 0 }}>
 
       {/* the card being built */}
       <div style={{ ...cardBox, overflow: "hidden" }}>
@@ -441,7 +443,7 @@ export function ProfileEditor() {
       </div>
 
       {/* right rail: the best calls, exactly as the public page ranks them */}
-      <aside style={{ ...cardBox, alignSelf: "start", order: 3, overflow: "hidden" }}>
+      <aside style={{ ...cardBox, alignSelf: "start", overflow: "hidden" }}>
         <h3 style={{ fontSize: 16, margin: 0, padding: "14px 16px 8px" }}>Top trades</h3>
         <div style={{ display: "grid", gap: 8, maxHeight: 520, overflowY: "auto", padding: "0 12px 12px" }}>
           {!topTrades.length && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: "2px 4px" }}>no trades to rank yet</p>}
@@ -468,6 +470,7 @@ export function ProfileEditor() {
       </aside>
 
       
+      </div>
     </section>
   );
 }
