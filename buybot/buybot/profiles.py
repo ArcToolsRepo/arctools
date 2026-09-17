@@ -399,6 +399,10 @@ async def api_leaderboard(req: web.Request):
     limit = max(1, min(100, int(req.query.get("limit") or 50)))
     order = {"pnl": "pnl_total DESC", "roi": "roi DESC", "winrate": "winrate DESC, closed DESC",
              "volume": "volume DESC"}.get(sort, "pnl_total DESC")
+    # the official board demands a track record; the side rail on a profile page is navigation, so it may list
+    # everyone (still never a wallet flagged as a bot)
+    relaxed = req.query.get("relaxed") == "1"
+    min_closed, min_vol = (0, 0) if relaxed else (3, 100)
     rows = await db.fetchall(text(f"""
         WITH agg AS (
             SELECT pw.handle,
@@ -407,14 +411,30 @@ async def api_leaderboard(req: web.Request):
                    CASE WHEN SUM(ws.closed) > 0
                         THEN SUM(ws.winrate * ws.closed) / SUM(ws.closed) END winrate
             FROM profile_wallets pw
-            JOIN wallet_stats ws ON ws.wallet = pw.wallet AND ws.range = :r
+            -- LEFT: a wallet the summariser has not reached yet still belongs on the rail, with zeros
+            LEFT JOIN wallet_stats ws ON ws.wallet = pw.wallet AND ws.range = :r
             GROUP BY pw.handle)
         SELECT a.*, CASE WHEN a.volume > 0 THEN 100 * a.pnl_total / a.volume END roi,
                p.display, p.avatar, p.x_handle, p.x_verified
         FROM agg a JOIN profiles p ON p.handle = a.handle
-        WHERE COALESCE(a.bots, 0) = 0 AND COALESCE(a.closed, 0) >= 3 AND COALESCE(a.volume, 0) >= 100
-        ORDER BY {order} NULLS LAST LIMIT :l""").bindparams(r=rng, l=limit))
-    return web.json_response({"season": rng, "sort": sort, "rows": [dict(r) for r in rows]},
+        WHERE COALESCE(a.bots, 0) = 0 AND COALESCE(a.closed, 0) >= :min_closed AND COALESCE(a.volume, 0) >= :min_vol
+        ORDER BY {order} NULLS LAST LIMIT :l""").bindparams(r=rng, l=limit, min_closed=min_closed, min_vol=min_vol))
+    out = [dict(r) for r in rows]
+    # a profile whose wallets the summariser has not reached yet comes back with NULLs; rather than printing a
+    # dash next to somebody's name, compute those few rows from the swaps the same way the profile page does
+    missing = [r for r in out if r.get("pnl_total") is None][:20]
+    for r in missing:
+        try:
+            st = await profile_stats(r["handle"], rng)
+            r.update({"pnl_total": st.get("pnl_total"), "volume": st.get("volume"), "trades": st.get("trades"),
+                      "closed": st.get("closed"), "winrate": st.get("winrate"), "roi": st.get("roi")})
+        except Exception:  # noqa
+            continue
+    if sort == "pnl":
+        out.sort(key=lambda r: r.get("pnl_total") or 0, reverse=True)
+    elif sort == "volume":
+        out.sort(key=lambda r: r.get("volume") or 0, reverse=True)
+    return web.json_response({"season": rng, "sort": sort, "rows": out},
                              headers={**CORS, "Cache-Control": "public, max-age=60"})
 
 
@@ -555,6 +575,76 @@ async def api_positions(req: web.Request):
                              headers={**CORS, "Cache-Control": "public, max-age=30"})
 
 
+async def api_search(req: web.Request):
+    """Find a trader by handle, display name or X account — what the Terminal search box calls."""
+    q = (req.query.get("q") or "").strip().lower().lstrip("@")
+    if len(q) < 2:
+        return web.json_response({"rows": []}, headers=CORS)
+    rows = await db.fetchall(text("""
+        WITH agg AS (
+            SELECT pw.handle, SUM(ws.pnl_total) pnl, SUM(ws.volume) volume, SUM(ws.trades) trades
+            FROM profile_wallets pw
+            LEFT JOIN wallet_stats ws ON ws.wallet = pw.wallet AND ws.range = 'all'
+            GROUP BY pw.handle)
+        SELECT p.handle, p.display, p.avatar, p.x_handle, p.x_verified,
+               a.pnl, a.volume, a.trades
+        FROM profiles p LEFT JOIN agg a ON a.handle = p.handle
+        WHERE p.handle LIKE :like OR lower(COALESCE(p.display, '')) LIKE :like
+           OR lower(COALESCE(p.x_handle, '')) LIKE :like
+        ORDER BY COALESCE(a.pnl, 0) DESC LIMIT 12""").bindparams(like=f"%{q}%"))
+    return web.json_response({"rows": [dict(r) for r in rows]},
+                             headers={**CORS, "Cache-Control": "public, max-age=30"})
+
+
+async def api_top_trades(req: web.Request):
+    """The profile's best positions, ranked by profit — open ones priced at the last trade, closed ones settled.
+
+    Entry and exit are expressed as market cap, the way traders actually talk about a call ("bought at 50k,
+    it did 700k"), using the token's supply where we know it."""
+    handle = (req.query.get("handle") or "").lower()
+    ws = await db.fetchall(text("SELECT wallet FROM profile_wallets WHERE handle = :h").bindparams(h=handle))
+    wallets = [w["wallet"] for w in ws]
+    if not wallets:
+        return web.json_response({"rows": []}, headers=CORS)
+    rows = await db.fetchall(text("""
+        SELECT s.token, MAX(st.symbol) symbol, MAX(st.name) name, MAX(st.logo) logo, MAX(st.mcap) mcap,
+               SUM(CASE WHEN s.side = 'buy' THEN s.tokens ELSE 0 END) bought,
+               SUM(CASE WHEN s.side = 'sell' THEN s.tokens ELSE 0 END) sold,
+               SUM(CASE WHEN s.side = 'buy' THEN s.usdc ELSE 0 END) cost,
+               SUM(CASE WHEN s.side = 'sell' THEN s.usdc ELSE 0 END) proceeds,
+               MIN(CASE WHEN s.side = 'buy' AND s.price1m > 0 THEN s.price1m END) entry1m,
+               MAX(s.ts) last_ts, COUNT(*) n,
+               (SELECT price1m FROM swaps p WHERE p.token = s.token AND p.price1m > 0 AND p.usdc >= 0.5
+                ORDER BY p.ts DESC LIMIT 1) price1m
+        FROM swaps s LEFT JOIN social_tokens st ON st.token = s.token
+        WHERE s.wallet = ANY(:w) GROUP BY s.token LIMIT 400""").bindparams(w=wallets))
+    out = []
+    for r in rows:
+        bought, sold = r["bought"] or 0, r["sold"] or 0
+        cost, proceeds = r["cost"] or 0, r["proceeds"] or 0
+        price = (r["price1m"] or 0) / 1e6
+        held = max(0.0, bought - sold)
+        avg = cost / bought if bought > 0 else 0
+        closed = held <= bought * 0.01
+        value = held * price
+        pnl = (proceeds - cost) if closed else (proceeds + value - cost)
+        # we do not store supply, so market cap comes from the indexed mcap and the price ratio: the entry cap
+        # is today's cap scaled by how much cheaper the entry price was
+        now_mc = float(r["mcap"] or 0) or (price * 1e9 if price else 0)
+        entry_price = (r["entry1m"] or 0) / 1e6
+        entry_mc = (now_mc * entry_price / price) if (price > 0 and entry_price > 0 and now_mc > 0) else None
+        out.append({
+            "token": r["token"], "symbol": r["symbol"], "name": r["name"], "logo": r["logo"],
+            "closed": closed, "last_ts": r["last_ts"], "n": r["n"],
+            "spent": round(cost, 2), "value": round(value, 2), "pnl": round(pnl, 2),
+            "pnl_pct": round(100 * pnl / cost, 1) if cost > 0 else None,
+            "entry_mc": round(entry_mc, 2) if entry_mc else None,
+            "now_mc": round(now_mc, 2) if now_mc else None,
+        })
+    out.sort(key=lambda x: x["pnl"], reverse=True)
+    return web.json_response({"rows": out[:12]}, headers={**CORS, "Cache-Control": "public, max-age=30"})
+
+
 async def api_following_feed(req: web.Request):
     """Trades of every profile this wallet follows — the alert surface that works without a linked Telegram
     account. Each profile's own delay still applies, so following someone never grants an earlier view."""
@@ -664,3 +754,5 @@ def register(app: web.Application):
     app.router.add_post("/api/profile/image", api_image)
     app.router.add_get("/api/profile/image/{key}", api_image_get)
     app.router.add_get("/api/profile/positions", api_positions)
+    app.router.add_get("/api/profiles/search", api_search)
+    app.router.add_get("/api/profiles/top-trades", api_top_trades)

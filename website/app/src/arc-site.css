@@ -968,3 +968,16 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
   width: 8px;
 }
 @media (prefers-reduced-motion: reduce) { .arc-live-dot { animation: none; } }
+
+/* trader profile: ranking · person · best calls. On narrow screens the person leads, because burying the
+   profile you just clicked under a leaderboard is the wrong answer to "whose page is this". */
+.arc-u-grid { grid-template-columns: minmax(0, 1fr); }
+.arc-u-grid > aside:first-of-type { order: 2; }
+.arc-u-grid > div { order: 1; }
+.arc-u-grid > aside:last-of-type { order: 3; }
+@media (min-width: 1180px) {
+  .arc-u-grid { grid-template-columns: 300px minmax(0, 1fr) 340px; }
+  .arc-u-grid > aside:first-of-type { order: 0; }
+  .arc-u-grid > div { order: 0; }
+  .arc-u-grid > aside:last-of-type { order: 0; }
+}

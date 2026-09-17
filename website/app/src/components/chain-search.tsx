@@ -17,6 +17,48 @@ const ago = (ts: number | null) => {
 
 /** Chain-wide token search shown under the filter box when the query matches nothing (or few rows) in the loaded lists.
  *  Every ERC-20 on Arc: our swap index (with 24 h stats) + arc-scan's chain-wide search. Click → token page (probes on-chain). */
+type ProfileHit = { handle: string; display: string | null; avatar: string | null; x_handle: string | null; x_verified: number; pnl: number | null; trades: number | null };
+
+/** Traders matching the query. The same box that finds tokens finds people, because "who is gr3gor14n" and
+ *  "what is $ARCT" are the same question asked of the same index. */
+function ProfileHits({ q }: { q: string }) {
+  const [rows, setRows] = useState<ProfileHit[]>([]);
+  useEffect(() => {
+    const query = q.trim();
+    if (query.length < 2) { setRows([]); return; }
+    let alive = true;
+    const t = setTimeout(() => {
+      fetch(`/bot/api/profiles/search?q=${encodeURIComponent(query)}`)
+        .then((r) => r.json())
+        .then((j: { rows?: ProfileHit[] }) => { if (alive) setRows(j.rows ?? []); })
+        .catch(() => null);
+    }, 300);
+    return () => { alive = false; clearTimeout(t); };
+  }, [q]);
+  if (!rows.length) return null;
+  return (
+    <div style={{ background: "var(--arc-paper)", border: "1px solid var(--arc-line)", marginBottom: 8 }}>
+      <div className="arc-mono" style={{ borderBottom: "1px solid var(--arc-line)", color: "var(--arc-muted)", display: "flex", fontSize: 10, gap: 8, padding: "6px 12px" }}>
+        <span>TRADERS</span><span style={{ color: "var(--arc-ink)" }}>“{q.trim()}”</span>
+      </div>
+      {rows.map((r) => (
+        <a href={`/u/${r.handle}`} key={r.handle}
+          style={{ alignItems: "center", borderBottom: "1px solid var(--arc-line)", color: "var(--arc-ink)", display: "flex", gap: 10, padding: "6px 12px", textDecoration: "none" }}>
+          {r.avatar
+            ? <img alt="" src={r.avatar} style={{ borderRadius: "50%", height: 22, objectFit: "cover", width: 22 }} />
+            : <span className="arc-mono" style={{ alignItems: "center", background: "var(--arc-line)", borderRadius: "50%", display: "flex", fontSize: 9, height: 22, justifyContent: "center", width: 22 }}>{r.handle.slice(0, 2).toUpperCase()}</span>}
+          <span style={{ fontSize: 13, fontWeight: 600 }}>{r.display || r.handle}</span>
+          <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>@{r.handle}{r.x_verified ? " ✓" : ""}</span>
+          <span style={{ flex: 1 }} />
+          <span className="arc-mono" style={{ color: (r.pnl ?? 0) >= 0 ? "var(--arc-up)" : "var(--arc-down)", fontSize: 11 }}>
+            {r.pnl == null ? "—" : `${r.pnl >= 0 ? "+" : ""}$${Math.abs(r.pnl).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+          </span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
 export function ChainSearch({ q, hide, renderBuy, autoOpen }: { q: string; hide: Set<string>; renderBuy?: (hit: SearchHit) => React.ReactNode; autoOpen?: boolean }) {
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -44,6 +86,7 @@ export function ChainSearch({ q, hide, renderBuy, autoOpen }: { q: string; hide:
   const rows = (hits ?? []).filter((h) => !hide.has(h.token));
   if (!busy && rows.length === 0 && hits !== null && hide.size > 0 && (hits ?? []).length > 0) return null; // everything already visible in the table
   return (
+    <><ProfileHits q={query} />
     <div style={{ background: "var(--arc-paper)", border: "1px solid var(--arc-line)", marginBottom: 8 }}>
       <div className="arc-mono" style={{ alignItems: "center", borderBottom: "1px solid var(--arc-line)", color: "var(--arc-muted)", display: "flex", fontSize: 11, gap: 8, padding: "6px 12px" }}>
         <span>SEARCH ALL OF ARC</span>
@@ -72,6 +115,6 @@ export function ChainSearch({ q, hide, renderBuy, autoOpen }: { q: string; hide:
           {renderBuy?.(h)}
         </div>
       ))}
-    </div>
+    </div></>
   );
 }

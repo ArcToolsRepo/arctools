@@ -102,8 +102,9 @@ export const getProfile = (handle: string, range = "all") =>
 export const getProfileByWallet = (wallet: string) =>
   get<ProfileView>(`/api/profile?wallet=${wallet.toLowerCase()}`, { profile: null });
 
-export const getLeaderboard = (season: string, sort: string) =>
-  get<{ rows: LeaderRow[] }>(`/api/profiles/leaderboard?season=${season}&sort=${sort}&limit=50`, { rows: [] });
+export const getLeaderboard = (season: string, sort: string, relaxed = false) =>
+  get<{ rows: LeaderRow[] }>(
+    `/api/profiles/leaderboard?season=${season}&sort=${sort}&limit=50${relaxed ? "&relaxed=1" : ""}`, { rows: [] });
 
 export const getProfileTrades = (handle: string, limit = 30) =>
   get<{ trades: ProfileTrade[]; delay?: number }>(`/api/profile/trades?handle=${handle}&limit=${limit}`, { trades: [] });
