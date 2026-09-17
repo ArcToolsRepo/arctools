@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { hotAddress, isUnlocked } from "@/lib/arc-hotwallet";
 import {
   type ProfileView, addWallet, finishXVerify, getProfileByWallet, removeWallet, saveProfile, startXVerify,
+  uploadProfileImage,
 } from "@/lib/arc-profile";
 
 /** Trades of the profiles this wallet follows — each still behind that profile's own delay. */
@@ -157,7 +158,7 @@ export function ProfileEditor() {
         <label style={{ display: "grid", gap: 4 }}><span className="arc-mono" style={lbl}>display name</span>
           <input onChange={(e) => setDisplay(e.target.value)} placeholder="Satoshi" style={inp} value={display} />
         </label>
-        <label style={{ display: "grid", gap: 4 }}><span className="arc-mono" style={lbl}>avatar url</span>
+        <label style={{ display: "grid", gap: 4 }}><span className="arc-mono" style={lbl}>avatar url (or upload below)</span>
           <input onChange={(e) => setAvatar(e.target.value)} placeholder="https://…" style={inp} value={avatar} />
         </label>
         <label style={{ display: "grid", gap: 4 }}><span className="arc-mono" style={lbl}>X handle</span>
@@ -185,6 +186,38 @@ export function ProfileEditor() {
           <span style={{ color: "var(--arc-muted)" }}>protects you from being front-run by your own followers</span>
         </label>
       </div>
+
+      {view?.profile && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+          {(["avatar", "banner"] as const).map((kind) => (
+            <label className="arc-mono" key={kind}
+              style={{ alignItems: "center", border: "1px dashed var(--arc-line)", borderRadius: 10, cursor: "pointer", display: "flex", fontSize: 12, gap: 8, padding: "10px 14px" }}>
+              {/* accept + no capture attribute: desktop opens the file picker, a phone offers camera or gallery */}
+              <input
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!f) return;
+                  void act(async () => {
+                    if (!me) throw new Error("unlock your wallet first");
+                    if (f.size > 20 * 1024 * 1024) throw new Error("that image is over 20 MB");
+                    const r = await uploadProfileImage(me, handle, kind, f);
+                    if (kind === "avatar") setAvatar(r.url);
+                    return `${kind} uploaded (${Math.round(r.bytes / 1024)} KB) — it is live on your profile`;
+                  });
+                }}
+                style={{ display: "none" }}
+                type="file"
+              />
+              upload {kind}
+            </label>
+          ))}
+          <span className="arc-mono" style={{ alignSelf: "center", color: "var(--arc-muted)", fontSize: 11 }}>
+            from your desktop or phone · resized and stripped of location data before storing
+          </span>
+        </div>
+      )}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         <button className="arc-mono" disabled={busy} onClick={onSave}

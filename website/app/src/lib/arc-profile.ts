@@ -143,6 +143,38 @@ export async function finishXVerify(wallet: string, handle: string) {
   return post<{ ok: boolean; verified?: string; error?: string }>("/api/profile/x/verify", { handle, wallet, ts, sig });
 }
 
+/**
+ * Send a picture for the avatar or banner. The file is downscaled in the browser first, so a 12 MP phone photo
+ * does not travel as 8 MB over mobile data; the server re-encodes again and strips EXIF regardless.
+ */
+export async function uploadProfileImage(wallet: string, handle: string, kind: "avatar" | "banner", file: File) {
+  const maxEdge = kind === "banner" ? 1600 : 640;
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error("could not read that file"));
+    fr.onload = () => resolve(String(fr.result));
+    fr.readAsDataURL(file);
+  });
+  const shrunk = await new Promise<string>((resolve) => {
+    const img = new Image();
+    img.onerror = () => resolve(dataUrl);            // let the server deal with exotic formats
+    img.onload = () => {
+      const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+      if (scale === 1 && dataUrl.length < 1_500_000) { resolve(dataUrl); return; }
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      const ctx = c.getContext("2d");
+      if (!ctx) { resolve(dataUrl); return; }
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      resolve(c.toDataURL("image/jpeg", 0.88));
+    };
+    img.src = dataUrl;
+  });
+  const { ts, sig } = await signAs(wallet, "image", handle);
+  return post<{ ok: boolean; url: string; bytes: number }>("/api/profile/image",
+    { handle, wallet, ts, sig, kind, data: shrunk });
+}
+
 export async function follow(wallet: string, handle: string, target: string, off = false) {
   const { ts, sig } = await signAs(wallet, "follow", handle);
   return post<{ ok: boolean; following: boolean }>("/api/profile/follow", { handle, wallet, ts, sig, target, off });

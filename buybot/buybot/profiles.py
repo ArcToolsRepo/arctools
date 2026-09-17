@@ -52,6 +52,8 @@ async def init():
         wallet VARCHAR(64) PRIMARY KEY, handle VARCHAR(20), proved_ts BIGINT)"""))
     await db.execute(text("""CREATE TABLE IF NOT EXISTS profile_follows (
         follower VARCHAR(64), handle VARCHAR(20), ts BIGINT, PRIMARY KEY (follower, handle))"""))
+    await db.execute(text("""CREATE TABLE IF NOT EXISTS profile_images (
+        id VARCHAR(40) PRIMARY KEY, handle VARCHAR(20), kind VARCHAR(8), mime VARCHAR(32), bytes BYTEA, ts BIGINT)"""))
     for stmt in ("CREATE INDEX IF NOT EXISTS profile_wallets_handle ON profile_wallets (handle)",
                  "CREATE INDEX IF NOT EXISTS profile_follows_handle ON profile_follows (handle)"):
         try:
@@ -403,6 +405,109 @@ async def api_by_wallets(req: web.Request):
                              headers={**CORS, "Cache-Control": "public, max-age=60"})
 
 
+async def api_image(req: web.Request):
+    """Avatar / banner upload, straight from a phone or a desktop.
+
+    The bytes are re-encoded here before anything is stored: it strips EXIF (a phone photo carries GPS), caps
+    the dimensions so one upload cannot push a 40 MB banner at every visitor, and guarantees the stored file
+    really is an image rather than something renamed to .png. Authorised by the same wallet signature as every
+    other write."""
+    from io import BytesIO
+    body, err = await _auth(req, "image")
+    if err:
+        return err
+    handle, wallet = body["handle"], body["wallet"]
+    if not await _owner(handle, wallet):
+        return web.json_response({"error": "not your profile"}, status=403, headers=CORS)
+    kind = "banner" if str(body.get("kind")) == "banner" else "avatar"
+    raw_b64 = str(body.get("data") or "")
+    if "," in raw_b64[:64]:                      # data:image/png;base64,....
+        raw_b64 = raw_b64.split(",", 1)[1]
+    import base64
+    try:
+        raw = base64.b64decode(raw_b64, validate=True)
+    except Exception:  # noqa
+        return web.json_response({"error": "not base64"}, status=400, headers=CORS)
+    if len(raw) > 8 * 1024 * 1024:
+        return web.json_response({"error": "file too large (8 MB max)"}, status=413, headers=CORS)
+    try:
+        from PIL import Image
+        im = Image.open(BytesIO(raw))
+        im.load()
+    except Exception:  # noqa
+        return web.json_response({"error": "not a readable image"}, status=400, headers=CORS)
+    box = (1500, 500) if kind == "banner" else (512, 512)
+    im = im.convert("RGB")
+    im.thumbnail(box, Image.LANCZOS)
+    out = BytesIO()
+    im.save(out, "JPEG", quality=86, optimize=True)
+    data = out.getvalue()
+    key = f"{handle}-{kind}"
+    await db.execute(text("""
+        INSERT INTO profile_images (id, handle, kind, mime, bytes, ts) VALUES (:i, :h, :k, 'image/jpeg', :b, :t)
+        ON CONFLICT (id) DO UPDATE SET bytes = EXCLUDED.bytes, mime = EXCLUDED.mime, ts = EXCLUDED.ts
+    """).bindparams(i=key, h=handle, k=kind, b=data, t=int(time.time())))
+    url = f"/bot/api/profile/image/{key}?v={int(time.time())}"
+    col = "banner" if kind == "banner" else "avatar"
+    await db.execute(text(f"UPDATE profiles SET {col} = :u, updated = :t WHERE handle = :h")
+                     .bindparams(u=url, t=int(time.time()), h=handle))
+    _CARD.pop(handle, None)
+    return web.json_response({"ok": True, "url": url, "bytes": len(data), "size": list(im.size)}, headers=CORS)
+
+
+async def api_image_get(req: web.Request):
+    key = req.match_info.get("key", "")
+    row = await db.fetchone(text("SELECT mime, bytes FROM profile_images WHERE id = :i").bindparams(i=key))
+    if not row:
+        return web.Response(status=404, text="no image")
+    return web.Response(body=bytes(row["bytes"]), content_type=row["mime"] or "image/jpeg",
+                        headers={**CORS, "Cache-Control": "public, max-age=86400"})
+
+
+async def api_positions(req: web.Request):
+    """Open and closed positions across every wallet on the profile, from the swap index."""
+    handle = (req.query.get("handle") or "").lower()
+    ws = await db.fetchall(text("SELECT wallet FROM profile_wallets WHERE handle = :h").bindparams(h=handle))
+    wallets = [w["wallet"] for w in ws]
+    if not wallets:
+        return web.json_response({"open": [], "closed": []}, headers=CORS)
+    rows = await db.fetchall(text("""
+        SELECT s.token, MAX(st.symbol) symbol, MAX(st.logo) logo,
+               SUM(CASE WHEN s.side = 'buy' THEN s.tokens ELSE 0 END) bought,
+               SUM(CASE WHEN s.side = 'sell' THEN s.tokens ELSE 0 END) sold,
+               SUM(CASE WHEN s.side = 'buy' THEN s.usdc ELSE 0 END) cost,
+               SUM(CASE WHEN s.side = 'sell' THEN s.usdc ELSE 0 END) proceeds,
+               COUNT(*) n, MAX(s.ts) last_ts,
+               (SELECT price1m FROM swaps p WHERE p.token = s.token AND p.price1m > 0 AND p.usdc >= 0.5
+                ORDER BY p.ts DESC LIMIT 1) price1m
+        FROM swaps s LEFT JOIN social_tokens st ON st.token = s.token
+        WHERE s.wallet = ANY(:w)
+        GROUP BY s.token ORDER BY MAX(s.ts) DESC LIMIT 300""").bindparams(w=wallets))
+    op, cl = [], []
+    for r in rows:
+        bought, sold = r["bought"] or 0, r["sold"] or 0
+        cost, proceeds = r["cost"] or 0, r["proceeds"] or 0
+        held = bought - sold
+        avg = cost / bought if bought > 0 else 0
+        price = (r["price1m"] or 0) / 1e6
+        item = {"token": r["token"], "symbol": r["symbol"], "logo": r["logo"], "n": r["n"], "last_ts": r["last_ts"],
+                "cost": round(cost, 2), "proceeds": round(proceeds, 2)}
+        if held > bought * 0.01:                 # still holding a meaningful part of what was bought
+            value = held * price
+            item.update({"held": held, "value": round(value, 2), "avg": avg,
+                         "pnl": round(value - held * avg, 2),
+                         "pnl_pct": round(100 * (value - held * avg) / max(held * avg, 1e-9), 1)})
+            op.append(item)
+        else:
+            item.update({"pnl": round(proceeds - cost, 2),
+                         "pnl_pct": round(100 * (proceeds - cost) / cost, 1) if cost > 0 else None})
+            cl.append(item)
+    op.sort(key=lambda x: x.get("value") or 0, reverse=True)
+    cl.sort(key=lambda x: x.get("last_ts") or 0, reverse=True)
+    return web.json_response({"open": op[:60], "closed": cl[:60]},
+                             headers={**CORS, "Cache-Control": "public, max-age=30"})
+
+
 async def api_following_feed(req: web.Request):
     """Trades of every profile this wallet follows — the alert surface that works without a linked Telegram
     account. Each profile's own delay still applies, so following someone never grants an earlier view."""
@@ -509,3 +614,6 @@ def register(app: web.Application):
     app.router.add_get("/api/profiles/by-wallets", api_by_wallets)
     app.router.add_get("/api/profile/following-feed", api_following_feed)
     app.router.add_get("/api/profile/card", api_card)
+    app.router.add_post("/api/profile/image", api_image)
+    app.router.add_get("/api/profile/image/{key}", api_image_get)
+    app.router.add_get("/api/profile/positions", api_positions)
