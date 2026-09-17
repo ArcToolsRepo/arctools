@@ -122,43 +122,60 @@ def _score_author(author: dict, symbol: str, name: str) -> float:
     return sc
 
 
+def _owns_name(handle: str, display: str, sym: str) -> bool:
+    """Does this account look like it IS the project, rather than someone talking about it?
+
+    Substring matching is not enough — "BoAsoba" contains "boa". We require the ticker to be the start of the
+    handle, the whole handle, or a standalone word in the display name.
+    """
+    if not sym or len(sym) < 3:
+        return False
+    s_ = sym.lower()
+    h = (handle or "").lower()
+    d = (display or "").lower()
+    if h == s_ or h.startswith(s_) or h.startswith(s_ + "_") or h.endswith("_" + s_):
+        return True
+    return bool(re.search(rf"(^|[^a-z0-9]){re.escape(s_)}([^a-z0-9]|$)", d))
+
+
 async def from_x(token: str, symbol: str | None, name: str | None) -> dict:
-    """The contract address is the strongest query: whoever posts it is almost always the project or a caller."""
-    out: dict = {}
-    queries = [token]
-    if symbol and len(symbol) >= 3:
-        queries.append(f'"${symbol}" (arc OR arcchain OR usdc)')
-    for q in queries:
-        j = await _tw("/twitter/tweet/advanced_search", query=q, queryType="Latest")
-        tweets = (j or {}).get("tweets") or []
-        best, best_sc = None, 0.0
-        for t in tweets[:25]:
-            a = t.get("author") or {}
-            txt = t.get("text") or ""
-            if q == token and token.lower() not in txt.lower():
-                continue
-            sc = _score_author(a, symbol or "", name or "")
-            if q == token and CA_RE.search(txt):
-                sc += 1.5                               # posted the contract itself
-            if sc > best_sc:
-                best, best_sc = a, sc
-        if best and best_sc >= 4:
-            handle = best.get("userName")
-            avatar = (best.get("profilePicture") or "").replace("_normal", "")
-            desc = best.get("description") or ""
-            out["x_handle"] = handle
-            if avatar:
-                out["logo"] = avatar
-            if m := TG_RE.search(desc):
-                out["tg_handle"] = m.group(1)
-            web = best.get("url") or ""
-            if not web:
-                if m := WEB_RE.search(desc):
-                    web = m.group(0)
-            if web:
-                out["domain"] = web[:160]
-            out["src"] = "x"
-            return out
+    """One accepted pattern only: an account that POSTED THIS CONTRACT and whose own handle or display name is the
+    ticker. That combination is the project announcing itself.
+
+    Everything looser was tried and produced wrong logos — searching "$BOA" returns an unrelated account called
+    BoAsoba, and whoever merely posts a contract address is usually a caller channel, not the team. A wrong logo on
+    a token is worse than an empty circle, so unproven candidates are dropped and the deployer-signed claim on the
+    token page stays the reliable route.
+    """
+    sym = (symbol or "").strip().lstrip("$")
+    j = await _tw("/twitter/tweet/advanced_search", query=token, queryType="Latest")
+    tweets = (j or {}).get("tweets") or []
+    best, best_sc = None, 0.0
+    for t in tweets[:25]:
+        a = t.get("author") or {}
+        txt = t.get("text") or ""
+        if token.lower() not in txt.lower():
+            continue
+        if not _owns_name(a.get("userName") or "", a.get("name") or "", sym):
+            continue
+        sc = _score_author(a, sym, name or "") + 3
+        if sc > best_sc:
+            best, best_sc = a, sc
+    if not best or best_sc < 6:
+        return {}
+    out: dict = {"src": "x", "x_handle": best.get("userName")}
+    avatar = (best.get("profilePicture") or "").replace("_normal", "")
+    if avatar:
+        out["logo"] = avatar
+    desc = best.get("description") or ""
+    if m := TG_RE.search(desc):
+        out["tg_handle"] = m.group(1)
+    web = best.get("url") or ""
+    if not web:
+        if m := WEB_RE.search(desc):
+            web = m.group(0)
+    if web and "x.com/" not in web and "twitter.com/" not in web:
+        out["domain"] = web[:160]
     return out
 
 
