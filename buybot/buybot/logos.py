@@ -291,7 +291,9 @@ async def try_x_avatar(s: aiohttp.ClientSession, x_handle: str | None) -> str | 
 
 
 async def resolve(s: aiohttp.ClientSession, token: str, launchpad: str | None, x_handle: str | None) -> tuple[str | None, str]:
-    for name, fn in (("contract", lambda: try_contract(s, token)), ("creation", lambda: try_creation_tx(s, token)),
+    from .bytelogo import from_bytecode
+    for name, fn in (("contract", lambda: try_contract(s, token)), ("bytecode", lambda: from_bytecode(s, token)),
+                     ("creation", lambda: try_creation_tx(s, token)),
                      ("padpage", lambda: try_pad_page(s, token, launchpad)), ("x", lambda: try_x_avatar(s, x_handle))):
         try:
             u = await asyncio.wait_for(fn(), 15)
@@ -312,7 +314,7 @@ async def init():
             pass
 
 
-async def hunt_once(limit: int = 900) -> tuple[int, int]:
+async def hunt_once(limit: int = 400) -> tuple[int, int]:
     """Tokens that traded in the last 7 days, no logo, not checked in the last 24 h — most volume first.
 
     A token whose logo we DID find gets logo_checked pushed ten years out by identity.py, so it never comes back
@@ -328,14 +330,15 @@ async def hunt_once(limit: int = 900) -> tuple[int, int]:
     if not rows:
         return 0, 0
     found = 0
-    sem = asyncio.Semaphore(24)
+    sem = asyncio.Semaphore(40)      # fetches/verifies
+    writes: list[dict] = []
     async with aiohttp.ClientSession() as s:
         async def one(r):
             nonlocal found
             async with sem:
                 u, src = await resolve(s, r["token"], r["launchpad"], r["x_handle"])
                 if not u:
-                    try:        # last resort: the contract's own getters / a URL literal sitting in its bytecode
+                    try:        # last resort: the contract's own getters (bytecode is already tried above)
                         from .contract_socials import read_contract
                         got = await read_contract(s, r["token"])
                         if got.get("logo") and await _verify(s, got["logo"]):
@@ -345,13 +348,20 @@ async def hunt_once(limit: int = 900) -> tuple[int, int]:
             stats["checked"] += 1
             if u:
                 found += 1; stats["found"] += 1; stats["by"][src] = stats["by"].get(src, 0) + 1
-            await db.execute(text("""
-                INSERT INTO social_tokens (token, symbol, name, mcap, updated, logo, logo_checked, logo_src)
-                VALUES (:t, '', '', 0, :n, :u, :n, :src)
-                ON CONFLICT (token) DO UPDATE SET logo = COALESCE(:u, social_tokens.logo), logo_checked = :n,
-                                                logo_src = CASE WHEN :u IS NULL THEN social_tokens.logo_src ELSE :src END
-            """).bindparams(t=r["token"], n=now, u=u, src=src))
+            writes.append({"t": r["token"], "u": u, "src": src})
         await asyncio.gather(*[one(r) for r in rows])
+    for i in range(0, len(writes), 100):     # one statement per 100 tokens keeps the ingest connection free
+        chunk = writes[i:i + 100]
+        vals = ", ".join(f"(:t{j}, '', '', 0, :n, :u{j}, :n, :src{j})" for j in range(len(chunk)))
+        par = {"n": now}
+        for j, w in enumerate(chunk):
+            par[f"t{j}"], par[f"u{j}"], par[f"src{j}"] = w["t"], w["u"], w["src"]
+        await db.execute(text(f"""
+            INSERT INTO social_tokens (token, symbol, name, mcap, updated, logo, logo_checked, logo_src)
+            VALUES {vals}
+            ON CONFLICT (token) DO UPDATE SET logo = COALESCE(EXCLUDED.logo, social_tokens.logo), logo_checked = EXCLUDED.logo_checked,
+                                            logo_src = CASE WHEN EXCLUDED.logo IS NULL THEN social_tokens.logo_src ELSE EXCLUDED.logo_src END
+        """).bindparams(**par))
     return len(rows), found
 
 
@@ -368,7 +378,7 @@ async def hunt_loop():
                 log.info("logos: %s/%s found (%s)", f, n, stats["by"])
         except Exception as e:  # noqa
             log.warning("logos: %s", e)
-        await asyncio.sleep(12)
+        await asyncio.sleep(25)     # 400 tokens per pass, one pass every 25 s
 
 
 async def api_logo_stats(_req):
