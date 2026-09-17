@@ -22,6 +22,29 @@ export const Route = createFileRoute("/insider/$wallet")({
   component: InsiderPage,
 });
 
+function ProfileStrip({ wallet }: { wallet: string }) {
+  const [p, setP] = useState<{ handle: string; display: string | null; avatar: string | null; x_verified: number } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void import("@/lib/arc-profile").then((m) => m.getProfileByWallet(wallet)).then((v) => {
+      if (alive && v.profile) setP({ handle: v.profile.handle, display: v.profile.display, avatar: v.profile.avatar, x_verified: v.profile.x_verified });
+    }).catch(() => null);
+    return () => { alive = false; };
+  }, [wallet]);
+  if (!p) return null;
+  return (
+    <a href={`/u/${p.handle}`}
+      style={{ alignItems: "center", background: "rgba(46,124,255,0.10)", border: "1px solid var(--arc-cobalt)", borderRadius: 12, color: "var(--arc-ink)", display: "flex", gap: 10, marginBottom: 12, padding: "10px 14px", textDecoration: "none" }}>
+      {p.avatar
+        ? <img alt="" src={p.avatar} style={{ borderRadius: "50%", height: 30, objectFit: "cover", width: 30 }} />
+        : <span className="arc-mono" style={{ alignItems: "center", background: "var(--arc-line)", borderRadius: "50%", display: "flex", fontSize: 10, height: 30, justifyContent: "center", width: 30 }}>{p.handle.slice(0, 2).toUpperCase()}</span>}
+      <span style={{ fontSize: 14, fontWeight: 600 }}>{p.display || p.handle}</span>
+      <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>@{p.handle}{p.x_verified ? " ✓" : ""}</span>
+      <span className="arc-mono" style={{ color: "var(--arc-cobalt)", fontSize: 11, marginLeft: "auto" }}>public profile →</span>
+    </a>
+  );
+}
+
 function InsiderPage() {
   const { wallet } = Route.useParams();
   const w = wallet.toLowerCase();
@@ -82,6 +105,7 @@ function InsiderPage() {
       <section className="arc-section" style={{ maxWidth: 1180, paddingTop: 118 }}>
         <Link className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, textDecoration: "none" }} to="/insiders">← Insiders board</Link>
         <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 12, marginTop: 10 }}>
+          <ProfileStrip wallet={w} />
           <h1 className="arc-mono" style={{ fontSize: 24, margin: 0 }}>{short(w)}</h1>
           {rank && <span className="arc-mono" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", borderRadius: 5, color: "var(--arc-cobalt)", fontSize: 12, padding: "2px 8px" }}>insider #{rank} · 30d</span>}
           <Tags labels={labels} max={4} wallet={w} />

@@ -701,6 +701,18 @@ function TokenPage() {
         ts: s.ts, tx: s.tx, usdc: s.usdc, venue: s.venue, wallet: s.wallet,
       }))].sort((a, b) => b.ts - a.ts);
   const walletLabels = useWalletLabels(effTrades.slice(0, 60).map((t) => t.wallet), ca);
+  // a wallet with a public profile trades under a name here, not a hex string
+  const [walletProfiles, setWalletProfiles] = useState<Record<string, { handle: string; display: string | null; avatar: string | null; x_verified: number }>>({});
+  const tradeWallets = effTrades.slice(0, 60).map((t) => t.wallet.toLowerCase()).join(",");
+  useEffect(() => {
+    if (!tradeWallets) return;
+    let alive = true;
+    void import("@/lib/arc-profile")
+      .then((m) => m.getProfilesByWallets(tradeWallets.split(",")))
+      .then((j) => { if (alive && j.profiles) setWalletProfiles(j.profiles); })
+      .catch(() => null);
+    return () => { alive = false; };
+  }, [tradeWallets]);
   const effCandles: Candle[] = useMemo(() => {
     if (candles.length >= 5) return candles;
     if (venue?.candles.length) {
@@ -1005,7 +1017,15 @@ function TokenPage() {
                       <td>{fmt(t.tokens, 0)}</td>
                       <td style={{ color: "var(--arc-muted)" }}>${(t.price1m / 1e6).toFixed(8)}</td>
                       <td>
-                        <a href={`https://arc-scan.org/address/${t.wallet}`} rel="noreferrer" style={{ color: "var(--arc-ink)", textDecoration: "none" }} target="_blank">{t.wallet.slice(0, 6)}…{t.wallet.slice(-4)}</a>
+                        {walletProfiles[t.wallet.toLowerCase()] ? (
+                          <a href={`/u/${walletProfiles[t.wallet.toLowerCase()].handle}`} style={{ alignItems: "center", color: "var(--arc-cobalt)", display: "inline-flex", gap: 5, textDecoration: "none" }} title={t.wallet}>
+                            {walletProfiles[t.wallet.toLowerCase()].avatar
+                              ? <img alt="" src={walletProfiles[t.wallet.toLowerCase()].avatar as string} style={{ borderRadius: "50%", height: 15, width: 15 }} />
+                              : null}
+                            @{walletProfiles[t.wallet.toLowerCase()].handle}
+                            {walletProfiles[t.wallet.toLowerCase()].x_verified ? <span style={{ color: "var(--arc-up)", fontSize: 9 }}>✓</span> : null}
+                          </a>
+                        ) : (                        <a href={`https://arc-scan.org/address/${t.wallet}`} rel="noreferrer" style={{ color: "var(--arc-ink)", textDecoration: "none" }} target="_blank">{t.wallet.slice(0, 6)}…{t.wallet.slice(-4)}</a>)}
                         <Tags labels={walletLabels} wallet={t.wallet} />
                         {t.insider_rank && t.insider_rank <= 50 && !walletLabels[t.wallet.toLowerCase()]?.some((l) => l.kind === "insider") && (
                           <a href="/insiders" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", color: "var(--arc-cobalt)", fontSize: 10, marginLeft: 8, padding: "2px 7px", textDecoration: "none", whiteSpace: "nowrap" }} title={`Insider #${t.insider_rank} · 30d PnL $${fmt(t.insider_pnl ?? 0, 0)}`}>INSIDER #{t.insider_rank}</a>
