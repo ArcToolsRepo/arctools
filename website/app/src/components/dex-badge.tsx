@@ -13,11 +13,12 @@ type Meta = { ds_enhanced?: boolean; ds_url?: string | null; logo?: string | nul
  *
  * Renders nothing until the check comes back positive, so a slow or failed call can never leave a broken badge.
  */
-export function DexBadge({ token, hasSocials }: { token: string | null | undefined; hasSocials?: boolean }) {
-  const [meta, setMeta] = useState<Meta | null>(null);
+export function DexBadge({ token, hasSocials, meta: given }: { token: string | null | undefined; hasSocials?: boolean; meta?: Meta | null }) {
+  const [meta, setMeta] = useState<Meta | null>(given ?? null);
 
+  useEffect(() => { if (given) setMeta(given); }, [given]);
   useEffect(() => {
-    if (!token) return;
+    if (!token || given !== undefined) return;   // the page already has it: no second request
     let alive = true;
     fetch(`${API}/api/token-meta?tokens=${token}`, { signal: AbortSignal.timeout(8000) })
       .then((r) => r.json())

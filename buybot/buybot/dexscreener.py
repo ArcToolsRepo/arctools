@@ -57,11 +57,27 @@ def _pick(pairs: list[dict], token: str) -> dict:
 _NUM_ONLY = __import__("re").compile(r"^\d+$")
 
 
+# tabs and sub-pages of a profile, never an account name
+_RESERVED = {"i", "home", "share", "intent", "search", "hashtag", "explore", "status", "with_replies",
+             "media", "likes", "photo", "following", "followers", "joinchat", "s", "c"}
+
+
 def _handle(url: str) -> str | None:
-    """Last path segment of an X/Telegram link. Numeric-only values are X user IDs (from /i/user/… links), which
-    are useless as a handle and render as a dead link, so they are dropped."""
-    h = (url or "").rstrip("/").split("?")[0].split("/")[-1].lstrip("@")
-    if not h or _NUM_ONLY.match(h) or h in ("i", "home", "share", "intent"):
+    """The ACCOUNT from an X/Telegram link — the first path segment, not the last.
+
+    Taking the last segment was wrong: `x.com/circle/with_replies` yielded the handle "with_replies", and it only
+    failed safe on `x.com/<name>/status/<id>` because a tweet id happens to be numeric.
+
+    A link to one specific post is also refused outright. An owner pasting `x.com/circle/status/…` into their
+    DexScreener info is citing somebody else's tweet, not declaring their own account, and crediting the token to
+    @circle would be exactly the false attribution we refuse to publish."""
+    raw = (url or "").split("?")[0].split("#")[0].rstrip("/")
+    if "/status/" in raw or "/statuses/" in raw:
+        return None
+    path = raw.split("//")[-1].split("/", 1)
+    seg = path[1] if len(path) > 1 else ""
+    h = seg.split("/")[0].lstrip("@")
+    if not h or _NUM_ONLY.match(h) or h.lower() in _RESERVED or h.startswith("+"):
         return None
     return h[:64]
 
@@ -86,6 +102,21 @@ def _from_pair(p: dict) -> dict:
     # "enhanced" = the owner filled the info in, which is what the badge reports
     out["ds_enhanced"] = 1 if (out.get("logo") or out.get("x_handle") or out.get("tg_handle") or out.get("domain")) else 0
     return out
+
+
+async def clean_bad_handles() -> int:
+    """Null the handles the last-segment parser produced, and re-open those rows for a fresh read."""
+    junk = sorted(_RESERVED)
+    res = await db.execute(text("""
+        UPDATE social_tokens SET x_handle = NULL, ds_checked = NULL
+        WHERE lower(COALESCE(x_handle, '')) = ANY(:j)""").bindparams(j=junk))
+    res2 = await db.execute(text("""
+        UPDATE social_tokens SET tg_handle = NULL, ds_checked = NULL
+        WHERE lower(COALESCE(tg_handle, '')) = ANY(:j)""").bindparams(j=junk))
+    n = (getattr(res, "rowcount", 0) or 0) + (getattr(res2, "rowcount", 0) or 0)
+    if n:
+        log.info("dexscreener: cleared %s handles produced by the old parser", n)
+    return n
 
 
 async def sweep_once(limit: int = 600) -> tuple[int, int]:
@@ -160,6 +191,10 @@ async def sweep_once(limit: int = 600) -> tuple[int, int]:
 
 async def ds_loop() -> None:
     await init()
+    try:
+        await clean_bad_handles()   # one-off repair of handles the old last-segment parser invented
+    except Exception as e:  # noqa
+        log.warning("dexscreener cleanup: %s", e)
     await asyncio.sleep(70)
     while True:
         try:
@@ -182,5 +217,24 @@ async def api_ds_stats(request):
                count(*) FILTER (WHERE ds_enhanced = 1) AS enhanced,
                count(*) FILTER (WHERE logo_src = 'dexscreener') AS logos
         FROM social_tokens"""))
-    return web.json_response({"session": stats, "totals": dict(row) if row else {}},
+    # the badge says the owner filled the info in; when that row still has no artwork or links we want to see
+    # which tokens they are, because that combination means the badge is claiming more than the data supports
+    gap = await db.fetchall(text("""
+        SELECT token, symbol, x_handle, tg_handle, domain, ds_url
+        FROM social_tokens
+        WHERE ds_enhanced = 1 AND COALESCE(logo, '') = ''
+          AND COALESCE(x_handle, '') = '' AND COALESCE(tg_handle, '') = '' AND COALESCE(domain, '') = ''
+        LIMIT 12"""))
+    gap_n = await db.fetchone(text("""
+        SELECT count(*) n FROM social_tokens WHERE ds_enhanced = 1 AND COALESCE(logo, '') = ''
+          AND COALESCE(x_handle, '') = '' AND COALESCE(tg_handle, '') = '' AND COALESCE(domain, '') = ''"""))
+    nologo = await db.fetchone(text("SELECT count(*) n FROM social_tokens WHERE ds_enhanced = 1 AND COALESCE(logo, '') = ''"))
+    sample = await db.fetchall(text("""
+        SELECT token, symbol, COALESCE(logo, '') logo, COALESCE(x_handle, '') x_handle,
+               COALESCE(tg_handle, '') tg_handle, COALESCE(domain, '') domain, logo_src
+        FROM social_tokens WHERE ds_enhanced = 1 ORDER BY ds_checked DESC LIMIT 10"""))
+    return web.json_response({"session": stats, "totals": dict(row) if row else {},
+                              "badge_without_logo": (nologo or {}).get("n"),
+                              "badge_without_anything": (gap_n or {}).get("n"),
+                              "examples": [dict(r) for r in gap], "badge_sample": [dict(r) for r in sample]},
                              headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-store"})

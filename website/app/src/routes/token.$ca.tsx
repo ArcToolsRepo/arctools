@@ -11,6 +11,23 @@ import { TokenLogo } from "@/components/token-logo";
 import { TvChart, type Candle } from "@/components/tv-chart";
 import { TvAdvanced, advancedAvailable } from "../components/tv-advanced";
 import { DexBadge } from "@/components/dex-badge";
+
+type DsMeta = { ds_enhanced?: boolean; ds_url?: string | null; logo?: string | null; twitter?: string | null; telegram?: string | null; website?: string | null };
+
+/** One token-meta lookup per page, shared by the badge and the header avatar. */
+function useDsMeta(ca: string | null | undefined) {
+  const [meta, setMeta] = useState<DsMeta | null>(null);
+  useEffect(() => {
+    if (!ca) return;
+    let alive = true;
+    fetch(`/bot/api/token-meta?tokens=${ca.toLowerCase()}`, { signal: AbortSignal.timeout(8000) })
+      .then((r) => r.json())
+      .then((j: { meta?: Record<string, DsMeta> }) => { if (alive) setMeta(j.meta?.[ca.toLowerCase()] ?? null); })
+      .catch(() => null);
+    return () => { alive = false; };
+  }, [ca]);
+  return meta;
+}
 import { DevTokens, KolBadge, KolMentions, MarkerLegend, MyPosition, TopTraders, useTokenEvents } from "@/components/token-intel";
 import { ARC_V4_ROUTER, SWAP_FEE_ROUTER, tokenPage, venueData, type PadToken, type TokenPageInfo, type VenueData } from "@/lib/arc-api";
 import { creditRef } from "@/lib/arc-ref";
@@ -254,6 +271,7 @@ function TokenPage() {
   const [balTok, setBalTok] = useState<number | null>(null);
 
   const ca = info?.token ?? "";
+  const dsMeta = useDsMeta(ca || params.ca);   // shared by the DEX badge and the header artwork
   const { markers: chartMarkers, avatars: chartAvatars, data: eventsData } = useTokenEvents(ca || null, 14, candles[0]?.t ?? 0);
   const [markersVisible, setMarkersVisible] = useState<number | null>(null);
   const dec = info?.decimals ?? 18;
@@ -713,12 +731,12 @@ function TokenPage() {
         {/* ---------- header ---------- */}
         <div className="arc-token__head">
           <div style={{ alignItems: "center", display: "flex", gap: 14, minWidth: 0 }}>
-            <TokenLogo radius={12} size={56} src={info.logo} symbol={info.symbol || "?"} />
+            <TokenLogo radius={12} size={56} src={info.logo || dsMeta?.logo || null} symbol={info.symbol || "?"} />
             <div style={{ minWidth: 0 }}>
               <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 8 }}>
                 <h1 className="arc-h3" style={{ margin: 0 }}>{info.name}</h1>
                 <KolBadge token={ca} />
-                <DexBadge hasSocials={!!(info.twitter || info.telegram || info.website)} token={ca} />
+                <DexBadge hasSocials={!!(info.twitter || info.telegram || info.website)} meta={dsMeta} token={ca} />
                 <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 13 }}>${info.symbol}</span>
                 <span className="arc-mono" title={info.stock ? "Custodial IOU of a stock (long.supply) — trades against USDC" : `Trading pair: ${info.symbol}/${pairSym}${pairSym !== "USDC" ? " — quoted in a wrapped stock, routed USDC → " + pairSym + " → " + info.symbol : ""}`} style={{ border: "1px solid var(--arc-line)", borderRadius: 4, color: pairSym !== "USDC" ? "#7cc4ff" : "var(--arc-muted)", fontSize: 10.5, padding: "2px 6px" }}>
                   {info.symbol}/{info.stock ? "USDC · IOU" : pairSym}
