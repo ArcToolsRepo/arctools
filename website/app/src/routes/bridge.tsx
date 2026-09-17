@@ -109,6 +109,10 @@ const pad = (hex: string) => hex.replace(/^0x/, "").toLowerCase().padStart(64, "
 const padNum = (n: bigint) => n.toString(16).padStart(64, "0");
 
 function encodeDepositForBurn(amount: bigint, burnToken: string): string {
+  // maxFee has to be non-zero for Circle to use the FAST path: with 0 the transfer is "finalized only", which is
+  // 13-19 minutes from Ethereum and several from Arbitrum — longer than any browser tab stays open. 2 bps (floor
+  // 0.01 USDC) covers Circle's fast fee, which is charged out of the bridged amount.
+  const maxFee = amount / 5000n > 10_000n ? amount / 5000n : 10_000n;
   return (
     "0x8e0250ee" +
     padNum(amount) +
@@ -116,8 +120,8 @@ function encodeDepositForBurn(amount: bigint, burnToken: string): string {
     pad(BRIDGE_PROXY) + // mint to the fee proxy; it forwards to the sender atomically
     pad(burnToken) +
     pad(BRIDGE_PROXY) + // destinationCaller = the proxy: nobody else (e.g. a public relayer) can mint, so funds never park in the proxy
-    padNum(0n) +
-    padNum(1000n)
+    padNum(maxFee) +
+    padNum(1000n)       // 1000 = confirmed/fast; 2000 would force the slow finalized path
   );
 }
 
@@ -244,6 +248,12 @@ function BridgePage() {
 
       // 2) depositForBurn (mint goes to the fee proxy)
       setStep(1);
+      // remembered before we even wait for the attestation, so a closed tab (or a failed mint) can be resumed
+      const remember = (txh: string) => {
+        try {
+          localStorage.setItem("arctools_bridge_pending", JSON.stringify({ amount, domain: src.domain, src: src.label, ts: Date.now(), tx: txh }));
+        } catch { /* private mode */ }
+      };
       const burnTx = (await eth.request({
         method: "eth_sendTransaction",
         params: [
@@ -255,6 +265,7 @@ function BridgePage() {
         ],
       })) as string;
       await waitForReceipt(eth, burnTx);
+      remember(burnTx);           // from here the keeper can finish the transfer even if this tab closes
 
       // 3) attestation
       setStep(2);
@@ -269,7 +280,7 @@ function BridgePage() {
         }
         await sleep(3000);
       }
-      if (!message) throw new Error("attestation timed out, try again in a minute");
+      if (!message) throw new Error("Circle has not attested this burn yet. Your USDC is safe — our keeper finishes the transfer automatically, usually within 20 minutes. You can close this page.");
 
       // 4) atomic mint + fee via the proxy on Arc (one transaction)
       setStep(3);
