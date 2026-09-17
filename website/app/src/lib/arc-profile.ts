@@ -37,7 +37,7 @@ export type ProfileView = { profile: Profile | null; stats?: ProfileStats; badge
 export type LeaderRow = {
   handle: string; display: string | null; avatar: string | null; x_handle: string | null; x_verified: number;
   pnl_total: number | null; roi: number | null; winrate: number | null; volume: number | null;
-  trades: number | null; closed: number | null;
+  trades: number | null; closed: number | null; ranked?: boolean;
 };
 
 export type ProfileTrade = {

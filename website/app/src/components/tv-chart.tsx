@@ -29,6 +29,9 @@ type Props = {
   height?: number;
   markers?: ChartMarker[];
   avatars?: ChartAvatar[];
+  /** trader badges on/off, owned by the page so it can thin the data too */
+  badges?: boolean;
+  onBadges?: (on: boolean) => void;
   /** how many markers fall inside the loaded candle range (the rest are older than the chart) */
   onVisible?: (n: number) => void;
   /** legend header, e.g. "LONG/USDC" */
@@ -84,7 +87,7 @@ function themeColors() {
     : { text: "#7c889e", grid: "rgba(60,70,90,0.18)", gridV: "rgba(60,70,90,0.10)", border: "rgba(60,70,90,0.35)", wm: "rgba(150,170,200,0.07)", up: "#22c580", down: "#f0534f", light };
 }
 
-export function TvChart({ candles, scale, mode, height = 440, markers, avatars, onVisible, symbol, interval, storageKey, orderLines }: Props) {
+export function TvChart({ candles, scale, mode, height = 440, markers, avatars, badges, onBadges, onVisible, symbol, interval, storageKey, orderLines }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -566,6 +569,11 @@ export function TvChart({ candles, scale, mode, height = 440, markers, avatars, 
         </div>
         <span style={{ borderLeft: "1px solid rgba(60,70,90,0.5)", height: 22, margin: "0 4px" }} />
         {(["log", "lin", "pct"] as const).map((k) => <button key={k} onClick={() => setScaleMode(k)} style={bar(scaleMode === k)} type="button" title={k === "log" ? "logarithmic scale" : k === "lin" ? "linear scale" : "percent change scale"}>{k === "pct" ? "%" : k}</button>)}
+        {onBadges && (
+          <button onClick={() => onBadges(!badges)} style={bar(!!badges)} title="trader badges on the chart" type="button">
+            badges
+          </button>
+        )}
         <button onClick={() => setMagnet((v) => !v)} style={bar(magnet)} type="button" title="magnet crosshair (snaps to OHLC)">🧲</button>
         <span style={{ marginLeft: "auto" }} />
         <button onClick={fit} style={bar(false)} type="button" title="fit all bars">⤢ fit</button>

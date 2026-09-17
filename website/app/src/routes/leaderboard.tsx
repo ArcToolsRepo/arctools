@@ -45,8 +45,8 @@ function Leaderboard() {
       <header>
         <h1 style={{ fontSize: 30, margin: 0 }}>Traders</h1>
         <p style={{ color: "var(--arc-muted)", margin: "6px 0 0" }}>
-          Ranked from Arc swaps, not from anything anyone typed in. Bot-flagged wallets and accounts with fewer
-          than three closed positions are left out.
+          Ranked from Arc swaps, not from anything anyone typed in. Everyone with a profile is listed; a row counts
+          as ranked once it has three closed positions and $100 of volume, and bot-flagged wallets never count.
         </p>
       </header>
 
@@ -89,6 +89,12 @@ function Leaderboard() {
               </span>
               <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10 }}>
                 @{r.handle}{r.x_handle ? ` · 𝕏 @${r.x_handle}` : ""}
+                {r.ranked === false && (
+                  <span title="needs 3 closed positions and $100 volume to be ranked"
+                    style={{ border: "1px solid var(--arc-line)", borderRadius: 999, color: "var(--arc-muted)", marginLeft: 6, padding: "1px 6px" }}>
+                    unranked
+                  </span>
+                )}
               </span>
             </span>
             <span className="arc-mono" style={{ color: (r.pnl_total ?? 0) >= 0 ? "var(--arc-up)" : "var(--arc-down, #f0534f)", fontSize: 13, marginLeft: "auto", width: 100, textAlign: "right" }}>

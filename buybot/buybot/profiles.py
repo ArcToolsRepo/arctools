@@ -401,8 +401,7 @@ async def api_leaderboard(req: web.Request):
              "volume": "volume DESC"}.get(sort, "pnl_total DESC")
     # the official board demands a track record; the side rail on a profile page is navigation, so it may list
     # everyone (still never a wallet flagged as a bot)
-    relaxed = req.query.get("relaxed") == "1"
-    min_closed, min_vol = (0, 0) if relaxed else (3, 100)
+    min_closed, min_vol = 0, 0          # list everyone; "ranked" is a property of the row, not a filter
     rows = await db.fetchall(text(f"""
         WITH agg AS (
             SELECT pw.handle,
@@ -430,6 +429,8 @@ async def api_leaderboard(req: web.Request):
                       "closed": st.get("closed"), "winrate": st.get("winrate"), "roi": st.get("roi")})
         except Exception:  # noqa
             continue
+    for r in out:
+        r["ranked"] = (r.get("closed") or 0) >= 3 and (r.get("volume") or 0) >= 100
     if sort == "pnl":
         out.sort(key=lambda r: r.get("pnl_total") or 0, reverse=True)
     elif sort == "volume":
