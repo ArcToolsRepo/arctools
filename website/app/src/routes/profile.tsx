@@ -162,12 +162,7 @@ function Profile() {
   return (
     <main className="arc-site" style={{ minHeight: "100dvh" }}>
       <ArcNav active="/profile" />
-      {/* the editor gets the full page width: it is the profile being built, not a side form */}
-      <section className="arc-section" style={{ maxWidth: 1560, paddingBottom: 0, paddingTop: 118 }}>
-        <ProfileEditor />
-        <FollowingFeed />
-      </section>
-      <section className="arc-section" style={{ maxWidth: 1360, paddingTop: 8 }}>
+      <section className="arc-section" style={{ maxWidth: 1360, paddingTop: 118 }}>
         <div className="arc-2col" style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr) 340px" }}>
           <div>
             <h1 style={{ fontSize: 26, margin: "0 0 4px" }}>Profile</h1>
@@ -330,6 +325,11 @@ function Profile() {
             </div>
           </div>
         </div>
+      </section>
+      {/* the public profile is built AFTER the wallet exists, so it sits below it */}
+      <section className="arc-section" style={{ maxWidth: 1560, paddingTop: 10 }}>
+        <ProfileEditor />
+        <FollowingFeed />
       </section>
     </main>
   );

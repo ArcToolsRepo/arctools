@@ -155,9 +155,17 @@ function ProfilePage() {
 
   return (
     <main style={{
-      display: "grid", gap: 14, margin: "0 auto", maxWidth: 1560, padding: "16px 14px 60px",
+      display: "grid", gap: 14, margin: "0 auto", maxWidth: 1560, padding: "16px 14px 96px",
       gridTemplateColumns: "minmax(0, 1fr)",
     }}>
+      <div style={{ alignItems: "center", display: "flex", gap: 12 }}>
+        <Link className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 999, color: "var(--arc-ink)", fontSize: 12, padding: "6px 14px", textDecoration: "none" }} to="/profile">
+          ← back to my profile
+        </Link>
+        <Link className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, textDecoration: "none" }} to="/trade">Terminal</Link>
+        <Link className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, textDecoration: "none" }} to="/leaderboard">Traders</Link>
+      </div>
+
       <div className="arc-u-grid" style={{ display: "grid", gap: 14 }}>
         {/* LEFT — the ranking */}
         <aside style={{ ...CARD, alignSelf: "start", overflow: "hidden" }}>
@@ -291,33 +299,30 @@ function ProfilePage() {
             {tab !== "activity" && (
               <>
                 <div className="arc-mono" style={{ borderBottom: "1px solid var(--arc-line)", color: "var(--arc-muted)", display: "flex", fontSize: 10, gap: 10, padding: "8px 16px", textTransform: "uppercase" }}>
-                  <span style={{ flex: 1 }}>token</span><span style={{ width: 90, textAlign: "right" }}>size</span>
-                  <span style={{ width: 110, textAlign: "right" }}>position</span><span style={{ width: 120, textAlign: "right" }}>profit</span>
+                  <span style={{ flex: 1 }}>token</span><span>profit</span>
                 </div>
                 {!(tab === "open" ? pos.open : pos.closed).length && (
                   <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, padding: 16 }}>nothing {tab} yet</p>
                 )}
                 {(tab === "open" ? pos.open : pos.closed).map((r) => (
-                  <div key={r.token} style={{ borderTop: "1px solid var(--arc-line)", padding: "10px 16px" }}>
+                  <div key={r.token} style={{ borderTop: "1px solid var(--arc-line)", display: "grid", gap: 6, padding: "11px 16px" }}>
+                    {/* line one: what it is and what it made. line two: the detail. Five columns on a phone is
+                        how the size column ended up sitting on top of the "Spent" line. */}
                     <div style={{ alignItems: "center", display: "flex", gap: 10 }}>
                       <Avatar label={r.symbol || "?"} size={30} src={r.logo} />
-                      <div style={{ display: "grid", flex: 1, minWidth: 0 }}>
-                        <Link params={{ ca: r.token }} style={{ color: "var(--arc-ink)", fontSize: 13, fontWeight: 600, textDecoration: "none" }} to="/token/$ca">
-                          {r.symbol || `${r.token.slice(0, 6)}…`}
-                        </Link>
-                        <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10 }}>
-                          {tab === "open" ? `Last trade ${ago(r.last_ts)}` : `Closed ${ago(r.last_ts)} ago`} · {r.n} tx
-                        </span>
-                      </div>
-                      <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, textAlign: "right", width: 90 }}>
-                        {tab === "open" ? (r.held ? `${(r.held / 1e6).toFixed(1)}M` : "—") : "closed"}
-                      </span>
-                      <span className="arc-mono" style={{ fontSize: 12, textAlign: "right", width: 110 }}>{usd(tab === "open" ? r.value : r.proceeds)}</span>
-                      <span className="arc-mono" style={{ color: r.pnl >= 0 ? UP : DOWN, fontSize: 12, textAlign: "right", width: 120 }}>
+                      <Link params={{ ca: r.token }} style={{ color: "var(--arc-ink)", flex: 1, fontSize: 13, fontWeight: 600, minWidth: 0, overflow: "hidden", textDecoration: "none", textOverflow: "ellipsis", whiteSpace: "nowrap" }} to="/token/$ca">
+                        {r.symbol || `${r.token.slice(0, 6)}…`}
+                      </Link>
+                      <span className="arc-mono" style={{ color: r.pnl >= 0 ? UP : DOWN, fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
                         {r.pnl >= 0 ? "+" : ""}{usd(r.pnl)}{r.pnl_pct == null ? "" : ` (${r.pnl_pct.toFixed(0)}%)`}
                       </span>
                     </div>
-                    <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 10, marginTop: 4 }}>Spent {usd(r.cost)}</div>
+                    <div className="arc-mono" style={{ color: "var(--arc-muted)", display: "flex", flexWrap: "wrap", fontSize: 10, gap: "2px 12px" }}>
+                      <span>{tab === "open" ? `Last trade ${ago(r.last_ts)}` : `Closed ${ago(r.last_ts)} ago`} · {r.n} tx</span>
+                      <span>Size {tab === "open" ? (r.held ? `${(r.held / 1e6).toFixed(1)}M` : "—") : "closed"}</span>
+                      <span>Position {usd(tab === "open" ? r.value : r.proceeds)}</span>
+                      <span>Spent {usd(r.cost)}</span>
+                    </div>
                   </div>
                 ))}
               </>

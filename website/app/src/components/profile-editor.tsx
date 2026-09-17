@@ -235,25 +235,25 @@ export function ProfileEditor() {
 
       {/* the card being built */}
       <div style={{ ...cardBox, overflow: "hidden" }}>
-        <label style={{
+        <div style={{
           background: bannerUrl ? `center/cover no-repeat url(${bannerUrl})` : "linear-gradient(160deg, #1b2a4a, #0d1524)",
-          cursor: "pointer", display: "block", height: 170, position: "relative",
-        }} title="click to upload a banner">
-          <input accept="image/png,image/jpeg,image/webp,image/gif" onChange={pick("banner")} style={{ display: "none" }} type="file" />
-          <span className="arc-mono" style={{ background: "rgba(0,0,0,0.5)", borderRadius: 8, color: "#fff", fontSize: 11, padding: "5px 10px", position: "absolute", right: 12, top: 12 }}>
+          height: 170, position: "relative",
+        }}>
+          <label className="arc-mono" title="upload a banner from your computer or phone"
+            style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 8, color: "#fff", cursor: "pointer", fontSize: 11, padding: "6px 11px", position: "absolute", right: 12, top: 12 }}>
+            <input accept="image/*" onChange={pick("banner")} style={{ display: "none" }} type="file" />
             {bannerUrl ? "change banner" : "upload banner"}
-          </span>
-          <span style={{ bottom: -44, left: 22, position: "absolute" }}>
-            <label style={{ cursor: "pointer", display: "block", position: "relative" }} title="click to upload an avatar">
-              <input accept="image/png,image/jpeg,image/webp,image/gif" onChange={pick("avatar")} style={{ display: "none" }} type="file" />
-              {avatarUrl
-                ? <img alt="" src={avatarUrl} style={{ background: "var(--arc-paper)", border: "3px solid var(--arc-bg, #0a0d14)", borderRadius: "50%", height: 100, objectFit: "cover", width: 100 }} />
-                : <span className="arc-mono" style={{ alignItems: "center", background: "var(--arc-line)", border: "3px solid var(--arc-bg, #0a0d14)", borderRadius: "50%", color: "var(--arc-muted)", display: "flex", fontSize: 11, height: 100, justifyContent: "center", textAlign: "center", width: 100 }}>
-                    upload<br />avatar
-                  </span>}
-            </label>
-          </span>
-        </label>
+          </label>
+          <label title="upload an avatar from your computer or phone"
+            style={{ bottom: -44, cursor: "pointer", display: "block", left: 22, position: "absolute" }}>
+            <input accept="image/*" onChange={pick("avatar")} style={{ display: "none" }} type="file" />
+            {avatarUrl
+              ? <img alt="" src={avatarUrl} style={{ background: "var(--arc-paper)", border: "3px solid var(--arc-bg, #0a0d14)", borderRadius: "50%", height: 100, objectFit: "cover", width: 100 }} />
+              : <span className="arc-mono" style={{ alignItems: "center", background: "var(--arc-line)", border: "3px solid var(--arc-bg, #0a0d14)", borderRadius: "50%", color: "var(--arc-muted)", display: "flex", fontSize: 11, height: 100, justifyContent: "center", textAlign: "center", width: 100 }}>
+                  upload<br />avatar
+                </span>}
+          </label>
+        </div>
 
         <div style={{ display: "grid", gap: 12, padding: "54px 22px 18px" }}>
           <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
