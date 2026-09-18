@@ -1982,7 +1982,7 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   // order = priority when the same token appears in several sources
   // launchpad-native lists first so a token keeps its real source label; the RadarDex launch feed (which also
   // mirrors other pads' tokens) and the screener only fill what nobody else listed
-  const order = ["ArcPad", "Warp", "Tolly", "Archemist", "Arguspad", "UniswapV4", "UniswapV3", "RadarDex"];
+  const order = ["ArcPad", "Warp", "Tolly", "Archemist", "Arguspad", "RadarDex", "UniswapV3", "UniswapV4"];
   const byName = new Map(ALL_PADS.map((p, i) => [p, rest[i]]));
   // the RadarDex screener (chain-wide top tokens by activity, with icons + socials + mcap): established tokens such as
   // TOLLY / ARGUS never appear in any launch feed, this is where their metadata comes from
@@ -2025,9 +2025,34 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
     if (!r || !["UniswapV3", "UniswapV4", "RadarDex", "DYORSwap"].includes(t.pad)) return t;
     return { ...t, pad: r.pad, logo: t.logo ?? r.logo ?? null, name: t.name || r.name || t.name, venueUrl: r.url ? `${r.url}` : t.venueUrl, createdAt: t.createdAt ?? (r.ts ? new Date(r.ts * 1000).toISOString() : null) };
   };
-  const all = [...pad, ...longs, ...lift, ...ellipse, ...order.filter((p) => p !== "RadarDex").flatMap((p) => byName.get(p as typeof ALL_PADS[number]) ?? []), ...(byName.get("RadarDex") ?? []), ...screener, ...v2]
+  const dedupeInput = [...pad, ...longs, ...lift, ...ellipse, ...(byName.get("RadarDex") ?? []), ...order.filter((p) => p !== "RadarDex").flatMap((p) => byName.get(p as typeof ALL_PADS[number]) ?? []), ...screener, ...v2]
     .filter((t) => !(apiPads.has(t.token.toLowerCase()) && t.pad !== "Lift" && t.pad !== "Ellipse"))
-    .map(relabel).filter((t) => { const k = t.token.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+    .map(relabel);
+  // Merge duplicates instead of dropping them: the same token arrives from several sources (its launchpad, the generic
+  // Uniswap V4/V3 pool lists, the screener) and each carries different fields. Dropping the later copy meant a token
+  // whose launchpad feed was briefly down (RadarDex answers 403 today) lost its logo, age and label to a bare pool row.
+  const mergedRows = new Map<string, PadToken>();
+  const generic = (p?: string | null) => !p || p === "UniswapV4" || p === "UniswapV3" || p === "DYORSwap";
+  for (const t of dedupeInput) {
+    const k = t.token.toLowerCase();
+    const prev = mergedRows.get(k);
+    if (!prev) { mergedRows.set(k, t); continue; }
+    mergedRows.set(k, {
+      ...prev,
+      pad: generic(prev.pad) && !generic(t.pad) ? t.pad : prev.pad,
+      logo: prev.logo ?? t.logo, createdAt: prev.createdAt ?? t.createdAt,
+      twitter: prev.twitter ?? t.twitter, telegram: prev.telegram ?? t.telegram, website: prev.website ?? t.website,
+      mcapUsd: prev.mcapUsd ?? t.mcapUsd, priceUsd: prev.priceUsd ?? t.priceUsd, volUsd: prev.volUsd ?? t.volUsd,
+      name: prev.name || t.name, symbol: prev.symbol || t.symbol,
+      ...(prev.liqUsd == null && t.liqUsd != null ? { liqUsd: t.liqUsd } : {}),
+      ...(prev.curve == null && t.curve != null ? { curve: t.curve } : {}),
+      ...(t.stock ? { stock: true } : {}),
+      dexes: (prev.dexes?.length ? prev.dexes : t.dexes) ?? [],
+    } as PadToken);
+  }
+  const rowsMerged = [...mergedRows.values()];
+  void seen;
+  const all = rowsMerged;
   // faze.fun runs its own bonding curve: a coin that has not graduated has no Uniswap pool, so price, FDV, 24h
   // volume and holders exist only on the curve. The buybot mirrors them at /api/faze; without this merge these
   // rows show a chip and nothing else.
@@ -2130,7 +2155,7 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   } catch { /* meta service busy: rows keep what they have */ }
   await healFromMemory(all);
   // full (uncompacted) list for the client-side explorer / pagination — same compact field shape
-  fullListCache = { ts: Date.now(), v: all.map(compactToken) };
+  fullListCache = { ts: Date.now(), v: capList(all.map(compactToken)) };
   for (const t of all) if (scr.has(t.token.toLowerCase())) keep.set(t.token.toLowerCase(), t);
   // whatever is trending / moving in the last 24 h must carry its metadata into the Terminal rows
   try {
@@ -2142,19 +2167,49 @@ export async function listAllTokensImpl(): Promise<PadToken[]> {
   } catch { /* trending API busy: newest + busiest + screener */ }
   const official = all.find((t) => t.token.toLowerCase() === "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52");
   if (official) keep.set(official.token.toLowerCase(), official);
+  /** Drop null/empty keys: the wire shape had 18 keys per row, most of them null — 110k rows came to 40 MB, which is
+   *  over the 25 MB KV limit, so the list cache silently stopped saving and EVERY page load recomputed it (10-18 s). */
+  function slim(t: PadToken): PadToken {
+    const o: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(t)) {
+      if (v === null || v === undefined || v === "" || v === false) continue;
+      if (Array.isArray(v) && v.length === 0) continue;
+      o[k] = v;
+    }
+    return o as unknown as PadToken;
+  }
+  /** Cap the list so it stays cacheable: rank by "is this tradable/alive", keep a quota per launchpad so every source
+   *  chip still has content, then a global cap. The Terminal never renders more than a few hundred rows at once. */
+  function capList(rows: PadToken[], perPad = 2500, total = 30000): PadToken[] {
+    const now = Date.now() / 1000;
+    const age = (t: PadToken) => (t.createdAt ? new Date(t.createdAt).getTime() / 1000 : 0);
+    const score = (t: PadToken) => (t.volUsd ? 4 : 0) + (t.mcapUsd ? 3 : 0) + (t.logo ? 1 : 0) + (age(t) > now - 7 * 86400 ? 2 : 0) + (t.curve != null ? 1 : 0);
+    const sorted = [...rows].sort((a, b) => score(b) - score(a) || (b.volUsd ?? 0) - (a.volUsd ?? 0) || age(b) - age(a));
+    const perPadCount = new Map<string, number>();
+    const out: PadToken[] = [];
+    for (const t of sorted) {
+      const k = t.pad || "?";
+      const n = perPadCount.get(k) ?? 0;
+      if (n >= perPad) continue;
+      perPadCount.set(k, n + 1);
+      out.push(t);
+      if (out.length >= total) break;
+    }
+    return out;
+  }
   function compactToken(t: PadToken): PadToken {
-    return {
+    return slim({
       createdAt: t.createdAt, logo: t.logo, mcapUsd: t.mcapUsd, name: (t.name ?? "").slice(0, 40), pad: t.pad, pool: t.pool, priceUsd: t.priceUsd, stage: t.stage ?? null,
       symbol: (t.symbol ?? "").slice(0, 16), telegram: t.telegram, token: t.token.toLowerCase(), twitter: t.twitter, venueUrl: t.venueUrl, volUsd: t.volUsd, website: t.website,
       og: t.og || scrMeta.get(t.token.toLowerCase())?.og || false, dexes: t.dexes?.length ? t.dexes : (scrMeta.get(t.token.toLowerCase())?.dexes ?? []),
       ...(t.stock ? { stock: true } : {}), ...(t.quote ? { quote: t.quote, quoteSymbol: t.quoteSymbol } : {}), ...(t.liqUsd != null ? { liqUsd: t.liqUsd } : {}),
       ...(t.curve != null ? { curve: t.curve } : {}),   // bonding-curve fill: only present while the coin has not graduated
-    } as PadToken;
+    } as PadToken);
   }
   // never list the quote assets themselves (native USDC / USDC facade / ARGUS bridge quotes): they are what tokens are priced in
   const QUOTE_ASSETS = new Set(["0x0000000000000000000000000000000000000000", "0x3600000000000000000000000000000000000000"]);
   for (const k of [...keep.keys()]) if (QUOTE_ASSETS.has(k.toLowerCase())) keep.delete(k);
-  return [...keep.values()].sort((a, b) => ts(b) - ts(a)).map(compactToken);
+  return capList([...keep.values()].sort((a, b) => ts(b) - ts(a)).map(compactToken));
 }
 let fullListCache: { ts: number; v: PadToken[] } | null = null;
 /** Every token we know (all sources, no compaction) — served to the client after first paint for paging / source chips. */

@@ -770,7 +770,7 @@ async def _v4_active_compute() -> None:
     for r in rows:
         out.append({"id": r["id"], "token": r["token"], "hooks": r["hooks"], "fee": r["fee"], "block": r["block"], "symbol": r["symbol"],
                     "swaps": int(r["n"] or 0), "vol24": float(r["vol24"] or 0), "last_ts": int(r["last"] or 0),
-                    "price1m": float(r["state_price1m"]) if r["state_price1m"] else None, "created_ts": int(r["first"] or 0) or None,
+                    "price1m": float(r["state_price1m"]) if r["state_price1m"] else None, "created_ts": None,
                     "supply": total_supply_nowait(r["token"])})
     _v4_active_cache["rows"], _v4_active_cache["ts"] = out, now
 
