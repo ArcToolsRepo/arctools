@@ -527,6 +527,28 @@ async def api_venue_tokens(req: web.Request):
         d["supply"] = sup
         d["mcap"] = (float(d["price1m"]) / 1e6 * sup) if (sup and d.get("price1m")) else None
     await asyncio.gather(*[fill(d) for d in out])
+
+    # Curve launchpads (peach.ag, sharc.fun, creo.family, pools.trade, UBI.fun, Klik, Minara): a coin still on
+    # its curve has no Uniswap pool, so nothing on the site's list ever carries it — and the site only relabels
+    # rows it already has. This is the one list the site reads that passes through that relabel step with a
+    # registry lookup, so the registry's curve tokens ride along here. The site turns "DYORSwap" into the pad
+    # name from the registry, then its /api/faze merge fills in price and volume.
+    if venue == "v2":
+        seen = {r["token"].lower() for r in out}
+        curve = await db.fetchall(text("""
+            SELECT p.token, p.pad, p.ts, COALESCE(NULLIF(p.symbol, ''), s.symbol) AS symbol, s.logo, s.name
+            FROM pad_tokens p LEFT JOIN social_tokens s ON s.token = p.token
+            WHERE p.pad IN ('peach', 'sharc', 'creo', 'pools', 'ubi', 'klik', 'minara')
+              AND COALESCE(NULLIF(p.symbol, ''), s.symbol, '?') <> '?'
+              AND NOT EXISTS (SELECT 1 FROM insider_pools ip WHERE ip.token = p.token)     -- graduated ones already show via their pool
+            ORDER BY p.ts DESC LIMIT 2500"""))
+        for r in curve:
+            t = r["token"].lower()
+            if t in seen:
+                continue
+            seen.add(t)
+            out.append({"token": t, "symbol": r["symbol"], "txs": 0, "vol": None, "first_ts": r["ts"], "last_ts": None,
+                        "price1m": None, "supply": None, "mcap": None, "curve_pad": r["pad"]})
     return web.json_response({"venue": venue, "rows": out},
                              headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=30"})
 
