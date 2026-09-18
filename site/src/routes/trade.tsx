@@ -221,6 +221,7 @@ function Trade() {
   const [rows, setRows] = useState<PadToken[]>(initial?.rows ?? []);
   const [movers, setMovers] = useState<Mover[]>([]);
   const [trend, setTrend] = useState<Trend[]>(initial?.trend ?? []);
+  const [hot, setHot] = useState<Trend[]>([]);
   // ---- LIVE: every swap on Arc (≥ $1) arrives over SSE in 300 ms frames → the row's vol / txs / buys-sells / price / MC
   //      move the moment the block lands; toasts get the same feed via a window event. Polling stays as fallback.
   const [liveFeed, setLiveFeed] = useState(false);
@@ -292,6 +293,16 @@ function Trade() {
     const load = () => fetch(`${API}/api/trending?minutes=${tf}&limit=400`).then((r) => r.json()).then((j) => { if (alive && Array.isArray(j.rows) && j.rows.length) setTrend(j.rows); }).catch(() => null);
     void load();
     const id = setInterval(load, 15_000);
+    return () => { alive = false; clearInterval(id); };
+  }, [tf]);
+  // Trending is a momentum ranking, not the volume list: many traders, buying, accelerating; wash-looking rows filtered
+  // server-side. "All time" has no momentum, so the tab falls back to the 24 h window.
+  useEffect(() => {
+    let alive = true;
+    const mins = tf === 0 ? 1440 : tf;
+    const load = () => fetch(`${API}/api/trending?minutes=${mins}&limit=200&sort=trend`).then((r) => r.json()).then((j) => { if (alive && Array.isArray(j.rows) && j.rows.length) setHot(j.rows); }).catch(() => null);
+    void load();
+    const id = setInterval(load, 20_000);
     return () => { alive = false; clearInterval(id); };
   }, [tf]);
   // on-chain USDC-side liquidity for the visible rows (own index API: V3/pad pool balances + V4 slot0/liquidity)
@@ -481,6 +492,8 @@ function Trade() {
   const trendMap = useMemo(() => {
     const m = new Map<string, Trend>(Object.entries(extraStats));
     for (const t of trend) m.set(t.token.toLowerCase(), t);
+    // the momentum list carries the same window stats; a token only the momentum ranking knows must still get its numbers
+    for (const t of hot) if (!m.has(t.token.toLowerCase())) m.set(t.token.toLowerCase(), t);
     // the Top volume tab ranks by volume since launch, so it must also display those numbers
     if (tab === "topvol") for (const t of volAll) m.set(t.token.toLowerCase(), t);
     if (!m.has(OFFICIAL_TOKEN) && offStats) {
@@ -488,7 +501,7 @@ function Trade() {
       m.set(OFFICIAL_TOKEN, { token: OFFICIAL_TOKEN, symbol: "ARCT", txs: offStats.buys24 + offStats.sells24, vol: offStats.vol24, buys: offStats.buys24, sells: offStats.sells24, traders: offStats.traders24, p1: offStats.price1m, chg: null, first_ts: null, ath: null, txs_all: 0, supply, mcap: px ? px * supply : null, ath_mcap: null });
     }
     return m;
-  }, [trend, offStats, extraStats, tab, volAll]);
+  }, [trend, hot, offStats, extraStats, tab, volAll]);
   const toRow = (token: string): Row => {
     const k = token.toLowerCase();
     const t = byToken.get(k); const tr = trendMap.get(k); const c = clusterMap.get(k);
@@ -514,7 +527,7 @@ function Trade() {
       base = rows.map((t) => toRow(t.token)).filter((r) => r.age && now - r.age < 900)
         .sort((a, b) => (b.age ?? 0) - (a.age ?? 0));
     }
-    else if (tab === "trending") base = trend.map((t) => toRow(t.token));
+    else if (tab === "trending") base = (hot.length ? hot : trend).map((t) => toRow(t.token));
     else if (tab === "topvol") base = [...volAll].sort((a, b) => (b.vol ?? 0) - (a.vol ?? 0)).map((t) => toRow(t.token));
     else if (tab === "insiders") base = clusters.map((c) => toRow(c.token));
     else if (tab === "favs") base = [...favs].map((t) => toRow(t));
@@ -534,7 +547,7 @@ function Trade() {
     if (lo) base = base.filter((r) => (r.mcap ?? 0) >= lo);
     if (hi) base = base.filter((r) => (r.mcap ?? 0) > 0 && (r.mcap ?? 0) <= hi);
     if (mv) base = base.filter((r) => r.vol >= mv);
-    if (tab !== "topvol" && ((tab !== "new" && tab !== "new15" && (padF === "all" || tab === "all")) || sortKey !== "vol")) {
+    if (tab !== "topvol" && !(tab === "trending" && sortKey === "vol") && ((tab !== "new" && tab !== "new15" && (padF === "all" || tab === "all")) || sortKey !== "vol")) {
       const key = ((tab === "new" || tab === "new15") || (padF !== "all" && tab !== "all")) && sortKey === "vol" ? "age" : sortKey;
       base.sort((a, b) => key === "age" ? fin(b.age) - fin(a.age) : key === "mcap" ? fin(b.mcap) - fin(a.mcap) : key === "txs" ? fin(b.txs) - fin(a.txs) : key === "chg" ? (Number.isFinite(Number(b.chg)) ? Number(b.chg) : -1e9) - (Number.isFinite(Number(a.chg)) ? Number(a.chg) : -1e9) : key === "smart" ? fin(b.smart?.net) - fin(a.smart?.net) : fin(b.vol) - fin(a.vol));
     }
@@ -544,7 +557,7 @@ function Trade() {
       base = [toRow(OFFICIAL_TOKEN), ...base.filter((r) => r.token.toLowerCase() !== OFFICIAL_TOKEN)];
     }
     return base;
-  }, [tab, rows, trend, volAll, clusters, favs, q, sortKey, byToken, trendMap, clusterMap, liq, logos, padF, minMc, maxMc, minVol, tf]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, rows, trend, hot, volAll, clusters, favs, q, sortKey, byToken, trendMap, clusterMap, liq, logos, padF, minMc, maxMc, minVol, tf]); // eslint-disable-line react-hooks/exhaustive-deps
   const pages = Math.max(1, Math.ceil(tableRows.length / PAGE));
   // Top-10 ranking tint. Only meaningful while the table is actually ordered by volume and we are on page 1;
   // 1-3 get medal hues, 4-10 fade out in the house cobalt. Tints stay under 10% alpha so ticker, numbers and

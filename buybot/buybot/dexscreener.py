@@ -45,8 +45,9 @@ async def init() -> None:
 
 def _pick(pairs: list[dict], token: str) -> dict:
     """Best pair for this token: the one whose info block is filled, else the deepest liquidity."""
-    mine = [p for p in pairs if (p.get("baseToken") or {}).get("address", "").lower() == token
-            or (p.get("quoteToken") or {}).get("address", "").lower() == token]
+    # info (image, socials) describes the pair's BASE token. A pair where our token is the QUOTE side carries the other
+    # coin's artwork — that is how BTCBR ended up wearing DUKE's logo. Base side only.
+    mine = [p for p in pairs if (p.get("baseToken") or {}).get("address", "").lower() == token]
     if not mine:
         return {}
     with_info = [p for p in mine if (p.get("info") or {}).get("imageUrl") or (p.get("info") or {}).get("socials")]
@@ -238,3 +239,32 @@ async def api_ds_stats(request):
                               "badge_without_anything": (gap_n or {}).get("n"),
                               "examples": [dict(r) for r in gap], "badge_sample": [dict(r) for r in sample]},
                              headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-store"})
+
+
+async def clean_quote_side_logos() -> dict:
+    """One-off repair for the quote-side bug: every token whose logo/socials came from DexScreener is re-fetched; if no
+    base-token pair on Arc carries that image, the logo (and DS socials) are cleared so the hunters can start over."""
+    rows = await db.fetchall(text("SELECT token, logo FROM social_tokens WHERE logo LIKE 'https://cdn.dexscreener.com/%'"))
+    fixed = 0; checked = 0
+    async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0 (compatible; ArcTools/1.0)"}) as s:
+        for i in range(0, len(rows), 30):
+            chunk = rows[i:i + 30]
+            try:
+                async with s.get(API + ",".join(r["token"] for r in chunk), timeout=aiohttp.ClientTimeout(total=25)) as r:
+                    if r.status != 200:
+                        await asyncio.sleep(3); continue
+                    j = await r.json(content_type=None)
+            except Exception:  # noqa
+                continue
+            pairs = [p for p in (j.get("pairs") or []) if (p.get("chainId") or "") == CHAIN]
+            for row in chunk:
+                checked += 1
+                own = {((p.get("info") or {}).get("imageUrl") or "").split("?")[0] for p in pairs
+                       if (p.get("baseToken") or {}).get("address", "").lower() == row["token"]}
+                if (row["logo"] or "").split("?")[0] not in own:
+                    await db.execute(text("""UPDATE social_tokens SET logo = NULL, logo_src = NULL, logo_checked = 0,
+                        x_handle = CASE WHEN ds_enhanced = 1 THEN NULL ELSE x_handle END, tg_handle = CASE WHEN ds_enhanced = 1 THEN NULL ELSE tg_handle END,
+                        domain = CASE WHEN ds_enhanced = 1 THEN NULL ELSE domain END, ds_enhanced = 0 WHERE token = :t""").bindparams(t=row["token"]))
+                    fixed += 1
+            await asyncio.sleep(1.2)
+    return {"checked": checked, "cleared": fixed}

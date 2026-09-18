@@ -505,6 +505,10 @@ async def api_search(req: web.Request):
     return web.json_response({"q": q, "rows": out}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=30"})
 
 
+_curve_cache: dict = {}
+_curve_lock = asyncio.Lock()
+
+
 async def api_venue_tokens(req: web.Request):
     """GET /api/venue-tokens?venue=v2 — tokens with swaps on a venue (v2 = DYORSwap / WarpDex pairs), with 24h stats."""
     venue = req.query.get("venue", "v2")[:8]
@@ -537,21 +541,46 @@ async def api_venue_tokens(req: web.Request):
     # name from the registry, then its /api/faze merge fills in price and volume.
     if venue == "v2":
         seen = {r["token"].lower() for r in out}
-        curve = await db.fetchall(text("""
-            SELECT p.token, p.pad, p.ts, COALESCE(NULLIF(p.symbol, ''), s.symbol) AS symbol, s.logo, s.name
-            FROM pad_tokens p LEFT JOIN social_tokens s ON s.token = p.token
-            WHERE p.pad IN ('peach', 'sharc', 'creo', 'pools', 'ubi', 'klik', 'minara')
-              AND COALESCE(NULLIF(TRIM(p.symbol), ''), NULLIF(TRIM(s.symbol), ''), '?') <> '?'
-              AND p.token <> '0x1234567890123456789012345678901234567890'
-              AND NOT EXISTS (SELECT 1 FROM insider_pools ip WHERE ip.token = p.token)     -- graduated ones already show via their pool
-            ORDER BY p.ts DESC LIMIT 2500"""))
-        for r in curve:
-            t = r["token"].lower()
-            if t in seen:
-                continue
-            seen.add(t)
-            out.append({"token": t, "symbol": r["symbol"], "txs": 0, "vol": None, "first_ts": r["ts"], "last_ts": None,
-                        "price1m": None, "supply": None, "mcap": None, "curve_pad": r["pad"]})
+        # price of last resort per token: the last indexed swap, else the live slot0 of its v4 pool (v4state.py) — a
+        # launch nobody traded yet still has an opening price, and the Terminal must not show "—" for 1,400 Minara rows
+        now = int(time.time())
+        cached = _curve_cache.get("rows")
+        if cached and now - _curve_cache.get("ts", 0) < 60:
+            extra = cached
+        elif cached and _curve_lock.locked():
+            extra = cached                      # someone is recomputing: serve the previous copy, never pile on the DB
+        else:
+          async with _curve_lock:
+            cached = _curve_cache.get("rows")
+            if cached and now - _curve_cache.get("ts", 0) < 60:
+                extra = cached
+            else:
+              curve = await db.fetchall(text("""
+                  SELECT p.token, p.pad, p.ts, COALESCE(NULLIF(p.symbol, ''), s.symbol) AS symbol
+                  FROM pad_tokens p LEFT JOIN social_tokens s ON s.token = p.token
+                  WHERE p.pad IN ('peach', 'sharc', 'creo', 'pools', 'ubi', 'klik', 'minara', 'hopium')
+                    AND COALESCE(NULLIF(TRIM(p.symbol), ''), NULLIF(TRIM(s.symbol), ''), '?') <> '?'
+                    AND p.token <> '0x1234567890123456789012345678901234567890'
+                    AND NOT EXISTS (SELECT 1 FROM insider_pools ip WHERE ip.token = p.token)
+                  ORDER BY p.ts DESC LIMIT 2500"""))
+              toks = [r["token"].lower() for r in curve]
+              # price of last resort: the live slot0 of the token's v4 pool (v4state.py refreshes every pool every ~10 min).
+              # No query against the swaps table here: 3M rows, and this endpoint sits on the site's hot path.
+              last: dict = {}
+              state = {r["token"]: float(r["p"]) for r in await db.fetchall(text(
+                  "SELECT token, MAX(state_price1m) p FROM v4_pools WHERE token = ANY(:t) AND state_price1m > 0 GROUP BY token").bindparams(t=toks))}
+              extra = []
+              for r in curve:
+                  t = r["token"].lower()
+                  pr = last.get(t) or state.get(t)
+                  sup = total_supply_nowait(t)
+                  extra.append({"token": t, "symbol": r["symbol"], "txs": 0, "vol": None, "first_ts": r["ts"], "last_ts": None,
+                                "price1m": pr, "supply": sup, "mcap": (pr / 1e6 * sup) if (pr and sup) else None, "curve_pad": r["pad"]})
+              _curve_cache["rows"], _curve_cache["ts"] = extra, now
+        seen = {r["token"].lower() for r in out}
+        for e in extra:
+            if e["token"] not in seen:
+                seen.add(e["token"]); out.append(e)
     return web.json_response({"venue": venue, "rows": out},
                              headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=30"})
 

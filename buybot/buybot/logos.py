@@ -423,6 +423,9 @@ async def api_logo_recheck(req):
     n = 0
     for tk in set(toks):
         await db.execute(text("INSERT INTO social_tokens (token, logo_checked) VALUES (:t, 0) ON CONFLICT (token) DO UPDATE SET logo_checked = 0 WHERE social_tokens.logo IS NULL OR social_tokens.logo = ''").bindparams(t=tk)); n += 1
+    if req.query.get("ds_clean"):
+        from .dexscreener import clean_quote_side_logos
+        return web.json_response(await clean_quote_side_logos())
     found = {}
     if req.query.get("now"):        # resolve right away, one token at a time (no CDN burst), and write what is found
         now = int(time.time())

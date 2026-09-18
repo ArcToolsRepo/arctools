@@ -152,7 +152,7 @@ async def fetchall_heavy(q):
     (4 MB on the Railway plan → sorts spilled to disk, 1-20 s). SET LOCAL lives only inside this transaction."""
     async with _heavy_sem:
         async with engine.begin() as c:
-            await c.execute(text("SET LOCAL work_mem = '64MB'"))
+            await c.execute(text("SET LOCAL work_mem = '160MB'"))   # sorts in memory: pgsql_tmp filled the 5 GB volume
             return [dict(r) for r in (await c.execute(q)).mappings().all()]
 
 

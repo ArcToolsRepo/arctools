@@ -592,6 +592,8 @@ async def v4_bootstrap():
     asyncio.create_task(watchdog_loop(), name="site-watchdog")
     from . import claims as _claims_init
     asyncio.create_task(_claims_init.init(), name="claims-init")
+    from . import v4state as _v4state          # slot0 price for v4 pools nobody has traded yet
+    asyncio.create_task(_v4state.init(), name="v4state-init")
     from .orders import init as _orders_init
     await _orders_init()
     from .bubbles import start_warm as _bubbles_warm
@@ -740,7 +742,66 @@ async def api_v4launches(request: web.Request) -> web.Response:
                 pass
         d["supply"] = await _total_supply(d["token"])
     await asyncio.gather(*[_fill(d) for d in out])
+    # the newest N alone lost every older pool that is still trading (WONK, CINU — the day's most active tokens were not on
+    # the site's list). Add the top 2,000 v4 tokens by 24 h volume, priced from the pool's live slot0 (v4state.py).
+    try:
+        out += await _v4_active(exclude={d["token"] for d in out})
+    except Exception as e:  # noqa
+        log.warning("v4launches active set: %s", str(e)[:160])
     return web.json_response({"pools": out}, headers=API_CORS)
+
+
+_v4_active_cache: dict = {}
+_v4_active_lock = asyncio.Lock()
+
+
+async def _v4_active_compute() -> None:
+    now = int(time.time())
+    rows = await db.fetchall_heavy(text("""
+        WITH act AS (SELECT token, COUNT(*) n, SUM(usdc) vol24, MAX(ts) last, MIN(ts) first,
+                            (array_agg(price1m ORDER BY ts DESC, log_index DESC) FILTER (WHERE price1m > 0 AND usdc >= 0.5))[1] AS lastp
+                     FROM swaps WHERE ts > :d GROUP BY token)
+        SELECT DISTINCT ON (p.token) p.id, p.token, p.hooks, p.fee, p.block, s.symbol, a.n, a.vol24, a.last, a.first, COALESCE(a.lastp, p.state_price1m) AS state_price1m
+        FROM act a JOIN v4_pools p ON p.token = a.token LEFT JOIN token_symbols s ON s.token = p.token
+        WHERE p.token IS NOT NULL AND p.fee IS NOT NULL
+        ORDER BY p.token, a.vol24 DESC""").bindparams(d=now - 86400))
+    rows = sorted(rows, key=lambda r: -float(r["vol24"] or 0))[:2000]
+    out = []
+    for r in rows:
+        out.append({"id": r["id"], "token": r["token"], "hooks": r["hooks"], "fee": r["fee"], "block": r["block"], "symbol": r["symbol"],
+                    "swaps": int(r["n"] or 0), "vol24": float(r["vol24"] or 0), "last_ts": int(r["last"] or 0),
+                    "price1m": float(r["state_price1m"]) if r["state_price1m"] else None, "created_ts": int(r["first"] or 0) or None,
+                    "supply": total_supply_nowait(r["token"])})
+    _v4_active_cache["rows"], _v4_active_cache["ts"] = out, now
+
+
+async def _v4_active_recompute() -> None:
+    async with _v4_active_lock:
+        c = _v4_active_cache
+        if c.get("rows") is not None and int(time.time()) - c.get("ts", 0) < 60:
+            return
+        try:
+            await _v4_active_compute()
+        except Exception as e:  # noqa
+            log.warning("v4 active recompute: %s", str(e)[:160])
+
+
+async def _v4_active(exclude: set[str]) -> list[dict]:
+    now = int(time.time())
+    c = _v4_active_cache
+    if c.get("rows") is not None and now - c.get("ts", 0) < 60:
+        return [d for d in c["rows"] if d["token"] not in exclude]
+    if c.get("rows") is not None:
+        # stale: answer from the previous copy now and recompute in the background (one recompute at a time)
+        if not _v4_active_lock.locked():
+            asyncio.create_task(_v4_active_recompute())
+        return [d for d in c["rows"] if d["token"] not in exclude]
+    async with _v4_active_lock:
+        if c.get("rows") is not None and now - c.get("ts", 0) < 60:
+            return [d for d in c["rows"] if d["token"] not in exclude]
+        await _v4_active_compute()
+        c = _v4_active_cache
+        return [d for d in c["rows"] if d["token"] not in exclude]
 
 
 _supply_cache: dict[str, tuple[float, float]] = {}
@@ -2554,6 +2615,12 @@ async def start_api():
     _pads.register(app)
     from . import claims as _claims      # USDC payment links: relayer, read API, standalone claim page (/claim/)
     _claims.register(app)
+    from . import v4state as _v4s
+    _v4s.register(app)
+    from . import dbmaint as _dbm          # retention + vacuum: the 5 GB volume filled up and heavy queries 500ed
+    _dbm.register(app)
+    asyncio.create_task(_dbm.life_loop(), name="token-life")
+    asyncio.create_task(_dbm.guard_loop(), name="db-guard")
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", "8080")))

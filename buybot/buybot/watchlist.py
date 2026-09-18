@@ -463,7 +463,8 @@ async def _api_stats_impl(request: web.Request) -> web.Response:
 
 async def api_trending(request: web.Request) -> web.Response:
     key = "trending:" + request.query_string
-    body = await _cached(key, 30, lambda: _resp_body(_api_trending_impl(request)))
+    all_time = request.query.get("minutes", "60") in ("0", "-1")
+    body = await _cached(key, 600 if all_time else 30, lambda: _resp_body(_api_trending_impl(request)))
     return web.Response(body=body, content_type="application/json", headers=API_CORS)
 
 
@@ -476,7 +477,16 @@ async def _api_trending_impl(request: web.Request) -> web.Response:
     limit = min(400, int(request.query.get("limit", "80")))
     sort = request.query.get("sort", "vol")
     now = int(time.time())
-    rows = await db.fetchall_heavy(text("""
+    if not mins:
+        rows = await _all_time_rows(limit)          # cheap path: no window functions over the whole table
+    else:
+        rows = await _window_rows(now, mins, limit, sort)
+    out = [dict(r) for r in rows]
+    return await _finish_trending(out, mins, sort, limit)
+
+
+async def _window_rows(now: int, mins: int, limit: int, sort: str):
+    return await db.fetchall_heavy(text("""
         WITH w AS (
           SELECT token, ts, log_index, side, usdc, wallet, price1m,
                  ROW_NUMBER() OVER (PARTITION BY token ORDER BY ts ASC, log_index ASC) AS rn_first,
@@ -491,21 +501,54 @@ async def _api_trending_impl(request: web.Request) -> web.Response:
                  COUNT(DISTINCT wallet) AS traders,
                  MAX(CASE WHEN rn_first = 1 THEN price1m END) AS p0_any,
                  MAX(CASE WHEN usdc >= 1 AND rn_first_real = 1 THEN price1m END) AS p0,
-                 MAX(CASE WHEN rn_last = 1 THEN price1m END) AS p1
+                 MAX(CASE WHEN rn_last = 1 THEN price1m END) AS p1,
+                 SUM(CASE WHEN ts > :late THEN usdc ELSE 0 END) AS vol_late
           FROM w GROUP BY token
+        ), share AS (
+          -- biggest single wallet's share of the window volume: one wallet printing $2M against itself is not a trend
+          SELECT token, MAX(wv) / NULLIF(SUM(wv), 0) AS top_share FROM (SELECT token, wallet, SUM(usdc) wv FROM w GROUP BY token, wallet) x GROUP BY token
         ), life AS (
-          -- only the tokens that actually appear in this window; this used to scan the whole swaps table (3M rows)
-          -- on every request, which is why a 5-minute window took longer than a 24-hour one
-          SELECT token, MIN(ts) AS first_ts, MAX(price1m) AS ath, COUNT(*) AS txs_all
-          FROM swaps WHERE price1m > 0 AND usdc >= 0.5 AND token IN (SELECT token FROM agg) GROUP BY token
+          -- lifetime numbers come from the token_life snapshot (dbmaint.py): raw swaps older than the retention
+          -- window are pruned, and this used to rescan the whole table on every request
+          SELECT token, first_ts, ath, txs_all FROM token_life WHERE token IN (SELECT token FROM agg)
         )
-        SELECT a.token, sym.symbol, a.txs, a.vol, a.buys, a.sells, a.traders, COALESCE(a.p0, a.p0_any) AS p0, a.p1,
+        SELECT a.token, sym.symbol, a.txs, a.vol, a.buys, a.sells, a.traders, a.vol_late, sh.top_share, COALESCE(a.p0, a.p0_any) AS p0, a.p1,
                CASE WHEN a.p0 > 0 AND a.p1 > 0 AND (a.p1 - a.p0) / a.p0 * 100 BETWEEN -100 AND 100000
                     THEN (a.p1 - a.p0) / a.p0 * 100 ELSE NULL END AS chg,
                l.first_ts, l.ath, l.txs_all
-        FROM agg a LEFT JOIN token_symbols sym ON sym.token = a.token LEFT JOIN life l ON l.token = a.token
-        ORDER BY a.vol DESC LIMIT :l""").bindparams(since=(now - mins * 60) if mins else 0, l=limit))
-    out = [dict(r) for r in rows]
+        FROM agg a LEFT JOIN token_symbols sym ON sym.token = a.token LEFT JOIN life l ON l.token = a.token LEFT JOIN share sh ON sh.token = a.token
+        ORDER BY a.vol DESC LIMIT :l""").bindparams(since=now - mins * 60, late=now - mins * 20, l=max(limit, 400) if sort == "trend" else limit))
+async def _all_time_rows(limit: int):
+    """All-time ranking from the token_life snapshot (45k rows) instead of a whole-table sort of 4M swaps: that sort
+    was writing hundreds of MB into pgsql_tmp and filled the volume. Prices come from the retained window."""
+    rows = await db.fetchall(text("""SELECT token, vol_all AS vol, txs_all AS txs, first_ts, ath, first_price
+        FROM token_life WHERE vol_all > 0 ORDER BY vol_all DESC LIMIT :l""").bindparams(l=limit))
+    toks = [r["token"] for r in rows]
+    last, syms, live = {}, {}, {}
+    if toks:
+        for r in await db.fetchall(text("""SELECT DISTINCT ON (token) token, price1m FROM swaps
+                WHERE token = ANY(:t) AND price1m > 0 AND usdc >= 0.5 ORDER BY token, ts DESC, log_index DESC""").bindparams(t=toks)):
+            last[r["token"]] = float(r["price1m"])
+        for r in await db.fetchall(text("SELECT token, symbol FROM token_symbols WHERE token = ANY(:t)").bindparams(t=toks)):
+            syms[r["token"]] = r["symbol"]
+        for r in await db.fetchall(text("""SELECT token, COUNT(*) txs, SUM(CASE WHEN side='buy' THEN 1 ELSE 0 END) buys,
+                SUM(CASE WHEN side='sell' THEN 1 ELSE 0 END) sells, COUNT(DISTINCT wallet) traders
+                FROM swaps WHERE token = ANY(:t) AND ts > :since GROUP BY token""").bindparams(t=toks, since=int(time.time()) - 86400)):
+            live[r["token"]] = r
+    out = []
+    for r in rows:
+        tk = r["token"]; a = float(r["first_price"]) if r["first_price"] else None; b = last.get(tk)
+        chg = ((b - a) / a * 100) if (a and b and -100 <= (b - a) / a * 100 <= 100000) else None
+        lv = live.get(tk) or {}
+        out.append({"token": tk, "symbol": syms.get(tk), "txs": int(r["txs"] or 0), "vol": float(r["vol"] or 0),
+                    "buys": int(lv.get("buys") or 0), "sells": int(lv.get("sells") or 0), "traders": int(lv.get("traders") or 0),
+                    "p0": a, "p1": b, "chg": chg, "first_ts": int(r["first_ts"] or 0), "ath": float(r["ath"]) if r["ath"] else None,
+                    "txs_all": int(r["txs"] or 0), "vol_late": None, "top_share": None})
+    return out
+
+
+async def _finish_trending(out: list, mins: int, sort: str, limit: int) -> web.Response:
+    from .insider import total_supply_nowait
     for d in out:
         d["supply"] = total_supply_nowait(d["token"])
     # cold in-memory supply cache (fresh restart) → read what we already have in token_supply so MC never shows "—"
@@ -523,7 +566,21 @@ async def _api_trending_impl(request: web.Request) -> web.Response:
         d["mcap"] = (px * d["supply"]) if (d["supply"] and px > 0) else None
         d["ath_mcap"] = (float(d["ath"]) / 1e6 * d["supply"]) if (d["supply"] and d.get("ath")) else None
     await _fill_symbols(out)
-    if sort == "mcap":
+    if sort == "trend":
+        # a trend is many people, buying, more and more — not one wallet and a big number
+        import math
+        keep = []
+        for d in out:
+            traders = int(d.get("traders") or 0); txs = int(d.get("txs") or 0); vol = float(d.get("vol") or 0)
+            if traders < 3 or float(d.get("top_share") or 0) > 0.7 or vol <= 0:
+                continue
+            buy_pressure = 0.5 + (int(d.get("buys") or 0) / max(1, txs))
+            accel = float(d.get("vol_late") or 0) / vol
+            d["trend_score"] = math.sqrt(vol) * math.sqrt(min(traders, 200)) * buy_pressure * (1 + max(0.0, accel - 0.33) * 3)
+            keep.append(d)
+        keep.sort(key=lambda d: -d["trend_score"])
+        out = keep[:limit]
+    elif sort == "mcap":
         out.sort(key=lambda d: -(d.get("mcap") or 0))
     elif sort == "chg":
         out.sort(key=lambda d: -(d.get("chg") or -1e9))
@@ -533,7 +590,7 @@ async def _api_trending_impl(request: web.Request) -> web.Response:
 
 
 # ---- self-warm: the heavy endpoints are recomputed from a clock, never from the first visitor -----------------------
-WARM_URLS = ["/api/trending?minutes=0&limit=400", "/api/trending?minutes=60&limit=400", "/api/trending?minutes=1440&limit=400",
+WARM_URLS = ["/api/v4launches?limit=100", "/api/venue-tokens?venue=v2", "/api/trending?minutes=1440&limit=200&sort=trend", "/api/trending?minutes=0&limit=400", "/api/trending?minutes=60&limit=400", "/api/trending?minutes=1440&limit=400",
              "/api/trending?minutes=1440&limit=150", "/api/trending?minutes=60&limit=80", "/api/whales?minutes=60", "/api/movers?minutes=60"]
 
 
