@@ -36,13 +36,13 @@ export function newKey(): { key: Uint8Array; address: string } {
 
 export function encodeCode(id: number, key: Uint8Array): string { return `${id}.${b64(key)}`; }
 export function decodeCode(code: string): { id: number; key: Uint8Array } | null {
-  const m = /^(\d+)\.([A-Za-z0-9_-]{43})$/.exec(code.trim());
+  const m = /^(\d+)[._]([A-Za-z0-9_-]{43})$/.exec(code.trim());   // web uses ".", Telegram start payloads need "_"
   if (!m) return null;
   const key = unb64(m[2]);
   return key.length === 32 ? { id: Number(m[1]), key } : null;
 }
 export function linksFor(code: string) {
-  return { site: `https://arctools.fun/pay#${code}`, bot: `https://t.me/ArcSniper_bot?start=claim_${code}` };
+  return { site: `https://arctools.fun/pay#${code}`, bot: `https://t.me/ArcSniper_bot?start=claim_${code.replace(".", "_")}` };
 }
 
 /** create(address claimKey, uint64 ttl) calldata; value = amount in native USDC (18 dec). */

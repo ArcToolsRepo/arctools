@@ -85,13 +85,13 @@
   const CLAIM = '0x9f3eEfD8b4158C09BF134fa6C032745a7D781BE6', CHAIN = 5042n;
   const base = location.pathname.replace(/\/claim\/?$/, '');          // '/bot' behind the site proxy, '' on the bot host
   const code = decodeURIComponent(location.hash.slice(1));
-  const m = /^(\d+)\.([A-Za-z0-9_-]{43})$/.exec(code);
+  const m = /^(\d+)[._]([A-Za-z0-9_-]{43})$/.exec(code);
   if (!m) { show('bad'); return; }
   const id = BigInt(m[1]);
   const keyBytes = Uint8Array.from(atob(m[2].replace(/-/g, '+').replace(/_/g, '/') + '='), c => c.charCodeAt(0));
   if (keyBytes.length !== 32) { show('bad'); return; }
   const key = new ethers.Wallet(ethers.hexlify(keyBytes));
-  $('useTg').onclick = () => location.href = `https://t.me/ArcSniper_bot?start=claim_${code}`;
+  $('useTg').onclick = () => location.href = `https://t.me/ArcSniper_bot?start=claim_${m[1]}_${m[2]}`;   // no dot: Telegram start payloads allow only [A-Za-z0-9_-]
 
   let link;
   try { link = await (await fetch(`${base}/api/claim/${id}`, { cache: 'no-store' })).json(); } catch { link = null; }

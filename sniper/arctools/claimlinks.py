@@ -57,18 +57,29 @@ def encode_code(link_id: int, key: bytes) -> str:
 
 
 def decode_code(code: str) -> tuple[int, bytes] | None:
+    """Accepts `<id>.<key>` (web) and `<id>_<key>` (Telegram start payloads allow only [A-Za-z0-9_-], no dot).
+    The key is always the last 43 chars, so an underscore inside the key cannot confuse the split."""
     try:
-        i, k = code.split(".", 1)
-        key = _unb64(k)
-        if len(key) != 32 or int(i) <= 0:
+        code = code.strip()
+        if len(code) < 45:
             return None
-        return int(i), key
+        k, rest = code[-43:], code[:-43]
+        if rest[-1] not in "._" or not rest[:-1].isdigit():
+            return None
+        key = _unb64(k)
+        if len(key) != 32 or int(rest[:-1]) <= 0:
+            return None
+        return int(rest[:-1]), key
     except Exception:  # noqa
         return None
 
 
+def tg_code(code: str) -> str:
+    return code.replace(".", "_", 1)
+
+
 def links_for(code: str) -> dict:
-    return {"bot": f"https://t.me/{BOT}?start=claim_{code}", "site": f"{SITE_CLAIM}#{code}"}
+    return {"bot": f"https://t.me/{BOT}?start=claim_{tg_code(code)}", "site": f"{SITE_CLAIM}#{code}"}
 
 
 def digest(link_id: int, recipient: str) -> bytes:
