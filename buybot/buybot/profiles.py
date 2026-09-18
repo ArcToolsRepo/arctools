@@ -794,8 +794,31 @@ async def api_seed(req: web.Request):
     return web.json_response({"ok": True, "created": made}, headers=CORS)
 
 
+async def api_copy(req: web.Request):
+    """Copy-trade a profile: resolve its wallet and hand the visitor to the sniper's `/start copy_<wallet>` deep link.
+
+    The public page used to link to the bare bot URL, which drops the visitor on the start screen with nothing
+    to copy. The sniper already understands `copy_<hex40>` and adds that wallet as a copy target on arrival, so
+    the only missing piece was a resolver from handle to wallet — this. Also answers JSON (`?json=1`) so a page
+    can render the link instead of following it."""
+    handle = (req.query.get("handle") or "").lower()
+    if not HANDLE_RE.match(handle):
+        return web.json_response({"error": "handle"}, status=400, headers=CORS)
+    rows = await db.fetchall(text("SELECT wallet FROM profile_wallets WHERE handle = :h ORDER BY proved_ts NULLS LAST")
+                             .bindparams(h=handle))
+    if not rows:
+        return web.json_response({"error": "no such profile"}, status=404, headers=CORS)
+    wallet = rows[0]["wallet"]
+    link = f"https://t.me/ArcSniper_bot?start=copy_{wallet[2:]}"
+    if req.query.get("json"):
+        return web.json_response({"handle": handle, "wallet": wallet, "link": link,
+                                  "wallets": [r["wallet"] for r in rows]}, headers={**CORS, "Cache-Control": "public, max-age=60"})
+    raise web.HTTPFound(link)
+
+
 def register(app: web.Application):
     app.router.add_post("/api/profiles/seed", api_seed)
+    app.router.add_get("/api/profile/copy", api_copy)
     app.router.add_get("/api/profile", api_get)
     app.router.add_post("/api/profile/save", api_save)
     app.router.add_post("/api/profile/wallet", api_wallet)

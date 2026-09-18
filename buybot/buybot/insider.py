@@ -2530,6 +2530,8 @@ async def start_api():
     _kols.register(app)
     from . import xfeed as _xfeed          # Arc voices on X + crypto headlines, with a buy button per post
     _xfeed.register(app)
+    from . import holdings as _holdings    # exact wallet holdings from our node, priced by our index
+    _holdings.register(app)
     from . import profiles as _profiles    # public trader profiles: identity attached to on-chain record
     await _profiles.init()
     _profiles.register(app)
