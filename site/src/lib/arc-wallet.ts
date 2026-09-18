@@ -236,9 +236,28 @@ export async function connectWallet(opts: { forcePicker?: boolean } = {}): Promi
   return a;
 }
 
+/** Make sure the browser wallet is on Arc before any transaction. `value` is native USDC on Arc; the same request on
+ *  Ethereum would read as ETH — a wallet left on another chain must never see it. Adds the chain when unknown. */
+export async function ensureArcChain(eth: Eth = getEth() as Eth): Promise<void> {
+  if (!eth) throw new Error("No wallet");
+  const cur = (await eth.request({ method: "eth_chainId" }).catch(() => null)) as string | null;
+  if (cur && BigInt(cur) === BigInt(CHAIN_HEX)) return;
+  try {
+    await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_HEX }] });
+  } catch (e) {
+    if ((e as { code?: number }).code === 4001) throw new Error("Switch your wallet to Arc to continue.");
+    await eth.request({ method: "wallet_addEthereumChain", params: [{
+      blockExplorerUrls: ["https://arc-scan.org"], chainId: CHAIN_HEX, chainName: "Arc",
+      nativeCurrency: { decimals: 18, name: "USDC", symbol: "USDC" }, rpcUrls: ["https://rpc.arc-scan.org"] }] });
+  }
+  const after = (await eth.request({ method: "eth_chainId" })) as string;
+  if (BigInt(after) !== BigInt(CHAIN_HEX)) throw new Error("Wallet is not on Arc (chain 5042). Switch network and retry.");
+}
+
 export async function sendTx(tx: { to: string; data: string; value?: bigint; from: string }): Promise<string> {
   const eth = getEth();
   if (!eth) throw new Error("No wallet");
+  await ensureArcChain(eth);
   const h = (await eth.request({
     method: "eth_sendTransaction",
     params: [{

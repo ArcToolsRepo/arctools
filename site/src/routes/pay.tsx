@@ -122,7 +122,7 @@ function Sender() {
               {busy ?? `Create ${Number.isFinite(amt) ? fmtUsd(amt) : ""} USDC link`}
             </button>
             <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: "10px 0 0" }}>
-              Funding from {useHot ? "your trading wallet" : "your browser wallet"} <code>{short(addr)}</code>
+              Funding from {useHot ? "your trading wallet" : "your browser wallet (switched to Arc automatically)"} <code>{short(addr)}</code> · amount is native USDC on Arc
             </p>
             {err && <p className="arc-mono" style={{ color: "#f0534f", fontSize: 12, margin: "10px 0 0" }}>{err}</p>}
           </>
