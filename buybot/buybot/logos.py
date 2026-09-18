@@ -308,11 +308,24 @@ async def try_x_avatar(s: aiohttp.ClientSession, x_handle: str | None) -> str | 
     return u if await _verify(s, u) else None
 
 
+async def try_favicon(s: aiohttp.ClientSession, token: str) -> str | None:
+    """Last resort: the favicon of the project's own site. A token with a website but no artwork anywhere else (the
+    long.supply stock wrappers, most bridged assets) is still recognisable by its issuer's mark."""
+    row = await db.fetchone(text("SELECT domain, website FROM social_tokens WHERE token = :t").bindparams(t=token.lower()))
+    raw = (row and (row["domain"] or row["website"])) or ""
+    host = str(raw).replace("https://", "").replace("http://", "").split("/")[0].strip().lower()
+    if not host or "." not in host or host.endswith((".eth", ".arc")):
+        return None
+    url = f"https://www.google.com/s2/favicons?domain={host}&sz=128"
+    return url if await _verify(s, url) else None
+
+
 async def resolve(s: aiohttp.ClientSession, token: str, launchpad: str | None, x_handle: str | None) -> tuple[str | None, str]:
     from .bytelogo import from_bytecode
     for name, fn in (("contract", lambda: try_contract(s, token)), ("bytecode", lambda: from_bytecode(s, token)),
                      ("creation", lambda: try_creation_tx(s, token)),
-                     ("padpage", lambda: try_pad_page(s, token, launchpad)), ("x", lambda: try_x_avatar(s, x_handle))):
+                     ("padpage", lambda: try_pad_page(s, token, launchpad)), ("x", lambda: try_x_avatar(s, x_handle)),
+                     ("favicon", lambda: try_favicon(s, token))):
         try:
             u = await asyncio.wait_for(fn(), 15)
         except Exception:  # noqa
@@ -423,6 +436,17 @@ async def api_logo_recheck(req):
     n = 0
     for tk in set(toks):
         await db.execute(text("INSERT INTO social_tokens (token, logo_checked) VALUES (:t, 0) ON CONFLICT (token) DO UPDATE SET logo_checked = 0 WHERE social_tokens.logo IS NULL OR social_tokens.logo = ''").bindparams(t=tk)); n += 1
+    if req.query.get("csocials_requeue"):
+        # repair: the DexScreener quote-side cleanup also wiped socials that came from the token contracts
+        # (long.supply's wrappers lost website() / twitter()); put those rows back in the contract-socials queue
+        r = await db.fetchone(text("SELECT COUNT(*) n FROM social_tokens WHERE (domain IS NULL OR domain = '') AND (x_handle IS NULL OR x_handle = '')"))
+        await db.execute(text("UPDATE social_tokens SET csocials_checked = NULL WHERE (domain IS NULL OR domain = '') AND (x_handle IS NULL OR x_handle = '')"))
+        return web.json_response({"csocials_requeued": int(r["n"])})
+    if req.query.get("ds_requeue"):
+        # one-off: ask DexScreener again about every logo-less token right now instead of waiting out the cadence
+        r = await db.fetchone(text("SELECT COUNT(*) n FROM social_tokens WHERE (logo IS NULL OR logo = '')"))
+        await db.execute(text("UPDATE social_tokens SET ds_checked = 0 WHERE (logo IS NULL OR logo = '')"))
+        return web.json_response({"ds_requeued": int(r["n"])})
     if req.query.get("ds_clean"):
         from .dexscreener import clean_quote_side_logos
         return web.json_response(await clean_quote_side_logos())

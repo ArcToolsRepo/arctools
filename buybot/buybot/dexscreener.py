@@ -126,10 +126,12 @@ async def sweep_once(limit: int = 600) -> tuple[int, int]:
         WITH act AS (SELECT token, SUM(usdc) v FROM swaps WHERE ts > :since GROUP BY token)
         SELECT a.token, s.logo, s.x_handle, s.tg_handle, s.domain
         FROM act a LEFT JOIN social_tokens s ON s.token = a.token
-        WHERE COALESCE(s.ds_checked, 0) < :stale
+        -- a token that is trading but still has no artwork is asked again after 6 h (DexScreener's info block
+        -- appears when the team fills it in); everything else keeps the 3-day cadence
+        WHERE (((s.logo IS NULL OR s.logo = '') AND COALESCE(s.ds_checked, 0) < :fast) OR COALESCE(s.ds_checked, 0) < :stale)
           AND a.token <> '0x3600000000000000000000000000000000000000'
-        ORDER BY a.v DESC LIMIT :n
-    """).bindparams(since=now - 14 * 86400, stale=now - 3 * 86400, n=limit))
+        ORDER BY (s.logo IS NULL OR s.logo = '') DESC, a.v DESC LIMIT :n
+    """).bindparams(since=now - 14 * 86400, fast=now - 6 * 3600, stale=now - 3 * 86400, n=limit))
     if not rows:
         return 0, 0
     found = 0
@@ -264,7 +266,7 @@ async def clean_quote_side_logos() -> dict:
                 if (row["logo"] or "").split("?")[0] not in own:
                     await db.execute(text("""UPDATE social_tokens SET logo = NULL, logo_src = NULL, logo_checked = 0,
                         x_handle = CASE WHEN ds_enhanced = 1 THEN NULL ELSE x_handle END, tg_handle = CASE WHEN ds_enhanced = 1 THEN NULL ELSE tg_handle END,
-                        domain = CASE WHEN ds_enhanced = 1 THEN NULL ELSE domain END, ds_enhanced = 0 WHERE token = :t""").bindparams(t=row["token"]))
+                        domain = CASE WHEN ds_enhanced = 1 THEN NULL ELSE domain END, ds_enhanced = 0, ds_checked = 0 WHERE token = :t""").bindparams(t=row["token"]))
                     fixed += 1
             await asyncio.sleep(1.2)
     return {"checked": checked, "cleared": fixed}

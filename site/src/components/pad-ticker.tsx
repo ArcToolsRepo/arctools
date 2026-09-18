@@ -30,12 +30,27 @@ export function PadTicker() {
     const miss = rows.map((r) => r.token.toLowerCase()).filter((t) => !(t in meta));
     if (!miss.length) return;
     let alive = true;
-    fetch("/api/tokens").then((r) => r.json()).then((j: Meta[] | { tokens?: Meta[] }) => {
+    // the strip needs ten logos — it used to download the entire token list (4.8 MB) for them, and a token that the
+    // capped list does not carry showed a monogram. One point lookup in the metadata index instead.
+    fetch(`/bot/api/token-meta?tokens=${miss.join(",")}`).then((r) => r.json()).then((j: { meta?: Record<string, { logo?: string | null; symbol?: string | null; launchpad?: string | null }> }) => {
       if (!alive) return;
-      const list = Array.isArray(j) ? j : (j.tokens ?? []);
-      const m: Record<string, Meta> = {};
-      for (const t of list) m[t.token.toLowerCase()] = t;
-      setMeta((o) => { const n = { ...o }; for (const t of miss) n[t] = m[t] ?? { token: t }; return n; });
+      const got = j.meta ?? {};
+      setMeta((o) => {
+        const n = { ...o };
+        for (const t of miss) {
+          const m = got[t] ?? got[t.toLowerCase()];
+          n[t] = { token: t, logo: m?.logo ?? null, ...(m?.launchpad === "long" ? { stock: true } : {}) } as Meta;
+        }
+        return n;
+      });
+      // whatever the index could not resolve (stock wrappers carry their issuer's favicon, not an on-chain logo)
+      const still = miss.filter((x) => !(got[x]?.logo));
+      for (const tk of still.slice(0, 6)) {
+        void fetch(`/api/tokenpage?ca=${tk}`).then((r) => r.json()).then((d: { logo?: string | null; stock?: unknown }) => {
+          if (!alive || !d?.logo) return;
+          setMeta((o) => ({ ...o, [tk]: { ...(o[tk] ?? { token: tk }), logo: d.logo ?? null } as Meta }));
+        }).catch(() => null);
+      }
     }).catch(() => null);
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
