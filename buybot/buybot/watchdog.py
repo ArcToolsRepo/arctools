@@ -112,6 +112,12 @@ async def chk_tokens_api(s):
         garbled = sum(1 for t in toks if not (t.get("symbol") or "").strip() or t.get("symbol") == "?")
         logos = sum(1 for t in toks if t.get("logo"))
         cov = logos / len(toks)
+        # the coverage baseline belongs to a population: when the list grows or shrinks by more than 30 %
+        # (a launchpad's curve coins joining, a source dropped) the old ratio says nothing about lost chunks
+        prev_n = _healed.get("_logo_n", len(toks))
+        if abs(len(toks) - prev_n) > 0.3 * prev_n:
+            _healed.pop("_logo_cov", None)
+        _healed["_logo_n"] = len(toks)
         prev = _healed.get("_logo_cov", cov)
         _healed["_logo_cov"] = max(prev, cov) if garbled == 0 else prev
         if garbled > 0 or cov < prev - 0.15:

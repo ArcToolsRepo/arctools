@@ -527,6 +527,8 @@ async def api_venue_tokens(req: web.Request):
         d["supply"] = sup
         d["mcap"] = (float(d["price1m"]) / 1e6 * sup) if (sup and d.get("price1m")) else None
     await asyncio.gather(*[fill(d) for d in out])
+    # a row nobody can name is noise on the site and a false alarm in the watchdog; the creo placeholder is codeless
+    out = [d for d in out if (d.get('symbol') or '').strip() not in ('', '?') and d['token'].lower() != '0x1234567890123456789012345678901234567890']
 
     # Curve launchpads (peach.ag, sharc.fun, creo.family, pools.trade, UBI.fun, Klik, Minara): a coin still on
     # its curve has no Uniswap pool, so nothing on the site's list ever carries it — and the site only relabels
@@ -539,7 +541,8 @@ async def api_venue_tokens(req: web.Request):
             SELECT p.token, p.pad, p.ts, COALESCE(NULLIF(p.symbol, ''), s.symbol) AS symbol, s.logo, s.name
             FROM pad_tokens p LEFT JOIN social_tokens s ON s.token = p.token
             WHERE p.pad IN ('peach', 'sharc', 'creo', 'pools', 'ubi', 'klik', 'minara')
-              AND COALESCE(NULLIF(p.symbol, ''), s.symbol, '?') <> '?'
+              AND COALESCE(NULLIF(TRIM(p.symbol), ''), NULLIF(TRIM(s.symbol), ''), '?') <> '?'
+              AND p.token <> '0x1234567890123456789012345678901234567890'
               AND NOT EXISTS (SELECT 1 FROM insider_pools ip WHERE ip.token = p.token)     -- graduated ones already show via their pool
             ORDER BY p.ts DESC LIMIT 2500"""))
         for r in curve:

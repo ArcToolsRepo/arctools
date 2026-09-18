@@ -2145,6 +2145,17 @@ async def api_faze(request: web.Request) -> web.Response:
             }
         except Exception:  # noqa
             continue
+    # a coin whose contract answers symbol() with whitespace (0xbeaae66d…, "Karma") is shown under its name;
+    # one with neither cannot be named and is left out — same rule as the registry list
+    for mint in list(out):
+        c = out[mint]
+        sym = (c.get("symbol") or "").strip()
+        name = (c.get("name") or "").strip()
+        if not sym or sym == "?":
+            if name:
+                c["symbol"] = name[:12]
+            else:
+                out.pop(mint)
     return web.json_response({"coins": out, "n": len(out)},
                              headers={**API_CORS, "Cache-Control": "public, max-age=15, stale-while-revalidate=60"})
 
