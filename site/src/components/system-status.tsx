@@ -1,0 +1,61 @@
+import { useEffect, useState } from "react";
+
+/**
+ * "System: Running" pill at the bottom of every page.
+ * Reads the buybot watchdog's last round (/api/status): site pages, tokens API, RPC relay, swap index lag, own API.
+ * Green = all checks passed, amber = something degraded (self-heal running), grey = watchdog not reporting.
+ */
+const API = "https://bot-production-4200.up.railway.app/api/status";
+type Status = { state: "running" | "degraded" | "stale" | "starting"; ts: number; age_s: number | null; every_s: number; checks: Record<string, { ok: boolean; detail: string; streak: number }>; bots?: Record<string, BotBeat> };
+type BotBeat = { p50_ms?: number | null; p95_ms?: number | null; buys_1h?: number; buys_ok_1h?: number; buy_median_s?: number | null; tg_ping_ms?: number | null; heartbeat_age_s?: number; uptime_s?: number; updates_15m?: number };
+
+const LABEL: Record<string, string> = { bots: "bots", ui: "what users see", terminal: "terminal rows", cells: "table cells", pages: "site", tokens: "token feed", relay: "RPC relay", index: "swap index", api: "data API", display: "display" };
+
+export function SystemStatus() {
+  const [st, setSt] = useState<Status | null>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetch(API, { cache: "no-store" }).then((r) => r.json()).then((j: Status) => { if (alive) setSt(j); }).catch(() => { if (alive) setSt((s) => s ?? { state: "stale", ts: 0, age_s: null, every_s: 180, checks: {} }); });
+    void load();
+    const id = setInterval(load, 60_000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+  const state = st?.state ?? "starting";
+  const col = state === "running" ? "var(--arc-up)" : state === "degraded" ? "#f5c542" : "var(--arc-muted)";
+  const text = state === "running" ? "System: Running" : state === "degraded" ? "System: Degraded" : state === "stale" ? "System: status unavailable" : "System: checking…";
+  const failing = Object.entries(st?.checks ?? {}).filter(([, c]) => !c.ok);
+  return (
+    <div className="arc-sysstatus" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)} onClick={() => setOpen((o) => !o)} style={{ bottom: 10, position: "fixed", zIndex: 500 }}>
+      {open && st && (
+        <div className="arc-mono" style={{ background: "#0b0f17", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 8, bottom: 30, boxShadow: "0 12px 40px rgba(0,0,0,0.6)", color: "#e6ebf3", fontSize: 11.5, left: 0, minWidth: 260, padding: "10px 12px", position: "absolute" }}>
+          {Object.entries(st.checks).map(([k, c]) => (
+            <div key={k} style={{ alignItems: "center", display: "flex", gap: 8, padding: "2px 0" }}>
+              <span style={{ background: c.ok ? "var(--arc-up)" : "#f5c542", borderRadius: "50%", display: "inline-block", height: 7, width: 7 }} />
+              <span style={{ color: "#ffffff", minWidth: 84 }}>{LABEL[k] ?? k}</span>
+              <span style={{ color: c.ok ? "#9fb0c8" : "#ffd166", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.detail}>{c.ok ? "ok" : c.detail}</span>
+            </div>
+          ))}
+          {st.bots && (
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.12)", color: "#c3cddc", marginTop: 6, paddingTop: 6 }}>
+              {Object.entries(st.bots).map(([name, b]) => (
+                <div key={name} style={{ padding: "1px 0", whiteSpace: "nowrap" }}>
+                  <span style={{ color: "#ffffff" }}>{name === "sniper" ? "Sniper bot" : "Buy bot"}</span>
+                  {" · "}p50 {Math.round(b.p50_ms ?? 0)}ms · p95 {Math.round(b.p95_ms ?? 0)}ms
+                  {b.buys_1h != null && ` · fills ${b.buys_ok_1h ?? 0}/${b.buys_1h}${b.buy_median_s ? ` in ${b.buy_median_s.toFixed(1)}s` : ""}`}
+                  {b.tg_ping_ms != null && ` · tg ${Math.round(b.tg_ping_ms)}ms`}
+                  {b.uptime_s != null && ` · up ${Math.floor(b.uptime_s / 3600)}h${Math.floor((b.uptime_s % 3600) / 60)}m`}
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ color: "#9fb0c8", marginTop: 4 }}>checked every {Math.round((st.every_s || 180) / 60)} min · last {st.age_s != null ? `${st.age_s}s ago` : "—"}{failing.length ? " · self-heal active" : ""}</div>
+        </div>
+      )}
+      <span className="arc-mono" style={{ alignItems: "center", background: "rgba(10,14,22,0.9)", border: "1px solid var(--arc-line)", borderRadius: 999, color: "var(--arc-muted)", cursor: "default", display: "inline-flex", fontSize: 10.5, gap: 6, padding: "3px 9px" }}>
+        <span style={{ background: col, borderRadius: "50%", boxShadow: state === "running" ? `0 0 6px ${col}` : "none", display: "inline-block", height: 7, width: 7 }} />
+        <span style={{ color: state === "running" ? "var(--arc-ink)" : col }}>{text}</span>
+      </span>
+    </div>
+  );
+}

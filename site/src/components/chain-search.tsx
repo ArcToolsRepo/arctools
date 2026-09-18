@@ -1,0 +1,120 @@
+import { useEffect, useRef, useState } from "react";
+
+import { TokenLogo } from "@/components/token-logo";
+
+export type SearchHit = {
+  token: string; symbol: string | null; name?: string | null; logo?: string | null; pad?: string | null; mcap?: number | null;
+  txs: number; vol: number; last_ts: number | null; venue: string | null;
+  source: "index" | "chain" | "pad" | "unknown"; lookalike?: boolean;
+};
+
+const usd = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v >= 1e4 ? `$${(v / 1e3).toFixed(1)}K` : v >= 1000 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`);
+const ago = (ts: number | null) => {
+  if (!ts) return "";
+  const s = Math.max(0, Date.now() / 1000 - ts);
+  return s < 60 ? `${s | 0}s` : s < 3600 ? `${(s / 60) | 0}m` : s < 86400 ? `${(s / 3600) | 0}h` : `${(s / 86400) | 0}d`;
+};
+
+/** Chain-wide token search shown under the filter box when the query matches nothing (or few rows) in the loaded lists.
+ *  Every ERC-20 on Arc: our swap index (with 24 h stats) + arc-scan's chain-wide search. Click → token page (probes on-chain). */
+type ProfileHit = { handle: string; display: string | null; avatar: string | null; x_handle: string | null; x_verified: number; pnl: number | null; trades: number | null };
+
+/** Traders matching the query. The same box that finds tokens finds people, because "who is gr3gor14n" and
+ *  "what is $ARCT" are the same question asked of the same index. */
+function ProfileHits({ q }: { q: string }) {
+  const [rows, setRows] = useState<ProfileHit[]>([]);
+  useEffect(() => {
+    const query = q.trim();
+    if (query.length < 2) { setRows([]); return; }
+    let alive = true;
+    const t = setTimeout(() => {
+      fetch(`/bot/api/profiles/search?q=${encodeURIComponent(query)}`)
+        .then((r) => r.json())
+        .then((j: { rows?: ProfileHit[] }) => { if (alive) setRows(j.rows ?? []); })
+        .catch(() => null);
+    }, 300);
+    return () => { alive = false; clearTimeout(t); };
+  }, [q]);
+  if (!rows.length) return null;
+  return (
+    <div style={{ background: "var(--arc-paper)", border: "1px solid var(--arc-line)", marginBottom: 8 }}>
+      <div className="arc-mono" style={{ borderBottom: "1px solid var(--arc-line)", color: "var(--arc-muted)", display: "flex", fontSize: 10, gap: 8, padding: "6px 12px" }}>
+        <span>TRADERS</span><span style={{ color: "var(--arc-ink)" }}>“{q.trim()}”</span>
+      </div>
+      {rows.map((r) => (
+        <a href={`/u/${r.handle}`} key={r.handle}
+          style={{ alignItems: "center", borderBottom: "1px solid var(--arc-line)", color: "var(--arc-ink)", display: "flex", gap: 10, padding: "6px 12px", textDecoration: "none" }}>
+          {r.avatar
+            ? <img alt="" src={r.avatar} style={{ borderRadius: "50%", height: 22, objectFit: "cover", width: 22 }} />
+            : <span className="arc-mono" style={{ alignItems: "center", background: "var(--arc-line)", borderRadius: "50%", display: "flex", fontSize: 9, height: 22, justifyContent: "center", width: 22 }}>{r.handle.slice(0, 2).toUpperCase()}</span>}
+          <span style={{ fontSize: 13, fontWeight: 600 }}>{r.display || r.handle}</span>
+          <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>@{r.handle}{r.x_verified ? " ✓" : ""}</span>
+          <span style={{ flex: 1 }} />
+          <span className="arc-mono" style={{ color: (r.pnl ?? 0) >= 0 ? "var(--arc-up)" : "var(--arc-down)", fontSize: 11 }}>
+            {r.pnl == null ? "—" : `${r.pnl >= 0 ? "+" : ""}$${Math.abs(r.pnl).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+          </span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
+export function ChainSearch({ q, hide, renderBuy, autoOpen }: { q: string; hide: Set<string>; renderBuy?: (hit: SearchHit) => React.ReactNode; autoOpen?: boolean }) {
+  const [hits, setHits] = useState<SearchHit[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const seq = useRef(0);
+  const query = q.trim();
+
+  useEffect(() => {
+    if (query.length < 2) { setHits(null); return; }
+    const my = ++seq.current;
+    setBusy(true);
+    const t = setTimeout(() => {
+      fetch(`/api/search?q=${encodeURIComponent(query)}`).then((r) => r.json()).then((j) => {
+        if (my !== seq.current) return;
+        const rows = (j.rows ?? []) as SearchHit[];
+        setHits(rows);
+        setBusy(false);
+        // a pasted contract address with exactly one match → go straight to its page (what every terminal does)
+        if (autoOpen && rows.length === 1 && rows[0].token.toLowerCase() === query.toLowerCase()) window.location.href = `/token/${rows[0].token}`;
+      }).catch(() => { if (my === seq.current) { setHits([]); setBusy(false); } });
+    }, 350);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  if (query.length < 2) return null;
+  const rows = (hits ?? []).filter((h) => !hide.has(h.token));
+  if (!busy && rows.length === 0 && hits !== null && hide.size > 0 && (hits ?? []).length > 0) return null; // everything already visible in the table
+  return (
+    <><ProfileHits q={query} />
+    <div style={{ background: "var(--arc-paper)", border: "1px solid var(--arc-line)", marginBottom: 8 }}>
+      <div className="arc-mono" style={{ alignItems: "center", borderBottom: "1px solid var(--arc-line)", color: "var(--arc-muted)", display: "flex", fontSize: 11, gap: 8, padding: "6px 12px" }}>
+        <span>SEARCH ALL OF ARC</span>
+        <span style={{ color: "var(--arc-ink)" }}>“{query}”</span>
+        <span style={{ flex: 1 }} />
+        <span>{busy ? "searching…" : rows.length === 0 ? "no token with that name or address on Arc" : `${rows.length} token${rows.length === 1 ? "" : "s"} · launchpads + index + arc-scan`}</span>
+      </div>
+      {rows.slice(0, 15).map((h) => (
+        <div key={h.token} style={{ alignItems: "center", borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 10, padding: "6px 12px" }}>
+          <TokenLogo src={h.logo ?? null} symbol={h.symbol ?? "?"} size={22} radius={6} monogram />
+          <a href={`/token/${h.token}`} className="arc-mono" style={{ color: "var(--arc-ink)", fontSize: 13, fontWeight: 600, minWidth: 70, textDecoration: "none" }}>{h.symbol ?? "unknown"}</a>
+          {h.name && h.name.toLowerCase() !== (h.symbol ?? "").toLowerCase() && <span style={{ color: "var(--arc-muted)", fontSize: 12, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.name}</span>}
+          {h.pad && <span className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-muted)", fontSize: 10, padding: "0 5px" }}>{h.pad}</span>}
+          <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{h.token.slice(0, 6)}…{h.token.slice(-4)}</span>
+          <button className="arc-mono" onClick={() => void navigator.clipboard?.writeText(h.token)} style={{ background: "transparent", border: "none", color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: 0 }} title="copy address" type="button">⧉</button>
+          {h.lookalike && <span className="arc-mono" style={{ color: "var(--arc-down)", fontSize: 10 }}>⚠ lookalike name</span>}
+          <span style={{ flex: 1 }} />
+          {h.source === "index" ? (
+            <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{h.mcap ? `${usd(h.mcap)} MC · ` : ""}{usd(h.vol)} vol · {h.txs} txs{h.last_ts ? ` · last ${ago(h.last_ts)}` : ""}</span>
+          ) : h.source === "pad" ? (
+            <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{h.mcap ? `${usd(h.mcap)} MC` : "on curve"}{h.vol ? ` · ${usd(h.vol)} vol` : ""}</span>
+          ) : (
+            <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{h.source === "chain" ? "on-chain · no indexed trades" : "unknown contract · will probe on open"}</span>
+          )}
+          <a href={`/token/${h.token}`} className="arc-mono" style={{ border: "1px solid var(--arc-line)", color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px", textDecoration: "none" }}>chart</a>
+          {renderBuy?.(h)}
+        </div>
+      ))}
+    </div></>
+  );
+}

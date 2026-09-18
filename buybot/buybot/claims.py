@@ -157,6 +157,37 @@ async def api_link(req: web.Request) -> web.Response:
     return web.json_response(link, headers={**CORS, "Cache-Control": "no-store"})
 
 
+DEPLOY_BLOCK = 21478169
+TOPIC_CREATED = "0x" + Web3.keccak(text="Created(uint256,address,address,uint256,uint64)").hex().replace("0x", "")
+_sender_cache: dict[str, tuple[float, list]] = {}
+
+
+async def api_by_sender(req: web.Request) -> web.Response:
+    """Links a wallet created, newest first, each with its live on-chain state. Source: Created logs (sender is indexed)."""
+    w = (req.query.get("wallet") or "").lower()
+    if not Web3.is_address(w):
+        return web.json_response({"error": "bad wallet"}, status=400, headers=CORS)
+    hit = _sender_cache.get(w)
+    if hit and time.time() - hit[0] < 20:
+        return web.json_response({"wallet": w, "links": hit[1]}, headers={**CORS, "Cache-Control": "no-store"})
+    latest = int(await _rpc("eth_blockNumber", []), 16)
+    logs = []
+    frm = DEPLOY_BLOCK
+    while frm <= latest:                                   # our node has no range cap, but stay polite: 200k per call
+        to = min(latest, frm + 200_000)
+        logs += await _rpc("eth_getLogs", [{"address": CLAIM, "fromBlock": hex(frm), "toBlock": hex(to),
+                                            "topics": [TOPIC_CREATED, None, "0x" + w[2:].rjust(64, "0")]}])
+        frm = to + 1
+    ids = sorted({int(l["topics"][1], 16) for l in logs}, reverse=True)[:100]
+    out = []
+    for i in ids:
+        l = await read_link(i)
+        if l:
+            out.append(l)
+    _sender_cache[w] = (time.time(), out)
+    return web.json_response({"wallet": w, "links": out}, headers={**CORS, "Cache-Control": "no-store"})
+
+
 async def api_stats(req: web.Request) -> web.Response:
     n = await db.fetchone(text("SELECT COUNT(*) FILTER (WHERE kind='claimed') c, COUNT(*) FILTER (WHERE kind='refunded') r, "
                                "COALESCE(SUM(fee) FILTER (WHERE kind='claimed'),0) fees, COALESCE(SUM(amount) FILTER (WHERE kind='claimed'),0) paid FROM claim_events"))
@@ -217,5 +248,6 @@ def register(app: web.Application):
     app.router.add_post("/api/claim/submit", api_submit)
     app.router.add_route("OPTIONS", "/api/claim/submit", lambda r: web.Response(headers=CORS))
     app.router.add_get("/api/claim-stats", api_stats)
+    app.router.add_get("/api/claim/by-sender", api_by_sender)
     app.router.add_get("/claim/", page)
     app.router.add_get("/claim", page)
