@@ -81,6 +81,7 @@ const V4_NAMES: Record<string, string> = {
   "0x47e7936ae9891e61c5123db720593c05de7120cc": "faze.fun",
   "0x173c4bdd5cf95a935d2b5636c573c5f4df062044": "peach.ag",
   "0xf73a3f56c533f7f1146fbc97806f07efa66ce0cc": "Klik",
+  "0xc75076a17c1ba3dd949773f9036efa4a840020cc": "Hopium",
   "0xca55cdde6578f6f8113dd339520e13418abc2acc": "Lift",
   "0x7cd35b33d495396c4707056d23582df68d0a28cc": "Archemist",
   "0xc0fda29b6683ef1aa5376d5d7054ff773f5a20cc": "Minara",

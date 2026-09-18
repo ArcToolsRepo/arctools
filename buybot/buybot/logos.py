@@ -30,15 +30,16 @@ RELAY = os.getenv("RELAY_URL", "https://rpc-production-ba7a.up.railway.app")
 HDR = {"Content-Type": "application/json", "X-Relay-Key": os.getenv("RELAY_KEY", ""), "X-Priority": "high"}
 UA = {"User-Agent": "Mozilla/5.0 (compatible; ArcTools/1.0; +https://arctools.fun)"}
 GATEWAYS = ["https://ipfs.io/ipfs/", "https://cloudflare-ipfs.com/ipfs/", "https://gateway.pinata.cloud/ipfs/"]
-SELECTORS = {  # name → 4-byte selector (keccak of the signature)
-    "image()": "0x0bf3e5ff", "logo()": "0x1c6a5b6f", "logoURI()": "0x5a3e1a19", "imageURI()": "0x0f9e7c9c", "imageUrl()": "0x3f2c8d9e",
-    "metadataURI()": "0x03ee438c", "tokenURI()": "0xc87b56dd", "uri()": "0xeac989f8", "metadata()": "0x392f37e9", "contractURI()": "0xe8a3d485",
-    "description()": "0x7284e416",
+SELECTORS = {  # name → 4-byte selector, computed (six of the hand-typed constants that used to live here were wrong,
+               # so logo()/image()/tokenURI() never matched a single contract)
+    sig: "0x" + __import__("web3").Web3.keccak(text=sig)[:4].hex().replace("0x", "")
+    for sig in ("image()", "logo()", "logoURI()", "imageURI()", "imageUrl()", "metadataURI()", "tokenURI()", "uri()", "metadata()",
+                "contractURI()", "description()", "website()", "twitter()", "telegram()")
 }
 IMG_EXT = re.compile(r"\.(png|jpe?g|webp|gif|svg|avif)(\?|$)", re.I)
 URL_RE = re.compile(r"(https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]{8,300})")
 IPFS_RE = re.compile(r"(?:ipfs://|/ipfs/)(Qm[1-9A-HJ-NP-Za-km-z]{44}|ba[a-z2-7]{50,})(/[A-Za-z0-9._%-]+)*")
-CDN_HINT = ("static.minara.ai", "arguspad", "tollylabs", "tolly", "radardex", "klik", "ubi.fun", "lift.fun", "ellipse", "sashimi", "eve.fun",
+CDN_HINT = ("hopium.gg", "static.minara.ai", "arguspad", "tollylabs", "tolly", "radardex", "klik", "ubi.fun", "lift.fun", "ellipse", "sashimi", "eve.fun",
             "pinata", "ipfs", "arweave", "cloudfront", "imgur", "pump", "supabase", "storage.googleapis", "vercel", "r2.dev", "cdn")
 PAD_PAGES = {  # launchpad → token page pattern (og:image)
     "argus": "https://arguspad.io/token/{t}", "arguspad": "https://arguspad.io/token/{t}",
@@ -90,19 +91,36 @@ def _ipfs_to_http(u: str) -> str:
     return u
 
 
+_host_sem: dict[str, asyncio.Semaphore] = {}
+
+
 async def _verify(s: aiohttp.ClientSession, url: str) -> bool:
-    """True when the URL serves an image (content-type image/* or magic bytes), ≥ 200 B."""
-    try:
-        async with s.get(url, headers=UA, timeout=aiohttp.ClientTimeout(total=8), allow_redirects=True) as r:
-            if r.status != 200:
+    """True when the URL serves an image (content-type image/* or magic bytes), ≥ 200 B.
+    At most 2 fetches per host at a time and one retry on 429/5xx: a launchpad CDN that throttles a burst of eight
+    parallel requests is not evidence that the eight tokens have no artwork."""
+    from urllib.parse import urlsplit
+    host = urlsplit(url).netloc.lower()
+    sem = _host_sem.setdefault(host, asyncio.Semaphore(2))
+    async with sem:
+        for attempt in range(2):
+            try:
+                async with s.get(url, headers=UA, timeout=aiohttp.ClientTimeout(total=8), allow_redirects=True) as r:
+                    if r.status == 429 or r.status >= 500:
+                        if attempt == 0:
+                            await asyncio.sleep(1.5); continue
+                        return False
+                    if r.status != 200:
+                        return False
+                    ct = (r.headers.get("Content-Type") or "").lower()
+                    head = await r.content.read(512)
+                    if ct.startswith("image/") and len(head) >= 100:
+                        return True
+                    magic = head[:12]
+                    return magic.startswith((b"\x89PNG", b"\xff\xd8\xff", b"GIF8", b"RIFF")) or b"<svg" in head[:300].lower()
+            except Exception:  # noqa
+                if attempt == 0:
+                    await asyncio.sleep(1.0); continue
                 return False
-            ct = (r.headers.get("Content-Type") or "").lower()
-            head = await r.content.read(512)
-            if ct.startswith("image/") and len(head) >= 100:
-                return True
-            magic = head[:12]
-            return magic.startswith((b"\x89PNG", b"\xff\xd8\xff", b"GIF8", b"RIFF")) or b"<svg" in head[:300].lower()
-    except Exception:  # noqa
         return False
 
 
@@ -320,17 +338,28 @@ async def hunt_once(limit: int = 400) -> tuple[int, int]:
     A token whose logo we DID find gets logo_checked pushed ten years out by identity.py, so it never comes back
     into this queue: one successful lookup per token, for good."""
     now = int(time.time())
-    rows = await db.fetchall(text("""
-        WITH act AS (SELECT token, SUM(usdc) v FROM swaps WHERE ts > :since GROUP BY token)
-        SELECT a.token, st.launchpad, st.x_handle, a.v
-        FROM act a LEFT JOIN social_tokens st ON st.token = a.token
-        WHERE (st.logo IS NULL OR st.logo = '') AND COALESCE(st.logo_checked, 0) < :recheck
-          AND a.token <> '0x3600000000000000000000000000000000000000'
-        ORDER BY a.v DESC LIMIT :l""").bindparams(since=now - 7 * 86400, recheck=now - 24 * 3600, l=limit))
+    # 1) launches from the last 3 days that still have no artwork (cheap: pad_tokens is small and indexed on ts) — first,
+    #    because a fresh launch card without a logo is what people see; 2) the active-by-volume list as before
+    fresh = await db.fetchall(text("""
+        SELECT p.token, st.launchpad, st.x_handle, 0 v FROM pad_tokens p LEFT JOIN social_tokens st ON st.token = p.token
+        WHERE p.ts > :fresh AND (st.logo IS NULL OR st.logo = '') AND COALESCE(st.logo_checked, 0) < :recheck
+        ORDER BY COALESCE(st.logo_checked, 0) ASC, p.ts DESC LIMIT :l""").bindparams(fresh=now - 3 * 86400, recheck=now - 24 * 3600, l=min(limit, 150)))   # never-checked first, then the longest-waiting
+    rows = list(fresh)
+    fresh_set = {r["token"] for r in fresh}
+    if len(rows) < limit:
+        seen = {r["token"] for r in rows}
+        act = await db.fetchall(text("""
+            WITH act AS (SELECT token, SUM(usdc) v FROM swaps WHERE ts > :since GROUP BY token)
+            SELECT a.token, st.launchpad, st.x_handle, a.v
+            FROM act a LEFT JOIN social_tokens st ON st.token = a.token
+            WHERE (st.logo IS NULL OR st.logo = '') AND COALESCE(st.logo_checked, 0) < :recheck
+              AND a.token <> '0x3600000000000000000000000000000000000000'
+            ORDER BY a.v DESC LIMIT :l""").bindparams(since=now - 7 * 86400, recheck=now - 24 * 3600, l=limit))
+        rows += [r for r in act if r["token"] not in seen][:limit - len(rows)]
     if not rows:
         return 0, 0
     found = 0
-    sem = asyncio.Semaphore(40)      # fetches/verifies
+    sem = asyncio.Semaphore(16)      # fetches/verifies (40 tripped CDN rate limits and turned misses into 24 h blanks)
     writes: list[dict] = []
     async with aiohttp.ClientSession() as s:
         async def one(r):
@@ -348,14 +377,16 @@ async def hunt_once(limit: int = 400) -> tuple[int, int]:
             stats["checked"] += 1
             if u:
                 found += 1; stats["found"] += 1; stats["by"][src] = stats["by"].get(src, 0) + 1
-            writes.append({"t": r["token"], "u": u, "src": src})
+            # a fresh launch that came back empty is retried in 10 min, not 24 h: launchpads upload artwork after the tx
+            # and our 40-wide verify burst can trip a CDN rate limit — neither is a fact about the token
+            writes.append({"t": r["token"], "u": u, "src": src, "chk": now if (u or r["token"] not in fresh_set) else now - 24 * 3600 + 600})
         await asyncio.gather(*[one(r) for r in rows])
     for i in range(0, len(writes), 100):     # one statement per 100 tokens keeps the ingest connection free
         chunk = writes[i:i + 100]
-        vals = ", ".join(f"(:t{j}, '', '', 0, :n, :u{j}, :n, :src{j})" for j in range(len(chunk)))
+        vals = ", ".join(f"(:t{j}, '', '', 0, :n, :u{j}, :c{j}, :src{j})" for j in range(len(chunk)))
         par = {"n": now}
         for j, w in enumerate(chunk):
-            par[f"t{j}"], par[f"u{j}"], par[f"src{j}"] = w["t"], w["u"], w["src"]
+            par[f"t{j}"], par[f"u{j}"], par[f"src{j}"], par[f"c{j}"] = w["t"], w["u"], w["src"], w["chk"]
         await db.execute(text(f"""
             INSERT INTO social_tokens (token, symbol, name, mcap, updated, logo, logo_checked, logo_src)
             VALUES {vals}
@@ -381,8 +412,55 @@ async def hunt_loop():
         await asyncio.sleep(25)     # 400 tokens per pass, one pass every 25 s
 
 
+async def api_logo_recheck(req):
+    """Admin: ?pad=<id>&key=INGEST_KEY (or ?tokens=a,b) — put logo-less tokens back in the hunter's queue right away."""
+    from aiohttp import web
+    if req.query.get("key") != os.getenv("INGEST_KEY", ""):
+        return web.json_response({"error": "forbidden"}, status=403)
+    pad = req.query.get("pad"); toks = [x.lower() for x in (req.query.get("tokens") or "").split(",") if x]
+    if pad:
+        rows = await db.fetchall(text("SELECT token FROM pad_tokens WHERE pad = :p").bindparams(p=pad)); toks += [r["token"].lower() for r in rows]
+    n = 0
+    for tk in set(toks):
+        await db.execute(text("INSERT INTO social_tokens (token, logo_checked) VALUES (:t, 0) ON CONFLICT (token) DO UPDATE SET logo_checked = 0 WHERE social_tokens.logo IS NULL OR social_tokens.logo = ''").bindparams(t=tk)); n += 1
+    found = {}
+    if req.query.get("now"):        # resolve right away, one token at a time (no CDN burst), and write what is found
+        now = int(time.time())
+        async with aiohttp.ClientSession() as s:
+            for tk in set(toks):
+                row = await db.fetchone(text("SELECT logo, launchpad, x_handle FROM social_tokens WHERE token = :t").bindparams(t=tk))
+                if row and row["logo"]:
+                    continue
+                try:
+                    u, src = await asyncio.wait_for(resolve(s, tk, row["launchpad"] if row else None, row["x_handle"] if row else None), 30)
+                except Exception:  # noqa
+                    u, src = None, "none"
+                if u:
+                    await db.execute(text("""INSERT INTO social_tokens (token, symbol, name, mcap, updated, logo, logo_checked, logo_src) VALUES (:t, '', '', 0, :n, :u, :n, :s)
+                        ON CONFLICT (token) DO UPDATE SET logo = EXCLUDED.logo, logo_checked = EXCLUDED.logo_checked, logo_src = EXCLUDED.logo_src""").bindparams(t=tk, n=now, u=u, s=src))
+                    found[tk] = u
+    return web.json_response({"requeued": n, "found_now": len(found), "found": found})
+
+
 async def api_logo_stats(_req):
     from aiohttp import web
+    tk = (_req.query.get("token") or "").lower()
+    if tk:
+        row = await db.fetchone(text("SELECT token, logo, logo_checked, logo_src, launchpad, x_handle, symbol FROM social_tokens WHERE token = :t").bindparams(t=tk))
+        pad = await db.fetchone(text("SELECT pad, ts FROM pad_tokens WHERE token = :t").bindparams(t=tk))
+        now = int(time.time())
+        q = await db.fetchone(text("""SELECT COUNT(*) n FROM (
+            SELECT token FROM swaps WHERE ts > :since AND token = :t
+            UNION ALL SELECT token FROM pad_tokens WHERE ts > :fresh AND token = :t) x""").bindparams(since=now - 7 * 86400, fresh=now - 3 * 86400, t=tk))
+        run = None
+        if _req.query.get("run"):
+            async with aiohttp.ClientSession() as s:
+                try:
+                    u, src = await asyncio.wait_for(resolve(s, tk, row["launchpad"] if row else None, row["x_handle"] if row else None), 40)
+                    run = {"logo": u, "src": src}
+                except Exception as e:  # noqa
+                    run = {"error": repr(e)[:200]}
+        return web.json_response({"social": dict(row) if row else None, "pad": dict(pad) if pad else None, "queue_candidate": int(q["n"]) > 0, "now": now, "run": run})
     r = await db.fetchone(text("""
         WITH act AS (SELECT DISTINCT token FROM swaps WHERE ts > :since)
         SELECT COUNT(*) n, COUNT(st.logo) FILTER (WHERE st.logo <> '') has FROM act a LEFT JOIN social_tokens st ON st.token = a.token
@@ -394,3 +472,4 @@ async def api_logo_stats(_req):
 
 def register(app):
     app.router.add_get("/api/logo-stats", api_logo_stats)
+    app.router.add_get("/api/logo-recheck", api_logo_recheck)

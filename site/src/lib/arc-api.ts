@@ -159,6 +159,14 @@ export async function memo<T>(key: string, ttlMs: number, fn: () => Promise<T>, 
         const v = await Promise.race([fn(), new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`memo timeout: ${key}`)), MEMO_HARD_TIMEOUT_MS))]);
         // transient failures (RPC down, upstream 5xx) must never be remembered — the next visitor recomputes
         if (cacheIf && !cacheIf(v)) return v;
+        // a list that lost more than half of itself since the last good copy is an upstream that failed quietly
+        // (registry or venue feed timed out → tokens vanish or lose their launchpad label), not a smaller market:
+        // keep serving the previous copy and let the next refresh try again
+        const prevV = memoStore.get(key)?.v as unknown;
+        if (Array.isArray(v) && Array.isArray(prevV) && prevV.length > 200 && v.length < prevV.length * 0.5) {
+          console.warn(`memo ${key}: refresh shrank ${prevV.length} → ${v.length}, keeping previous`);
+          return prevV as T;
+        }
         const rec = { ts: Date.now(), v };
         memoStore.set(key, rec);
         if (store) {
@@ -450,6 +458,7 @@ const V4_HOOK_NAMES: Record<string, string> = {
   "0x47e7936ae9891e61c5123db720593c05de7120cc": "faze.fun",
   "0x173c4bdd5cf95a935d2b5636c573c5f4df062044": "peach.ag",
   "0xf73a3f56c533f7f1146fbc97806f07efa66ce0cc": "Klik",
+  "0xc75076a17c1ba3dd949773f9036efa4a840020cc": "Hopium",
   "0xca55cdde6578f6f8113dd339520e13418abc2acc": "Lift",
   "0x7cd35b33d495396c4707056d23582df68d0a28cc": "Archemist",
   "0xc0fda29b6683ef1aa5376d5d7054ff773f5a20cc": "Minara",
@@ -1470,6 +1479,7 @@ const V4_HOOK_PADS: Record<string, string> = {
   "0x47e7936ae9891e61c5123db720593c05de7120cc": "faze.fun",
   "0x173c4bdd5cf95a935d2b5636c573c5f4df062044": "peach.ag",
   "0xf73a3f56c533f7f1146fbc97806f07efa66ce0cc": "Klik",
+  "0xc75076a17c1ba3dd949773f9036efa4a840020cc": "Hopium",
   "0xca55cdde6578f6f8113dd339520e13418abc2acc": "Lift",
   "0x7cd35b33d495396c4707056d23582df68d0a28cc": "Archemist",
   "0xc0fda29b6683ef1aa5376d5d7054ff773f5a20cc": "Minara",

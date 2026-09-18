@@ -48,6 +48,9 @@ FACTORIES: dict[str, dict] = {
     "sharc":    {"label": "sharc.fun",   "url": "https://sharc.fun",    "twitter": "sharcdotfun",    "factories": [], "model": "multichain curve launchpad, liquidity burned at graduation (tokens attributed from their public feed)"},
     "creo":     {"label": "creo.family", "url": "https://creo.family",  "twitter": "creodotfamily",  "factories": [], "model": "cinematic AI launchpad; launches through the o1 Launchpad factory on Arc, attributed from their own feed"},
     "peach":    {"label": "peach.ag",    "url": "https://www.peach.ag/arc/launchpad", "twitter": "peachdotag", "factories": ["0x7e462d220b6b0a4c55b205b613133dc1c1cc9dc1", "0x7b9720bc177e8b6f96962e9b15891f27108cad40", "0x173c4bdd5cf95a935d2b5636c573c5f4df062044"], "model": "own bonding curve in USDC, graduates into a locked Uniswap V4 pool"},
+    # --- 18.09: hopium.gg, "stock-paired launchpad": token + Uniswap v4 pool + locked position in one tx; pairs are USDC or
+    # long.supply stock tokens; trading fee 3-10 % of which 2 % is theirs. Tokens expose logo()/description()/website() on-chain.
+    "hopium":   {"label": "Hopium",      "url": "https://hopium.gg",     "twitter": "hopium_gg",       "factories": ["0x0727fe8a5c7073e5b5882bc5ba8d73a427cbe3aa"], "model": "instant V4 pool quoted in USDC or a stock token, liquidity locked (hook 0xc75076a1…, locker 0xa306b48e…)"},
     "ubi":      {"label": "UBI.fun",     "url": "https://ubi.fun",       "twitter": "ubidotfun",       "factories": ["0xee3e862efde6dcd6df5648af0e2731b9d1df4605", "0xe07f7ca66ec795592385018dd998f0b50b8a2834"], "model": "V4 pool, hooks 0x20eead6d… / 0xc780c0f4…"},
 }
 
@@ -125,6 +128,9 @@ async def scan_factory(s: aiohttp.ClientSession, pad: str, factory: str, full: b
                 sym = await _symbol(s, tok)
                 await db.execute(text("INSERT INTO pad_tokens (token, pad, factory, tx, ts, symbol) VALUES (:t, :p, :f, :h, :ts, :s) ON CONFLICT (token) DO NOTHING")
                                  .bindparams(t=tok, p=pad, f=factory, h=t["hash"], ts=int(t["timestamp"]), s=sym))
+                # a token that failed its logo check as an anonymous V4/V3 token gets a fresh look now that we know its pad:
+                # launchpads upload artwork a moment after the launch tx, so the first check often ran too early
+                await db.execute(text("UPDATE social_tokens SET logo_checked = 0 WHERE token = :t AND (logo IS NULL OR logo = '')").bindparams(t=tok))
                 found += 1
         if stop:
             break
