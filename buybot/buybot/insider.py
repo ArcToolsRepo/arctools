@@ -590,6 +590,8 @@ async def v4_bootstrap():
     await _pads_init()
     from .watchdog import watchdog_loop
     asyncio.create_task(watchdog_loop(), name="site-watchdog")
+    from . import claims as _claims_init
+    asyncio.create_task(_claims_init.init(), name="claims-init")
     from .orders import init as _orders_init
     await _orders_init()
     from .bubbles import start_warm as _bubbles_warm
@@ -2550,6 +2552,8 @@ async def start_api():
     _ti.register(app)
     from . import pads_registry as _pads
     _pads.register(app)
+    from . import claims as _claims      # USDC payment links: relayer, read API, standalone claim page (/claim/)
+    _claims.register(app)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", "8080")))

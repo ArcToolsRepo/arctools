@@ -31,6 +31,8 @@ async def main():
     from aiogram.types import BotCommand
     await bot.set_my_commands([
         BotCommand(command="start", description="Open the sniper menu"),
+        BotCommand(command="send", description="Send USDC by link (2% fee)"),
+        BotCommand(command="links", description="Your USDC links"),
     ])
 
     async def notify(tg_id: int, text: str, markup=None):

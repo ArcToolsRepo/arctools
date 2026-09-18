@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Collect USDC · ArcTools</title>
+<meta name="robots" content="noindex">
+<style>
+  :root { --bg:#0c0f16; --card:#121826; --ink:#f0f4fa; --muted:#9aa7bd; --green:#22c580; --blue:#2e7cff; --red:#ff6b6b; --line:rgba(255,255,255,.08); }
+  * { box-sizing:border-box }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; background:radial-gradient(1200px 600px at 20% 0%, rgba(46,124,255,.18), transparent), var(--bg); color:var(--ink); font:16px/1.5 Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding:24px }
+  .card { width:100%; max-width:440px; background:var(--card); border:1px solid var(--line); border-radius:20px; padding:28px; box-shadow:0 30px 80px rgba(0,0,0,.45) }
+  .brand { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:14px; margin-bottom:18px }
+  .brand b { color:var(--ink) }
+  .pill { background:var(--blue); color:#fff; font-size:11px; font-weight:700; letter-spacing:.06em; padding:3px 8px; border-radius:6px }
+  h1 { font-size:22px; margin:0 0 6px }
+  .amount { font-size:44px; font-weight:800; letter-spacing:-.02em; margin:10px 0 2px }
+  .amount small { font-size:18px; color:var(--muted); font-weight:600; margin-left:6px }
+  .sub { color:var(--muted); font-size:14px; margin:0 0 20px }
+  label { display:block; font-size:13px; color:var(--muted); margin:16px 0 6px }
+  input { width:100%; background:#0b1020; border:1px solid var(--line); color:var(--ink); border-radius:12px; padding:14px; font:14px ui-monospace, SFMono-Regular, Menlo, monospace }
+  input:focus { outline:none; border-color:var(--blue) }
+  button { width:100%; border:0; border-radius:12px; padding:15px; font:700 16px Inter, system-ui, sans-serif; cursor:pointer; margin-top:12px }
+  .go { background:var(--green); color:#03170c }
+  .go:disabled { opacity:.5; cursor:default }
+  .alt { background:transparent; color:var(--muted); border:1px solid var(--line) }
+  .row { display:flex; gap:10px }
+  .row button { margin-top:12px }
+  .note { font-size:12px; color:var(--muted); margin-top:16px; line-height:1.5 }
+  .ok { color:var(--green) } .err { color:var(--red) }
+  a { color:var(--blue); text-decoration:none }
+  .hidden { display:none }
+  .spin { display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:s 1s linear infinite; vertical-align:-2px; margin-right:8px }
+  @keyframes s { to { transform:rotate(360deg) } }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand"><b>ArcTools</b> <span class="pill">PAY LINK</span></div>
+  <div id="loading"><span class="spin"></span>Reading your link…</div>
+
+  <div id="bad" class="hidden">
+    <h1>This link is not valid</h1>
+    <p class="sub" id="badwhy">It may be incomplete — ask the sender to resend it.</p>
+  </div>
+
+  <div id="main" class="hidden">
+    <h1>Someone sent you USDC</h1>
+    <div class="amount"><span id="amt">0.00</span><small>USDC</small></div>
+    <p class="sub">on Arc · from <span id="from" style="font-family:ui-monospace,monospace"></span></p>
+
+    <label for="addr">Wallet that should receive it (any Arc / EVM address)</label>
+    <input id="addr" placeholder="0x…" autocomplete="off" spellcheck="false">
+    <div class="row">
+      <button class="alt" id="useWallet" type="button">Use my browser wallet</button>
+      <button class="alt" id="useTg" type="button">Open in Telegram</button>
+    </div>
+    <button class="go" id="go" type="button">Collect <span id="net"></span> USDC</button>
+    <p class="note">No gas needed — we send the transaction for you. 2% platform fee (<span id="fee"></span> USDC) is taken at collection.
+      Expires <span id="exp"></span>; after that it returns to the sender.</p>
+    <p class="note" id="msg"></p>
+  </div>
+
+  <div id="done" class="hidden">
+    <h1 class="ok">Collected</h1>
+    <div class="amount"><span id="paid"></span><small>USDC</small></div>
+    <p class="sub">is now in <span id="to" style="font-family:ui-monospace,monospace"></span></p>
+    <p class="note">Transaction: <a id="tx" target="_blank" rel="noopener"></a></p>
+    <a href="https://arctools.fun/trade"><button class="go" type="button">Trade it on ArcTools</button></a>
+    <a href="https://t.me/ArcSniper_bot"><button class="alt" type="button">Get the sniper bot</button></a>
+  </div>
+
+  <div id="gone" class="hidden">
+    <h1>This link was already used</h1>
+    <p class="sub" id="gonewhy"></p>
+    <a href="https://arctools.fun"><button class="alt" type="button">ArcTools</button></a>
+  </div>
+</div>
+
+<script>/*ETHERS*/</script>
+<script>
+(async () => {
+  const $ = (id) => document.getElementById(id);
+  const show = (id) => { for (const k of ['loading','bad','main','done','gone']) $(k).classList.toggle('hidden', k !== id); };
+  const CLAIM = '0x9f3eEfD8b4158C09BF134fa6C032745a7D781BE6', CHAIN = 5042n;
+  const base = location.pathname.replace(/\/claim\/?$/, '');          // '/bot' behind the site proxy, '' on the bot host
+  const code = decodeURIComponent(location.hash.slice(1));
+  const m = /^(\d+)\.([A-Za-z0-9_-]{43})$/.exec(code);
+  if (!m) { show('bad'); return; }
+  const id = BigInt(m[1]);
+  const keyBytes = Uint8Array.from(atob(m[2].replace(/-/g, '+').replace(/_/g, '/') + '='), c => c.charCodeAt(0));
+  if (keyBytes.length !== 32) { show('bad'); return; }
+  const key = new ethers.Wallet(ethers.hexlify(keyBytes));
+  $('useTg').onclick = () => location.href = `https://t.me/ArcSniper_bot?start=claim_${code}`;
+
+  let link;
+  try { link = await (await fetch(`${base}/api/claim/${id}`, { cache: 'no-store' })).json(); } catch { link = null; }
+  if (!link || link.error) { $('badwhy').textContent = 'We could not find this link on Arc.'; show('bad'); return; }
+  if (link.claimKey.toLowerCase() !== key.address.toLowerCase()) { $('badwhy').textContent = 'The code does not match this link.'; show('bad'); return; }
+  if (link.status !== 'open') { $('gonewhy').textContent = link.status === 'claimed' ? 'The USDC was already collected.' : 'It expired and went back to the sender.'; show('gone'); return; }
+  if (link.expired) { $('gonewhy').textContent = 'It expired and is on its way back to the sender.'; show('gone'); return; }
+
+  const amount = Number(link.amount), fee = amount * link.feeBps / 10000, net = amount - fee;
+  $('amt').textContent = amount.toFixed(2); $('net').textContent = net.toFixed(2); $('fee').textContent = fee.toFixed(2);
+  $('from').textContent = link.sender.slice(0, 6) + '…' + link.sender.slice(-4);
+  $('exp').textContent = new Date(link.expiry * 1000).toLocaleString();
+  show('main');
+
+  $('useWallet').onclick = async () => {
+    if (!window.ethereum) { $('msg').innerHTML = '<span class="err">No browser wallet found — paste an address instead.</span>'; return; }
+    try { const a = await window.ethereum.request({ method: 'eth_requestAccounts' }); $('addr').value = a[0]; } catch {}
+  };
+
+  $('go').onclick = async () => {
+    const to = $('addr').value.trim();
+    if (!ethers.isAddress(to)) { $('msg').innerHTML = '<span class="err">That is not a valid address.</span>'; return; }
+    const recipient = ethers.getAddress(to);
+    $('go').disabled = true; $('msg').innerHTML = '<span class="spin"></span>Sending on Arc…';
+    try {
+      const inner = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(['string','uint256','address','uint256','address'], ['ArcClaim', CHAIN, CLAIM, id, recipient]));
+      const sig = await key.signMessage(ethers.getBytes(inner));
+      const r = await fetch(`${base}/api/claim/submit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: Number(id), recipient, sig }) });
+      const j = await r.json();
+      if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+      $('paid').textContent = Number(j.paid).toFixed(2); $('to').textContent = recipient;
+      $('tx').textContent = j.tx.slice(0, 10) + '…' + j.tx.slice(-6); $('tx').href = `https://arc-scan.org/tx/${j.tx}`;
+      show('done');
+    } catch (e) {
+      $('go').disabled = false; $('msg').innerHTML = `<span class="err">${(e && e.message) || 'failed'}</span>`;
+    }
+  };
+})();
+</script>
+</body>
+</html>

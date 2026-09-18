@@ -1,0 +1,360 @@
+{
+ "claim": "0x9f3eEfD8b4158C09BF134fa6C032745a7D781BE6",
+ "treasury": "0xb35c471b31D636B96f95b84E7A27D69B63235C0D",
+ "block": 21478169,
+ "tx": "bd53964cc868896e34db9fbfb66947f75b2abfabeb0df44c7b8ba3b25e675140",
+ "deployedAt": 1789724421,
+ "abi": [
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "_treasury",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "nonpayable",
+   "type": "constructor"
+  },
+  {
+   "inputs": [],
+   "name": "BadAmount",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "BadExpiry",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "BadSignature",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "Expired",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "KeyReused",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "NotExpired",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "NotOpen",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "TransferFailed",
+   "type": "error"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "recipient",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "paid",
+     "type": "uint256"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "fee",
+     "type": "uint256"
+    }
+   ],
+   "name": "Claimed",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "sender",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "claimKey",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "amount",
+     "type": "uint256"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint64",
+     "name": "expiry",
+     "type": "uint64"
+    }
+   ],
+   "name": "Created",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "sender",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "amount",
+     "type": "uint256"
+    }
+   ],
+   "name": "Refunded",
+   "type": "event"
+  },
+  {
+   "inputs": [],
+   "name": "FEE_BPS",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "MAX_TTL",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "MIN_AMOUNT",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    },
+    {
+     "internalType": "address",
+     "name": "recipient",
+     "type": "address"
+    },
+    {
+     "internalType": "bytes",
+     "name": "sig",
+     "type": "bytes"
+    }
+   ],
+   "name": "claim",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    },
+    {
+     "internalType": "address",
+     "name": "recipient",
+     "type": "address"
+    }
+   ],
+   "name": "claimDigest",
+   "outputs": [
+    {
+     "internalType": "bytes32",
+     "name": "",
+     "type": "bytes32"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "claimKey",
+     "type": "address"
+    },
+    {
+     "internalType": "uint64",
+     "name": "ttl",
+     "type": "uint64"
+    }
+   ],
+   "name": "create",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "name": "keyUsed",
+   "outputs": [
+    {
+     "internalType": "bool",
+     "name": "",
+     "type": "bool"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "name": "links",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "sender",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "claimKey",
+     "type": "address"
+    },
+    {
+     "internalType": "uint128",
+     "name": "amount",
+     "type": "uint128"
+    },
+    {
+     "internalType": "uint64",
+     "name": "expiry",
+     "type": "uint64"
+    },
+    {
+     "internalType": "uint8",
+     "name": "status",
+     "type": "uint8"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "nextId",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    }
+   ],
+   "name": "refund",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "treasury",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  }
+ ]
+}

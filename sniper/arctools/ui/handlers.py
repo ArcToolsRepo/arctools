@@ -15,7 +15,7 @@ from eth_utils import is_address, to_checksum_address
 from ..config import CFG
 from ..chain import CHAIN
 from ..pads import PADS, pad_by_name, default_pad, auto_pad, token_overview, quote_usdc_to_token
-from .. import db, wallets, sniper, portfolio, feed, bridge, referral, market
+from .. import db, wallets, sniper, portfolio, feed, bridge, referral, market, claimlinks
 from . import cards
 from .keyboards import (kb, main_menu, back, snipe_card, position_card,
                         AMOUNTS, SLIPPAGES, GAS_MODES, MODES)
@@ -86,7 +86,96 @@ async def start(m: Message, state: FSMContext, command: CommandObject = None):
             "Make sure your wallet is funded: menu → 👛 Wallets.",
             reply_markup=main_menu(), parse_mode="HTML")
         return
+    # deep link: /start claim_<id>.<key> -> collect a USDC payment link into the active wallet
+    if payload.startswith("claim_") and claimlinks.decode_code(payload[6:]):
+        await collect_link(m, payload[6:])
+        return
     await m.answer(await home_text(m.from_user.id), reply_markup=main_menu(), parse_mode="HTML")
+
+
+async def collect_link(m: Message, code: str):
+    link_id, _ = claimlinks.decode_code(code)
+    w = await wallets.active_wallet(m.from_user.id)
+    if not w:
+        w = await wallets.create_wallet(m.from_user.id)
+        await m.answer("👛 Created a trading wallet for you — the USDC lands there.", parse_mode="HTML")
+    st = await claimlinks.status(link_id)
+    if not st:
+        return await m.answer("Could not read this link right now — try again in a minute.")
+    if st.get("status") == "claimed":
+        return await m.answer("This link was already collected.")
+    if st.get("status") == "refunded" or st.get("expired"):
+        return await m.answer("This link has expired and went back to the sender.")
+    note = await m.answer(f"💸 Collecting <b>{float(st['amount']):.2f} USDC</b> into <code>{w['address']}</code>…", parse_mode="HTML")
+    try:
+        res = await claimlinks.claim(code, w["address"])
+    except Exception as e:  # noqa
+        return await note.edit_text(f"Could not collect: {str(e)[:120]}")
+    paid = float(res.get("paid", 0))
+    await note.edit_text(
+        f"✅ <b>{paid:.2f} USDC</b> is in your wallet.\n<code>{w['address']}</code>\n\n"
+        f"tx <code>{res.get('tx', '')}</code>\n"
+        f"<i>2% platform fee included. Trade it right away — menu → 🎯 Snipe.</i>",
+        parse_mode="HTML", reply_markup=main_menu())
+
+
+@router.message(Command("send"))
+async def cmd_send(m: Message, command: CommandObject = None):
+    """/send <usdc> [hours] — park USDC behind a link anyone can collect into any wallet."""
+    args = (command.args or "").split() if command else []
+    if not args:
+        return await m.answer(
+            "💸 <b>Send USDC by link</b>\n"
+            "<code>/send 5</code> — a link worth 5 USDC, valid 3 days\n"
+            "<code>/send 20 24</code> — 20 USDC, valid 24 hours\n\n"
+            "Whoever opens the link picks the wallet that gets paid — no wallet needed up front, no gas needed to collect. "
+            "Uncollected links come back to you after they expire. Fee: 2% at collection.\n\n"
+            "Your links: /links", parse_mode="HTML")
+    try:
+        amount = float(args[0].replace(",", "."))
+        hours = int(args[1]) if len(args) > 1 else 72
+    except ValueError:
+        return await m.answer("Usage: <code>/send 5</code> or <code>/send 20 24</code>", parse_mode="HTML")
+    if amount < claimlinks.MIN_USDC:
+        return await m.answer(f"Minimum is {claimlinks.MIN_USDC} USDC.")
+    w = await wallets.active_wallet(m.from_user.id)
+    if not w:
+        return await m.answer("Create or import a wallet first: menu → 👛 Wallets.")
+    bal = await CHAIN.native_balance(w["address"])
+    if bal < amount + 0.01:
+        return await m.answer(f"Not enough USDC: wallet holds {bal:.2f}, link needs {amount:.2f} plus gas.")
+    note = await m.answer(f"⏳ Creating a {amount:.2f} USDC link…")
+    try:
+        res = await claimlinks.create(m.from_user.id, wallets.account_of(w), amount, hours)
+    except Exception as e:  # noqa
+        return await note.edit_text(f"Could not create the link: {str(e)[:120]}")
+    await note.edit_text(
+        f"💸 <b>{amount:.2f} USDC link ready</b> · valid {hours} h\n\n"
+        f"Telegram: <code>{res['links']['bot']}</code>\n"
+        f"Web: <code>{res['links']['site']}</code>\n\n"
+        f"Send either one. The first person to open it picks a wallet and the USDC lands there — "
+        f"they pay no gas. If nobody collects it, it returns to you automatically after {hours} h.\n"
+        f"<i>Keep the link private: anyone holding it can collect.</i>",
+        parse_mode="HTML")
+
+
+@router.message(Command("links"))
+async def cmd_links(m: Message):
+    rows = await claimlinks.mine(m.from_user.id)
+    if not rows:
+        return await m.answer("No links yet. <code>/send 5</code> makes one.", parse_mode="HTML")
+    lines = ["💸 <b>Your USDC links</b>"]
+    for r in rows:
+        st = await claimlinks.status(int(r["id"])) or {}
+        state = st.get("status") or r["status"]
+        if state == "open" and st.get("expired"):
+            state = "expired · refund pending"
+        left = max(0, int(r["expiry"]) - int(time.time())) // 3600
+        tail = f" → <code>{st.get('recipient', '')[:10]}…</code>" if state == "claimed" and st.get("recipient") else (f" · {left} h left" if state == "open" else "")
+        lines.append(f"#{r['id']} · <b>{float(r['amount_usdc']):.2f} USDC</b> · {state}{tail}")
+        if state == "open":
+            lines.append(f"   <code>{claimlinks.links_for(claimlinks.code_of(r))['bot']}</code>")
+    await m.answer("\n".join(lines), parse_mode="HTML")
 
 
 async def home_text(tg_id: int) -> str:
