@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
+import { loadMeta, peekBirthdays } from "@/lib/token-meta";
 import { BOT_API, BOT_ORIGIN } from "@/lib/bot-api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -505,10 +506,24 @@ function Trade() {
     }
     return m;
   }, [trend, hot, offStats, extraStats, tab, volAll]);
+  // real mint times, fetched once per batch of addresses and cached at module scope (never component state:
+  // a remounting component turned the same lookup into 826 requests in 17 s once already)
+  const [birthdays, setBirthdays] = useState<Map<string, number>>(new Map());
+  const visibleRef = useRef<string>("");
+  useEffect(() => {
+    const want = rows.slice(0, 120).map((t) => t.token.toLowerCase());
+    const key = want.join(",");
+    if (!want.length || key === visibleRef.current) return;
+    visibleRef.current = key;
+    void loadMeta(want).then(() => setBirthdays(peekBirthdays(want)));
+  }, [rows]);
+
   const toRow = (token: string): Row => {
     const k = token.toLowerCase();
     const t = byToken.get(k); const tr = trendMap.get(k); const c = clusterMap.get(k);
-    const createdTs = t?.createdAt ? new Date(t.createdAt).getTime() / 1000 : tr?.first_ts ?? null;
+    // the explorer's mint time wins over our own first sighting, which only dates the token from the day we saw it
+    const born = birthdays.get(k);
+    const createdTs = born ?? (t?.createdAt ? new Date(t.createdAt).getTime() / 1000 : tr?.first_ts ?? null);
     return {
       token: k, symbol: tr?.symbol ?? t?.symbol ?? short(k), name: t?.name ?? tr?.symbol ?? "", logo: t?.logo ?? logos[k] ?? xAvatar(t?.twitter) ?? null, pad: t?.pad ?? "", og: !!t?.og, stock: !!t?.stock, quoteSymbol: t?.quoteSymbol ?? null, dexes: t?.dexes ?? [],
       age: createdTs, ca: k, mcap: finN(t?.stock ? (t?.mcapUsd ?? tr?.mcap) : (tr?.mcap ?? t?.mcapUsd)), chg: Number.isFinite(Number(tr?.chg)) ? tr?.chg ?? null : null, athMcap: finN(tr?.ath_mcap),
@@ -556,7 +571,7 @@ function Trade() {
     }
     // pin the official token on top (every tab except Holdings and the volume leaderboard, where a pinned row
     // would break the ranking), regardless of sort / filter
-    if (tab !== "holdings" && tab !== "topvol" && (!q || matches(toRow(OFFICIAL_TOKEN)))) {
+    if (tab === "trending" && padF === "all" && !q && sortKey === "vol" && !minMc && !maxMc && !minVol) {
       base = [toRow(OFFICIAL_TOKEN), ...base.filter((r) => r.token.toLowerCase() !== OFFICIAL_TOKEN)];
     }
     return base;

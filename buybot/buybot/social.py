@@ -544,6 +544,66 @@ def _pad_label(key: str | None) -> str | None:
     return key[:1].upper() + key[1:] if key else key
 
 
+
+# ---------------- real deploy time ----------------
+# The site used to date a token from the first block OUR index saw it in, which makes an old token look new:
+# ARCT read "3 days" when it is 10.4. The explorer keeps the full transfer history and hands us a cursor to
+# the oldest one — that first transfer is the mint, so its timestamp is the token's real birth. It never
+# changes, so once resolved it is stored for good.
+_DEPLOY_INFLIGHT: set[str] = set()
+
+
+async def _arcscan(session, url: str):
+    async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as r:
+        if r.status != 200:
+            return None
+        return await r.json()
+
+
+async def resolve_deploy_ts(token: str) -> int | None:
+    """Oldest transfer of the token = its mint. Returns a unix ts, and remembers it."""
+    t = token.lower()
+    if t in _DEPLOY_INFLIGHT:
+        return None
+    _DEPLOY_INFLIGHT.add(t)
+    try:
+        base = f"https://api.arc-scan.org/v1/tokens/{t}/transfers?limit=1"
+        async with aiohttp.ClientSession() as sess:
+            head = await _arcscan(sess, base)
+            cur = (head or {}).get("oldest_cursor")
+            if not cur:
+                return None
+            first = await _arcscan(sess, f"{base}&cursor={cur}")
+            items = (first or {}).get("items") or []
+            if not items:
+                return None
+            ts = int(items[0].get("timestamp") or 0)
+            if ts <= 0:
+                return None
+        await db.execute(text("""
+            INSERT INTO social_tokens (token, deploy_ts, updated) VALUES (:t, :ts, :u)
+            ON CONFLICT (token) DO UPDATE SET deploy_ts = :ts
+        """).bindparams(t=t, ts=ts, u=int(time.time())))
+        return ts
+    except Exception as e:  # noqa - a missing birthday must never break the list
+        log.warning("deploy_ts %s failed: %s", t[:10], str(e)[:100])
+        return None
+    finally:
+        _DEPLOY_INFLIGHT.discard(t)
+
+
+async def fill_deploy_ts(tokens: list[str]) -> None:
+    """Resolve the birthdays we do not have yet, a few at a time, in the background."""
+    missing = [t for t in tokens if t not in _DEPLOY_INFLIGHT][:8]
+    if not missing:
+        return
+    rows = await db.fetchall(text("SELECT token FROM social_tokens WHERE token = ANY(:t) AND deploy_ts IS NOT NULL")
+                             .bindparams(t=missing))
+    known = {r["token"] for r in rows}
+    todo = [t for t in missing if t not in known]
+    if todo:
+        await asyncio.gather(*[resolve_deploy_ts(t) for t in todo], return_exceptions=True)
+
 async def api_token_meta(req: web.Request):
     """GET /api/token-meta?tokens=a,b,… (≤300) → {meta: {token: {symbol, name, logo, twitter, telegram, website, launchpad}}}
     Everything the pad lists / descriptions told us about a token — the site uses it to fill logos + socials on rows that
@@ -558,11 +618,14 @@ async def api_token_meta(req: web.Request):
     hit = _META_CACHE.get(ck)
     if hit and time.time() - hit[0] < 60:
         return web.json_response({"meta": hit[1]}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=120"})
-    rows = await db.fetchall(text("SELECT token, symbol, name, logo, x_handle, tg_handle, domain, launchpad, ds_enhanced, ds_url FROM social_tokens WHERE token = ANY(:t)").bindparams(t=toks))
+    rows = await db.fetchall(text("SELECT token, symbol, name, logo, x_handle, tg_handle, domain, launchpad, ds_enhanced, ds_url, deploy_ts FROM social_tokens WHERE token = ANY(:t)").bindparams(t=toks))
     meta = {r["token"]: {"symbol": r["symbol"], "name": r["name"], "logo": r["logo"], "twitter": r["x_handle"], "telegram": r["tg_handle"],
-                                 "ds_enhanced": bool(r["ds_enhanced"]), "ds_url": r["ds_url"],
+                                 "ds_enhanced": bool(r["ds_enhanced"]), "ds_url": r["ds_url"], "deploy_ts": r["deploy_ts"],
                          "website": r["domain"], "launchpad": r["launchpad"], "launchpad_label": _pad_label(r["launchpad"])} for r in rows}
     if len(_META_CACHE) > 800:
         _META_CACHE.clear()
+    missing_birthdays = [t for t in toks if not (meta.get(t) or {}).get("deploy_ts")]
+    if missing_birthdays:
+        asyncio.create_task(fill_deploy_ts(missing_birthdays))
     _META_CACHE[ck] = (time.time(), meta)
     return web.json_response({"meta": meta}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=120"})

@@ -1337,3 +1337,21 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
 }
 .arc-dsp__search input::placeholder { color: var(--arc-muted); }
 .arc-dsp__search:focus-within { border-color: rgba(96 150 255 / 55%); }
+
+
+/* v2 terminal: wallet on the left, the four steps beside it */
+.arc-dsp__start {
+  align-items: start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  margin-bottom: 12px;
+}
+.arc-dsp__start .arc-dsp__wallet { margin-bottom: 0; }
+.arc-dsp__howto {
+  background: var(--arc-paper);
+  border: 1px solid var(--arc-line);
+  font-size: 12px;
+  padding: 12px;
+}
+@media (width <= 900px) { .arc-dsp__start { grid-template-columns: minmax(0, 1fr); } }

@@ -20,6 +20,9 @@ export type TokenMeta = {
   website?: string | null;
   launchpad?: string | null;
   launchpad_label?: string | null;
+  /** Real mint time from the explorer's oldest transfer. The list's own createdAt is only the first block
+   *  OUR index saw, which dates an old token from the day we noticed it (ARCT read 3 days at 10.4 days old). */
+  deploy_ts?: number | null;
 };
 
 const TTL = 10 * 60_000;                 // a logo does not change; 10 minutes is plenty
@@ -74,4 +77,15 @@ export async function loadMeta(tokens: string[]): Promise<Record<string, TokenMe
   }
   if (waits.length) await Promise.allSettled(waits);
   return peekMeta(want);
+}
+
+
+/** Real birthdays for the addresses we already hold, as unix seconds. Never triggers a request. */
+export function peekBirthdays(tokens: string[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const t of tokens) {
+    const ts = cache.get(t.toLowerCase())?.v?.deploy_ts;
+    if (typeof ts === "number" && ts > 0) out.set(t.toLowerCase(), ts);
+  }
+  return out;
 }
