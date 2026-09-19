@@ -37,14 +37,47 @@ function Icon({ kind }: { kind: string }) {
 }
 
 type PadRow = { pad: string; n: number };
+type PadMeta = { key: string; label: string; url?: string | null; twitter?: string | null };
+
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/** A launchpad's mark: its X avatar when we know the handle, else the favicon of its own site. Both fail → monogram. */
+function padLogo(meta: PadMeta | undefined, name: string): string | null {
+  if (meta?.twitter) return `https://unavatar.io/x/${meta.twitter}?fallback=false`;
+  const host = meta?.url ? meta.url.replace(/^https?:\/\//, "").replace(/\/.*$/, "") : null;
+  if (host) return `https://www.google.com/s2/favicons?domain=${host}&sz=64`;
+  // venues that are not launchpads still have a home we can borrow a mark from
+  const fallbackHost: Record<string, string> = {
+    uniswapv3: "uniswap.org", uniswapv4: "uniswap.org", dyorswap: "dyorswap.finance",
+    radardex: "radardex.pro", longsupply: "long.supply", stocks: "long.supply",
+  };
+  const h = fallbackHost[norm(name)];
+  return h ? `https://www.google.com/s2/favicons?domain=${h}&sz=64` : null;
+}
+
+function PadMark({ meta, name, tint }: { meta: PadMeta | undefined; name: string; tint: string }) {
+  const src = padLogo(meta, name);
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) return <i style={{ background: tint }}>{name.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase()}</i>;
+  return <img alt="" className="arc-dsp__padimg" loading="lazy" onError={() => setFailed(true)} src={src} />;
+}
 
 export function DsRail({ active }: { active?: string | null }) {
   const [pads, setPads] = useState<PadRow[]>([]);
+  const [meta, setMeta] = useState<Record<string, PadMeta>>({});
   const [total, setTotal] = useState<number | null>(null);
   const [chain, setChain] = useState<{ block?: number; lag?: number; swaps?: number; burned?: number }>({});
 
   useEffect(() => {
     let alive = true;
+    fetch(`${BOT_API}/api/pads`).then((r) => r.json())
+      .then((j: { rows?: PadMeta[] }) => {
+        if (!alive || !j.rows) return;
+        const m: Record<string, PadMeta> = {};
+        for (const row of j.rows) { m[norm(row.key)] = row; m[norm(row.label)] = row; }
+        setMeta(m);
+      })
+      .catch(() => { /* monograms remain */ });
     fetch("/api/padcounts").then((r) => r.json())
       .then((j: { rows?: PadRow[]; total?: number }) => { if (alive && j.rows) { setPads(j.rows.slice(0, 14)); setTotal(j.total ?? null); } })
       .catch(() => { /* the rail still renders its tools */ });
@@ -60,8 +93,6 @@ export function DsRail({ active }: { active?: string | null }) {
     const id = setInterval(pullChain, 30_000);
     return () => { alive = false; clearInterval(id); };
   }, []);
-
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
   return (
     <aside className="arc-dsp__rail">
@@ -94,7 +125,7 @@ export function DsRail({ active }: { active?: string | null }) {
           const on = !!active && norm(active) === norm(p.pad);
           return (
             <a className={"arc-dsp__pad" + (on ? " is-on" : "")} href={`/trade?pad=${encodeURIComponent(p.pad)}`} key={p.pad}>
-              <i style={{ background: TINT[i % TINT.length] }}>{p.pad.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase()}</i>
+              <PadMark meta={meta[norm(p.pad)]} name={p.pad} tint={TINT[i % TINT.length]} />
               <b>{p.pad}</b>
               <span>{p.n.toLocaleString("en-US")}</span>
             </a>

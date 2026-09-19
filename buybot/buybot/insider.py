@@ -2251,6 +2251,22 @@ DEAD = "0x000000000000000000000000000000000000dead"
 
 
 
+
+async def api_pads(request: web.Request) -> web.Response:
+    """GET /api/pads — the launchpad registry as the site needs it: key, label, site and X handle.
+
+    The token page rail draws a logo per launchpad; without this it had to fall back to two-letter monograms.
+    """
+    try:
+        from .pads_registry import FACTORIES
+        rows = [{"key": k, "label": v.get("label") or k, "url": v.get("url"), "twitter": v.get("twitter"),
+                 "status": v.get("status")} for k, v in FACTORIES.items()]
+    except Exception as e:  # noqa
+        return web.json_response({"rows": [], "error": str(e)[:100]}, headers=API_CORS)
+    return web.json_response({"rows": rows, "n": len(rows)},
+                             headers={**API_CORS, "Cache-Control": "public, max-age=3600"})
+
+
 async def api_buyback_stats(request: web.Request) -> web.Response:
     """GET /api/buyback-stats — what the 0.5% swap fee has actually bought back and burned."""
     from . import buyback as _bb
@@ -2592,6 +2608,7 @@ async def start_api():
     app.router.add_get("/api/receipt", api_receipt)
     app.router.add_get("/api/faze", api_faze)
     app.router.add_get("/api/arct-burn", api_arct_burn)
+    app.router.add_get("/api/pads", api_pads)
     app.router.add_get("/api/buyback-stats", api_buyback_stats)
     app.router.add_get("/api/buyback-run", api_buyback_run)
     from .dexscreener import api_ds_stats

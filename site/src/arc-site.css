@@ -1247,6 +1247,7 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
 .arc-dsp__pad { align-items: center; border-radius: 7px; color: var(--arc-ink); display: flex; gap: 9px; padding: 6px 8px; text-decoration: none; }
 .arc-dsp__pad:hover { background: rgba(127,137,158,.12); }
 .arc-dsp__pad.is-on { background: rgba(47,127,245,.16); box-shadow: inset 2px 0 0 0 var(--arc-cobalt); color: var(--arc-ink); font-weight: 600; }
+.arc-dsp__padimg { border-radius: 6px; flex: none; height: 19px; object-fit: cover; width: 19px; background: #1b1f2a; }
 .arc-dsp__pad i { align-items: center; border-radius: 6px; color: #12141a; display: flex; flex: none; font-size: 8.5px; font-style: normal;
   font-weight: 700; height: 19px; justify-content: center; width: 19px; }
 .arc-dsp__pad b { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1264,6 +1265,8 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
 .arc-dsp .arc-token__head h1 { font-size: 18px; }
 .arc-dsp .arc-token__head img { border-radius: 9px; height: 38px !important; width: 38px !important; }
 .arc-dsp .arc-token__grid { gap: 10px; }
+.arc-dsp__side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.arc-dsp__side .arc-swap-panel { margin: 0; }
 
 @media (max-width: 1100px) {
   .arc-dsp { grid-template-columns: minmax(0, 1fr); }

@@ -263,13 +263,13 @@ function TokenPage() {
   const [adv, setAdv] = useState(false);
   // horizontal layout: swap-panel width (drag the splitter) or full-width chart (double-click / ⤢ button)
   const [sideW, setSideW] = useState<number>(() => { try { const v = Number(localStorage.getItem("arc_side_w")); return v >= 280 && v <= 560 ? v : 360; } catch { return 360; } });
-  const [wide, setWide] = useState<boolean>(() => { try { return localStorage.getItem("arc_chart_wide") === "1"; } catch { return false; } });
+  const [wide, setWide] = useState<boolean>(false);   // preview layout is fixed: chart left, trade column right
   const gridRef = useRef<HTMLDivElement>(null);
   const splitRef = useRef<{ x0: number; w0: number } | null>(null);
   const onSplitDown = (e: React.PointerEvent) => { splitRef.current = { x0: e.clientX, w0: sideW }; (e.target as HTMLElement).setPointerCapture(e.pointerId); };
   const onSplitMove = (e: React.PointerEvent) => { const d = splitRef.current; if (!d) return; setSideW(Math.max(280, Math.min(560, d.w0 - (e.clientX - d.x0)))); };
   const onSplitUp = () => { splitRef.current = null; };
-  useEffect(() => { try { localStorage.setItem("arc_side_w", String(sideW)); localStorage.setItem("arc_chart_wide", wide ? "1" : "0"); } catch { /* ignore */ } }, [sideW, wide]);
+  useEffect(() => { try { localStorage.setItem("arc_side_w", String(sideW)); } catch { /* ignore */ } }, [sideW, wide]);
   useEffect(() => { void advancedAvailable().then((ok) => setAdv(ok)); }, []);
   const [mode, setMode] = useState<"price" | "mcap">("mcap");
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -859,7 +859,7 @@ function TokenPage() {
         {/* ---------- main grid ---------- */}
         <div className={"arc-token__grid" + (wide ? " arc-token__grid--wide" : "")} ref={gridRef} style={{ ["--arc-side-w" as string]: `${sideW}px` }}>
           {!wide && (
-            <div className="arc-col-splitter" onDoubleClick={() => setWide(true)} onPointerDown={onSplitDown} onPointerMove={onSplitMove} onPointerUp={onSplitUp} onPointerCancel={onSplitUp}
+            <div className="arc-col-splitter" onPointerDown={onSplitDown} onPointerMove={onSplitMove} onPointerUp={onSplitUp} onPointerCancel={onSplitUp}
               style={{ left: `calc(100% - ${sideW}px - 6px)` }} title="drag to widen the chart · double-click for full width"><span /></div>
           )}
           <div style={{ border: "1px solid var(--arc-line)", minWidth: 0 }}>
@@ -868,7 +868,6 @@ function TokenPage() {
                 <button className="arc-mono" key={t} onClick={() => setTf(t)} style={{ background: tf === t ? "rgba(46,124,255,0.18)" : "transparent", border: "none", borderBottom: tf === t ? "2px solid var(--arc-cobalt)" : "2px solid transparent", color: tf === t ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "5px 9px" }} type="button">{t}</button>
               ))}
               <span style={{ flex: 1 }} />
-              <button className="arc-mono" onClick={() => setWide((v) => !v)} style={{ background: wide ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid var(--arc-line)", borderRadius: 6, color: wide ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, marginRight: 6, padding: "4px 9px" }} title={wide ? "restore the side panel" : "full-width chart (swap panel moves below)"} type="button">{wide ? "⤡ split" : "⤢ wide"}</button>
               {(["price", "mcap"] as const).map((m) => (
                 <button className="arc-mono" key={m} onClick={() => setMode(m)} style={{ background: "transparent", border: "none", borderBottom: mode === m ? "2px solid var(--arc-cobalt)" : "2px solid transparent", color: mode === m ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "5px 9px", textTransform: "capitalize" }} type="button">{m === "mcap" ? "MCap" : "Price"}</button>
               ))}
@@ -884,8 +883,81 @@ function TokenPage() {
               <><div id="chart" style={{ scrollMarginTop: 70 }} /><TvChart avatars={[...chartAvatars, ...proAvatars]} badges={showBadges} onBadges={setShowBadges} candles={effCandles} interval={tf} markers={[...chartMarkers, ...proMarkers]} mode={effMode} onVisible={setMarkersVisible} orderLines={orderLines} scale={scale} storageKey={params.ca} symbol={info ? `${info.symbol}/${pairSym}` : undefined} /></>
             )}
             <MarkerLegend data={eventsData} visible={markersVisible} />
+        {/* ---------- tabs ---------- */}
+        <div style={{ border: "1px solid var(--arc-line)", marginTop: 14 }}>
+          <div style={{ borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 2, padding: "0 8px" }}>
+            {(["trades", "positions", "holders", "bubbles", "traders", "dev", "info"] as const).map((t) => (
+              <button className="arc-mono" key={t} onClick={() => setTab(t)} style={{ background: "transparent", border: "none", borderBottom: tab === t ? "2px solid var(--arc-cobalt)" : "2px solid transparent", color: tab === t ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "10px 12px", textTransform: "uppercase" }} type="button">{({ trades: "Trades", positions: "My position", holders: `Holders${holderCount ? ` ${holderCount}` : ""}`, bubbles: "Bubble map", traders: "Top traders", dev: "Dev tokens", info: "Info" } as const)[t]}</button>
+            ))}
+          </div>
+          {tab === "trades" && (
+            <div style={{ maxHeight: 460, overflow: "auto" }}>
+              <table className="arc-mono arc-token__table">
+                <thead><tr><th>age</th><th>side</th><th>USDC</th><th>{info.symbol}</th><th>price</th><th>wallet</th><th>tx</th></tr></thead>
+                <tbody>
+                  {effTrades.map((t) => (
+                    <tr key={t.tx + t.ts}>
+                      <td style={{ color: "var(--arc-muted)" }}>{ago(t.ts)}</td>
+                      <td style={{ color: t.side === "buy" ? "#22c580" : "#f0534f", textTransform: "uppercase" }}>{t.side}</td>
+                      <td>${fmt(t.usdc, 2)}</td>
+                      <td>{fmt(t.tokens, 0)}</td>
+                      <td style={{ color: "var(--arc-muted)" }}>${(t.price1m / 1e6).toFixed(8)}</td>
+                      <td>
+                        {walletProfiles[t.wallet.toLowerCase()] ? (
+                          <a href={`/u/${walletProfiles[t.wallet.toLowerCase()].handle}`} style={{ alignItems: "center", color: "var(--arc-cobalt)", display: "inline-flex", gap: 5, textDecoration: "none" }} title={t.wallet}>
+                            {walletProfiles[t.wallet.toLowerCase()].avatar
+                              ? <img alt="" src={walletProfiles[t.wallet.toLowerCase()].avatar as string} style={{ borderRadius: "50%", height: 15, width: 15 }} />
+                              : null}
+                            @{walletProfiles[t.wallet.toLowerCase()].handle}
+                            {walletProfiles[t.wallet.toLowerCase()].x_verified ? <span style={{ color: "var(--arc-up)", fontSize: 9 }}>✓</span> : null}
+                          </a>
+                        ) : (                        <a href={`https://arc-scan.org/address/${t.wallet}`} rel="noreferrer" style={{ color: "var(--arc-ink)", textDecoration: "none" }} target="_blank">{t.wallet.slice(0, 6)}…{t.wallet.slice(-4)}</a>)}
+                        <Tags labels={walletLabels} wallet={t.wallet} />
+                        {t.insider_rank && t.insider_rank <= 50 && !walletLabels[t.wallet.toLowerCase()]?.some((l) => l.kind === "insider") && (
+                          <a href="/insiders" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", color: "var(--arc-cobalt)", fontSize: 10, marginLeft: 8, padding: "2px 7px", textDecoration: "none", whiteSpace: "nowrap" }} title={`Insider #${t.insider_rank} · 30d PnL $${fmt(t.insider_pnl ?? 0, 0)}`}>INSIDER #{t.insider_rank}</a>
+                        )}
+                      </td>
+                      <td><a href={`https://arc-scan.org/tx/${t.tx}`} rel="noreferrer" style={{ color: "var(--arc-muted)" }} target="_blank">↗</a></td>
+                    </tr>
+                  ))}
+                  {effTrades.length === 0 && <tr><td colSpan={7} style={{ color: "var(--arc-muted)", padding: 18, textAlign: "center" }}>No trades indexed yet.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {tab === "positions" && (
+            <MyPosition onSell={(pct) => { setSide("sell"); if (balTok != null) setAmount(String(Math.floor((balTok * pct) / 100 * 1e6) / 1e6)); window.scrollTo({ behavior: "smooth", top: 0 }); }} onchainBalance={balTok} symbol={info.symbol} token={ca} wallet={hot && isUnlocked() ? hotAddress() : wallet} />
+          )}
+          {tab === "traders" && <TopTraders symbol={info.symbol} token={ca} />}
+          {tab === "dev" && <DevTokens current={ca} dev={info.deployer} />}
+          {tab === "bubbles" && <BubbleMap deployer={(info as { deployer?: string | null }).deployer ?? null} token={ca} />}
+          {tab === "holders" && (
+            <div style={{ padding: 12 }}>
+              {holders && holders.top.length > 0 ? holders.top.map((h, i) => (
+                <div className="arc-mono" key={h.address} style={{ alignItems: "center", display: "flex", fontSize: 12, gap: 10, padding: "6px 0" }}>
+                  <span style={{ color: "var(--arc-muted)", width: 26 }}>{i + 1}</span>
+                  <a href={`https://arc-scan.org/address/${h.address}`} rel="noreferrer" style={{ color: "var(--arc-ink)", textDecoration: "none", width: 130 }} target="_blank">{h.address.slice(0, 6)}…{h.address.slice(-4)}</a>
+                  <span style={{ background: "#0e1118", flex: 1, height: 6 }}><span style={{ background: "var(--arc-cobalt)", display: "block", height: "100%", width: `${Math.min(100, h.pct)}%` }} /></span>
+                  <span style={{ width: 60, textAlign: "right" }}>{h.pct.toFixed(2)}%</span>
+                </div>
+              )) : <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12 }}>Holder data unavailable.</p>}
+            </div>
+          )}
+          {tab === "info" && (
+            <div className="arc-mono" style={{ display: "grid", fontSize: 12, gap: 8, gridTemplateColumns: "160px 1fr", padding: 14 }}>
+              <span style={{ color: "var(--arc-muted)" }}>contract</span><span>{ca}</span>
+              <span style={{ color: "var(--arc-muted)" }}>pool</span><span>{info.pool ?? "—"}</span>
+              <span style={{ color: "var(--arc-muted)" }}>venue</span><span>{info.venue === "pad" ? "ArcToolsPad bonding curve" : info.venue === "v3" ? `Uniswap V3, fee tier ${((info.poolFee ?? 0) / 10000).toFixed(2)}%` : info.venue === "v4" ? `Uniswap V4 (${info.launchpad && info.launchpad !== "Uniswap V4" ? info.launchpad : "no hook"}), ${info.v4Key?.usdc_dec === 6 ? "USDC facade" : "native USDC"} pair` : `${info.launchpad ?? "external"} pool`}</span>
+              <span style={{ color: "var(--arc-muted)" }}>supply</span><span>{fmt(info.supply, 0)} {info.symbol}</span>
+              <span style={{ color: "var(--arc-muted)" }}>decimals</span><span>{info.decimals}</span>
+              <span style={{ color: "var(--arc-muted)" }}>all-time volume</span><span>{money(eff.volAll, 0)} over {stats?.txns_all ?? "—"} indexed trades</span>
+              {info.venue === "pad" && (<><span style={{ color: "var(--arc-muted)" }}>creator tools</span><a href={`/pad/${ca}`} style={{ color: "var(--arc-cobalt)" }}>edit logo & socials, claim rewards →</a></>)}
+            </div>
+          )}
+        </div>
           </div>
 
+          <div className="arc-dsp__side">
           {/* ---------- stat column (DexScreener arrangement) ---------- */}
           <div className="arc-ds">
             <div className="arc-ds__tiles">
@@ -1069,6 +1141,7 @@ function TokenPage() {
             )}
             {tradeMode === "market" && <OrdersPanel balTok={balTok} balUsdc={balUsdc} kind="list" onOrdersChange={setMyOrders} price={price} supply={info.supply ?? null} symbol={info.symbol} token={ca} />}
           </aside>
+          </div>
         </div>
 
         {/* ---------- social check: who is behind the token ---------- */}
@@ -1093,78 +1166,6 @@ function TokenPage() {
         <SmartFollowers x={info.twitter} />
         <KolMentions token={ca} />
 
-        {/* ---------- tabs ---------- */}
-        <div style={{ border: "1px solid var(--arc-line)", marginTop: 14 }}>
-          <div style={{ borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 2, padding: "0 8px" }}>
-            {(["trades", "positions", "holders", "bubbles", "traders", "dev", "info"] as const).map((t) => (
-              <button className="arc-mono" key={t} onClick={() => setTab(t)} style={{ background: "transparent", border: "none", borderBottom: tab === t ? "2px solid var(--arc-cobalt)" : "2px solid transparent", color: tab === t ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "10px 12px", textTransform: "uppercase" }} type="button">{({ trades: "Trades", positions: "My position", holders: `Holders${holderCount ? ` ${holderCount}` : ""}`, bubbles: "Bubble map", traders: "Top traders", dev: "Dev tokens", info: "Info" } as const)[t]}</button>
-            ))}
-          </div>
-          {tab === "trades" && (
-            <div style={{ maxHeight: 460, overflow: "auto" }}>
-              <table className="arc-mono arc-token__table">
-                <thead><tr><th>age</th><th>side</th><th>USDC</th><th>{info.symbol}</th><th>price</th><th>wallet</th><th>tx</th></tr></thead>
-                <tbody>
-                  {effTrades.map((t) => (
-                    <tr key={t.tx + t.ts}>
-                      <td style={{ color: "var(--arc-muted)" }}>{ago(t.ts)}</td>
-                      <td style={{ color: t.side === "buy" ? "#22c580" : "#f0534f", textTransform: "uppercase" }}>{t.side}</td>
-                      <td>${fmt(t.usdc, 2)}</td>
-                      <td>{fmt(t.tokens, 0)}</td>
-                      <td style={{ color: "var(--arc-muted)" }}>${(t.price1m / 1e6).toFixed(8)}</td>
-                      <td>
-                        {walletProfiles[t.wallet.toLowerCase()] ? (
-                          <a href={`/u/${walletProfiles[t.wallet.toLowerCase()].handle}`} style={{ alignItems: "center", color: "var(--arc-cobalt)", display: "inline-flex", gap: 5, textDecoration: "none" }} title={t.wallet}>
-                            {walletProfiles[t.wallet.toLowerCase()].avatar
-                              ? <img alt="" src={walletProfiles[t.wallet.toLowerCase()].avatar as string} style={{ borderRadius: "50%", height: 15, width: 15 }} />
-                              : null}
-                            @{walletProfiles[t.wallet.toLowerCase()].handle}
-                            {walletProfiles[t.wallet.toLowerCase()].x_verified ? <span style={{ color: "var(--arc-up)", fontSize: 9 }}>✓</span> : null}
-                          </a>
-                        ) : (                        <a href={`https://arc-scan.org/address/${t.wallet}`} rel="noreferrer" style={{ color: "var(--arc-ink)", textDecoration: "none" }} target="_blank">{t.wallet.slice(0, 6)}…{t.wallet.slice(-4)}</a>)}
-                        <Tags labels={walletLabels} wallet={t.wallet} />
-                        {t.insider_rank && t.insider_rank <= 50 && !walletLabels[t.wallet.toLowerCase()]?.some((l) => l.kind === "insider") && (
-                          <a href="/insiders" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", color: "var(--arc-cobalt)", fontSize: 10, marginLeft: 8, padding: "2px 7px", textDecoration: "none", whiteSpace: "nowrap" }} title={`Insider #${t.insider_rank} · 30d PnL $${fmt(t.insider_pnl ?? 0, 0)}`}>INSIDER #{t.insider_rank}</a>
-                        )}
-                      </td>
-                      <td><a href={`https://arc-scan.org/tx/${t.tx}`} rel="noreferrer" style={{ color: "var(--arc-muted)" }} target="_blank">↗</a></td>
-                    </tr>
-                  ))}
-                  {effTrades.length === 0 && <tr><td colSpan={7} style={{ color: "var(--arc-muted)", padding: 18, textAlign: "center" }}>No trades indexed yet.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {tab === "positions" && (
-            <MyPosition onSell={(pct) => { setSide("sell"); if (balTok != null) setAmount(String(Math.floor((balTok * pct) / 100 * 1e6) / 1e6)); window.scrollTo({ behavior: "smooth", top: 0 }); }} onchainBalance={balTok} symbol={info.symbol} token={ca} wallet={hot && isUnlocked() ? hotAddress() : wallet} />
-          )}
-          {tab === "traders" && <TopTraders symbol={info.symbol} token={ca} />}
-          {tab === "dev" && <DevTokens current={ca} dev={info.deployer} />}
-          {tab === "bubbles" && <BubbleMap deployer={(info as { deployer?: string | null }).deployer ?? null} token={ca} />}
-          {tab === "holders" && (
-            <div style={{ padding: 12 }}>
-              {holders && holders.top.length > 0 ? holders.top.map((h, i) => (
-                <div className="arc-mono" key={h.address} style={{ alignItems: "center", display: "flex", fontSize: 12, gap: 10, padding: "6px 0" }}>
-                  <span style={{ color: "var(--arc-muted)", width: 26 }}>{i + 1}</span>
-                  <a href={`https://arc-scan.org/address/${h.address}`} rel="noreferrer" style={{ color: "var(--arc-ink)", textDecoration: "none", width: 130 }} target="_blank">{h.address.slice(0, 6)}…{h.address.slice(-4)}</a>
-                  <span style={{ background: "#0e1118", flex: 1, height: 6 }}><span style={{ background: "var(--arc-cobalt)", display: "block", height: "100%", width: `${Math.min(100, h.pct)}%` }} /></span>
-                  <span style={{ width: 60, textAlign: "right" }}>{h.pct.toFixed(2)}%</span>
-                </div>
-              )) : <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12 }}>Holder data unavailable.</p>}
-            </div>
-          )}
-          {tab === "info" && (
-            <div className="arc-mono" style={{ display: "grid", fontSize: 12, gap: 8, gridTemplateColumns: "160px 1fr", padding: 14 }}>
-              <span style={{ color: "var(--arc-muted)" }}>contract</span><span>{ca}</span>
-              <span style={{ color: "var(--arc-muted)" }}>pool</span><span>{info.pool ?? "—"}</span>
-              <span style={{ color: "var(--arc-muted)" }}>venue</span><span>{info.venue === "pad" ? "ArcToolsPad bonding curve" : info.venue === "v3" ? `Uniswap V3, fee tier ${((info.poolFee ?? 0) / 10000).toFixed(2)}%` : info.venue === "v4" ? `Uniswap V4 (${info.launchpad && info.launchpad !== "Uniswap V4" ? info.launchpad : "no hook"}), ${info.v4Key?.usdc_dec === 6 ? "USDC facade" : "native USDC"} pair` : `${info.launchpad ?? "external"} pool`}</span>
-              <span style={{ color: "var(--arc-muted)" }}>supply</span><span>{fmt(info.supply, 0)} {info.symbol}</span>
-              <span style={{ color: "var(--arc-muted)" }}>decimals</span><span>{info.decimals}</span>
-              <span style={{ color: "var(--arc-muted)" }}>all-time volume</span><span>{money(eff.volAll, 0)} over {stats?.txns_all ?? "—"} indexed trades</span>
-              {info.venue === "pad" && (<><span style={{ color: "var(--arc-muted)" }}>creator tools</span><a href={`/pad/${ca}`} style={{ color: "var(--arc-cobalt)" }}>edit logo & socials, claim rewards →</a></>)}
-            </div>
-          )}
-        </div>
       </section>
           {txToast && (
         <div className="arc-mono" role="status" style={{
