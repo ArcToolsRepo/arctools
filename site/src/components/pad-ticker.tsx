@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { BOT_API } from "@/lib/bot-api";
 
+import { xAvatar } from "@/lib/arc-api";
 import { TokenLogo } from "@/components/token-logo";
 
 const API = BOT_API;
@@ -32,14 +33,14 @@ export function PadTicker() {
     let alive = true;
     // the strip needs ten logos — it used to download the entire token list (4.8 MB) for them, and a token that the
     // capped list does not carry showed a monogram. One point lookup in the metadata index instead.
-    fetch(`/bot/api/token-meta?tokens=${miss.join(",")}`).then((r) => r.json()).then((j: { meta?: Record<string, { logo?: string | null; symbol?: string | null; launchpad?: string | null }> }) => {
+    fetch(`/bot/api/token-meta?tokens=${miss.join(",")}`).then((r) => r.json()).then((j: { meta?: Record<string, { logo?: string | null; symbol?: string | null; launchpad?: string | null; twitter?: string | null }> }) => {
       if (!alive) return;
       const got = j.meta ?? {};
       setMeta((o) => {
         const n = { ...o };
         for (const t of miss) {
           const m = got[t] ?? got[t.toLowerCase()];
-          n[t] = { token: t, logo: m?.logo ?? null, ...(m?.launchpad === "long" ? { stock: true } : {}) } as Meta;
+          n[t] = { token: t, logo: m?.logo ?? null, twitter: m?.twitter ?? null, ...(m?.launchpad === "long" ? { stock: true } : {}) } as Meta;
         }
         return n;
       });
@@ -72,7 +73,7 @@ export function PadTicker() {
     return (
       <a className="arc-ticker__item" href={`/token/${t.token}`} key={t.token} style={{ alignItems: "center", display: "inline-flex", gap: 6 }}>
         <span style={{ color: i < 3 ? "#f5c542" : "var(--arc-muted)", fontSize: 10, minWidth: 14 }}>#{i + 1}</span>
-        <TokenLogo fallback={null} monogram radius={4} size={16} src={m?.logo ?? null} symbol={t.symbol} />
+        <TokenLogo fallback={xAvatar(m?.twitter)} monogram radius={4} size={16} src={m?.logo ?? null} symbol={t.symbol} />
         <b>{t.symbol}</b>
         <span style={{ color: "var(--arc-muted)", fontSize: 10 }}>/{pair}</span>
         {t.mcap != null && t.mcap > 0 && <span style={{ color: "var(--arc-muted)" }}>{usd(t.mcap)}</span>}
