@@ -519,6 +519,21 @@ def register(app: web.Application):
     app.router.add_get("/api/token-meta", api_token_meta)
 
 
+
+def _pad_label(key: str | None) -> str | None:
+    """Short DB key ("minara") -> the name a human reads ("Minara"). Unknown keys pass through untouched."""
+    if not key:
+        return None
+    try:
+        from .pads_registry import FACTORIES
+        ent = FACTORIES.get(key)
+        if ent and ent.get("label"):
+            return str(ent["label"])
+    except Exception:  # noqa
+        pass
+    return key
+
+
 async def api_token_meta(req: web.Request):
     """GET /api/token-meta?tokens=a,b,… (≤300) → {meta: {token: {symbol, name, logo, twitter, telegram, website, launchpad}}}
     Everything the pad lists / descriptions told us about a token — the site uses it to fill logos + socials on rows that
@@ -529,5 +544,5 @@ async def api_token_meta(req: web.Request):
     rows = await db.fetchall(text("SELECT token, symbol, name, logo, x_handle, tg_handle, domain, launchpad, ds_enhanced, ds_url FROM social_tokens WHERE token = ANY(:t)").bindparams(t=toks))
     meta = {r["token"]: {"symbol": r["symbol"], "name": r["name"], "logo": r["logo"], "twitter": r["x_handle"], "telegram": r["tg_handle"],
                                  "ds_enhanced": bool(r["ds_enhanced"]), "ds_url": r["ds_url"],
-                         "website": r["domain"], "launchpad": r["launchpad"]} for r in rows}
+                         "website": r["domain"], "launchpad": r["launchpad"], "launchpad_label": _pad_label(r["launchpad"])} for r in rows}
     return web.json_response({"meta": meta}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=120"})

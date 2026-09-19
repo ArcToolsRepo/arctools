@@ -6,6 +6,7 @@ import { TokenLogo } from "@/components/token-logo";
 import { BOT_API } from "@/lib/bot-api";
 import { routeSwap, type RouteResult } from "@/lib/arc-route";
 import { hotAddress, hotSend, hotWait, isUnlocked, onHotChange } from "@/lib/arc-hotwallet";
+import { xAvatar } from "@/lib/arc-api";
 import { ARC_AGGREGATOR, connectWallet, encodeAggregatorSwap, ethCall, getStoredWallet, nativeBalance, onWalletChange, p32, pnum, sendTx, tokenBalance, waitReceipt } from "@/lib/arc-wallet";
 import { usePrefs } from "@/lib/i18n";
 import "../arc-site.css";
@@ -30,7 +31,7 @@ const USDC_MARK = "data:image/svg+xml;utf8," + encodeURIComponent(
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const isAddr = (s: string) => /^0x[0-9a-fA-F]{40}$/.test(s.trim());
 
-type Pick = { token: string; symbol: string; name?: string | null; logo?: string | null; pad?: string | null; mcap?: number | null; decimals?: number };
+type Pick = { token: string; symbol: string; name?: string | null; logo?: string | null; pad?: string | null; mcap?: number | null; decimals?: number; twitter?: string | null };
 
 const fmtUsd = (v: number | null | undefined) =>
   v == null ? "" : v >= 1e9 ? `$${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v >= 1e3 ? `$${(v / 1e3).toFixed(1)}K` : `$${v.toFixed(0)}`;
@@ -411,6 +412,22 @@ function TokenPicker({ onPick, onClose }: { onPick: (p: Pick) => void; onClose: 
         })).filter((r) => isAddr(r.token));
         setRows(out);
         setBusy(false);
+        // the trending feed carries symbol + volume only; artwork, name and launchpad live in the meta index,
+        // so ask for them in one batch (40 addresses stay far under the 8 KB request-line limit)
+        const want = out.slice(0, 40).map((r) => r.token);
+        if (want.length) {
+          fetch(`${BOT_API}/api/token-meta?tokens=${want.join(",")}`)
+            .then((r) => r.json())
+            .then((mj: { meta?: Record<string, { logo?: string | null; name?: string | null; launchpad?: string | null; launchpad_label?: string | null; symbol?: string | null; twitter?: string | null }> }) => {
+              if (my !== seq.current || !mj?.meta) return;
+              const meta = mj.meta;
+              setRows((cur) => (cur ?? []).map((r) => {
+                const m = meta[r.token];
+                return m ? { ...r, logo: r.logo ?? m.logo ?? null, name: r.name ?? m.name ?? null, pad: r.pad ?? m.launchpad_label ?? m.launchpad ?? null, twitter: m.twitter ?? null } : r;
+              }));
+            })
+            .catch(() => { /* names and logos are decoration: the list already works without them */ });
+        }
       })
       .catch(() => { if (my === seq.current) { setRows([]); setBusy(false); } });
   }, []);
@@ -441,7 +458,7 @@ function TokenPicker({ onPick, onClose }: { onPick: (p: Pick) => void; onClose: 
           {rows?.length === 0 && !unknown && <p className="arc-swap__hint">nothing found</p>}
           {(rows ?? []).map((r) => (
             <button className="arc-swap__hit" key={r.token} onClick={() => onPick(r)} type="button">
-              <TokenLogo monogram size={30} src={r.logo ?? null} symbol={r.symbol} />
+              <TokenLogo fallback={xAvatar(r.twitter)} monogram size={30} src={r.logo ?? null} symbol={r.symbol} />
               <span className="arc-swap__hitmain">
                 <strong>{r.symbol}</strong>
                 <span className="arc-swap__hitsub">{r.name || short(r.token)}</span>
