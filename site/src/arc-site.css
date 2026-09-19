@@ -1296,3 +1296,10 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
 .arc-dsp .arc-2col { grid-template-columns: minmax(0, 1fr) !important; }
 .arc-dsp .arc-col-win { min-width: 62px; }
 .arc-dsp .arc-col-price { min-width: 96px; }
+
+.arc-dsp__more { border-top: 1px solid var(--arc-line); display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 10px; padding: 10px 8px 0; }
+.arc-dsp__more a { color: var(--arc-muted); font-size: 11.5px; text-decoration: none; }
+.arc-dsp__more a:hover { color: var(--arc-ink); }
+/* the trading-wallet + feed column stays available on the preview Terminal, folded to the bottom */
+.arc-dsp .arc-aside { display: grid !important; margin-top: 12px; position: static !important; }
+.arc-dsp .arc-2col { grid-template-columns: minmax(0, 1fr) !important; }

@@ -9,24 +9,37 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as Wallets2RouteImport } from './routes/wallets2'
 import { Route as WalletsRouteImport } from './routes/wallets'
 import { Route as Trade2RouteImport } from './routes/trade2'
 import { Route as TradeRouteImport } from './routes/trade'
+import { Route as Swap2RouteImport } from './routes/swap2'
 import { Route as SwapRouteImport } from './routes/swap'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as Scan2RouteImport } from './routes/scan2'
 import { Route as ScanRouteImport } from './routes/scan'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
+import { Route as Rewards2RouteImport } from './routes/rewards2'
 import { Route as RewardsRouteImport } from './routes/rewards'
+import { Route as Referrals2RouteImport } from './routes/referrals2'
 import { Route as ReferralsRouteImport } from './routes/referrals'
+import { Route as Profile2RouteImport } from './routes/profile2'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as Portfolio2RouteImport } from './routes/portfolio2'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
+import { Route as Pay2RouteImport } from './routes/pay2'
 import { Route as PayRouteImport } from './routes/pay'
+import { Route as Leaderboard2RouteImport } from './routes/leaderboard2'
 import { Route as LeaderboardRouteImport } from './routes/leaderboard'
+import { Route as Launchpad2RouteImport } from './routes/launchpad2'
 import { Route as LaunchpadRouteImport } from './routes/launchpad'
+import { Route as Intel2RouteImport } from './routes/intel2'
 import { Route as IntelRouteImport } from './routes/intel'
+import { Route as Insiders2RouteImport } from './routes/insiders2'
 import { Route as InsidersRouteImport } from './routes/insiders'
 import { Route as FeedRouteImport } from './routes/feed'
 import { Route as DiagRouteImport } from './routes/diag'
+import { Route as Bridge2RouteImport } from './routes/bridge2'
 import { Route as BridgeRouteImport } from './routes/bridge'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
@@ -54,6 +67,11 @@ import { Route as ApiHealRouteImport } from './routes/api/heal'
 import { Route as ApiPadLogoCaRouteImport } from './routes/api/pad-logo.$ca'
 import { Route as ApiLogoIpfsCidRouteImport } from './routes/api/logo.ipfs.$cid'
 
+const Wallets2Route = Wallets2RouteImport.update({
+  id: '/wallets2',
+  path: '/wallets2',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WalletsRoute = WalletsRouteImport.update({
   id: '/wallets',
   path: '/wallets',
@@ -69,6 +87,11 @@ const TradeRoute = TradeRouteImport.update({
   path: '/trade',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Swap2Route = Swap2RouteImport.update({
+  id: '/swap2',
+  path: '/swap2',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SwapRoute = SwapRouteImport.update({
   id: '/swap',
   path: '/swap',
@@ -77,6 +100,11 @@ const SwapRoute = SwapRouteImport.update({
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Scan2Route = Scan2RouteImport.update({
+  id: '/scan2',
+  path: '/scan2',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ScanRoute = ScanRouteImport.update({
@@ -89,9 +117,19 @@ const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
   path: '/robots.txt',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Rewards2Route = Rewards2RouteImport.update({
+  id: '/rewards2',
+  path: '/rewards2',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RewardsRoute = RewardsRouteImport.update({
   id: '/rewards',
   path: '/rewards',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Referrals2Route = Referrals2RouteImport.update({
+  id: '/referrals2',
+  path: '/referrals2',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReferralsRoute = ReferralsRouteImport.update({
@@ -99,9 +137,19 @@ const ReferralsRoute = ReferralsRouteImport.update({
   path: '/referrals',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Profile2Route = Profile2RouteImport.update({
+  id: '/profile2',
+  path: '/profile2',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Portfolio2Route = Portfolio2RouteImport.update({
+  id: '/portfolio2',
+  path: '/portfolio2',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PortfolioRoute = PortfolioRouteImport.update({
@@ -109,9 +157,19 @@ const PortfolioRoute = PortfolioRouteImport.update({
   path: '/portfolio',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Pay2Route = Pay2RouteImport.update({
+  id: '/pay2',
+  path: '/pay2',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PayRoute = PayRouteImport.update({
   id: '/pay',
   path: '/pay',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Leaderboard2Route = Leaderboard2RouteImport.update({
+  id: '/leaderboard2',
+  path: '/leaderboard2',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LeaderboardRoute = LeaderboardRouteImport.update({
@@ -119,14 +177,29 @@ const LeaderboardRoute = LeaderboardRouteImport.update({
   path: '/leaderboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Launchpad2Route = Launchpad2RouteImport.update({
+  id: '/launchpad2',
+  path: '/launchpad2',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LaunchpadRoute = LaunchpadRouteImport.update({
   id: '/launchpad',
   path: '/launchpad',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Intel2Route = Intel2RouteImport.update({
+  id: '/intel2',
+  path: '/intel2',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IntelRoute = IntelRouteImport.update({
   id: '/intel',
   path: '/intel',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Insiders2Route = Insiders2RouteImport.update({
+  id: '/insiders2',
+  path: '/insiders2',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InsidersRoute = InsidersRouteImport.update({
@@ -142,6 +215,11 @@ const FeedRoute = FeedRouteImport.update({
 const DiagRoute = DiagRouteImport.update({
   id: '/diag',
   path: '/diag',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Bridge2Route = Bridge2RouteImport.update({
+  id: '/bridge2',
+  path: '/bridge2',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BridgeRoute = BridgeRouteImport.update({
@@ -279,24 +357,37 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
   '/bridge': typeof BridgeRoute
+  '/bridge2': typeof Bridge2Route
   '/diag': typeof DiagRoute
   '/feed': typeof FeedRoute
   '/insiders': typeof InsidersRoute
+  '/insiders2': typeof Insiders2Route
   '/intel': typeof IntelRoute
+  '/intel2': typeof Intel2Route
   '/launchpad': typeof LaunchpadRoute
+  '/launchpad2': typeof Launchpad2Route
   '/leaderboard': typeof LeaderboardRoute
+  '/leaderboard2': typeof Leaderboard2Route
   '/pay': typeof PayRoute
+  '/pay2': typeof Pay2Route
   '/portfolio': typeof PortfolioRoute
+  '/portfolio2': typeof Portfolio2Route
   '/profile': typeof ProfileRoute
+  '/profile2': typeof Profile2Route
   '/referrals': typeof ReferralsRoute
+  '/referrals2': typeof Referrals2Route
   '/rewards': typeof RewardsRoute
+  '/rewards2': typeof Rewards2Route
   '/robots.txt': typeof RobotsDottxtRoute
   '/scan': typeof ScanRoute
+  '/scan2': typeof Scan2Route
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/swap': typeof SwapRoute
+  '/swap2': typeof Swap2Route
   '/trade': typeof TradeRoute
   '/trade2': typeof Trade2Route
   '/wallets': typeof WalletsRoute
+  '/wallets2': typeof Wallets2Route
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
   '/api/pad-meta': typeof ApiPadMetaRoute
@@ -325,24 +416,37 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
   '/bridge': typeof BridgeRoute
+  '/bridge2': typeof Bridge2Route
   '/diag': typeof DiagRoute
   '/feed': typeof FeedRoute
   '/insiders': typeof InsidersRoute
+  '/insiders2': typeof Insiders2Route
   '/intel': typeof IntelRoute
+  '/intel2': typeof Intel2Route
   '/launchpad': typeof LaunchpadRoute
+  '/launchpad2': typeof Launchpad2Route
   '/leaderboard': typeof LeaderboardRoute
+  '/leaderboard2': typeof Leaderboard2Route
   '/pay': typeof PayRoute
+  '/pay2': typeof Pay2Route
   '/portfolio': typeof PortfolioRoute
+  '/portfolio2': typeof Portfolio2Route
   '/profile': typeof ProfileRoute
+  '/profile2': typeof Profile2Route
   '/referrals': typeof ReferralsRoute
+  '/referrals2': typeof Referrals2Route
   '/rewards': typeof RewardsRoute
+  '/rewards2': typeof Rewards2Route
   '/robots.txt': typeof RobotsDottxtRoute
   '/scan': typeof ScanRoute
+  '/scan2': typeof Scan2Route
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/swap': typeof SwapRoute
+  '/swap2': typeof Swap2Route
   '/trade': typeof TradeRoute
   '/trade2': typeof Trade2Route
   '/wallets': typeof WalletsRoute
+  '/wallets2': typeof Wallets2Route
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
   '/api/pad-meta': typeof ApiPadMetaRoute
@@ -372,24 +476,37 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
   '/bridge': typeof BridgeRoute
+  '/bridge2': typeof Bridge2Route
   '/diag': typeof DiagRoute
   '/feed': typeof FeedRoute
   '/insiders': typeof InsidersRoute
+  '/insiders2': typeof Insiders2Route
   '/intel': typeof IntelRoute
+  '/intel2': typeof Intel2Route
   '/launchpad': typeof LaunchpadRoute
+  '/launchpad2': typeof Launchpad2Route
   '/leaderboard': typeof LeaderboardRoute
+  '/leaderboard2': typeof Leaderboard2Route
   '/pay': typeof PayRoute
+  '/pay2': typeof Pay2Route
   '/portfolio': typeof PortfolioRoute
+  '/portfolio2': typeof Portfolio2Route
   '/profile': typeof ProfileRoute
+  '/profile2': typeof Profile2Route
   '/referrals': typeof ReferralsRoute
+  '/referrals2': typeof Referrals2Route
   '/rewards': typeof RewardsRoute
+  '/rewards2': typeof Rewards2Route
   '/robots.txt': typeof RobotsDottxtRoute
   '/scan': typeof ScanRoute
+  '/scan2': typeof Scan2Route
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/swap': typeof SwapRoute
+  '/swap2': typeof Swap2Route
   '/trade': typeof TradeRoute
   '/trade2': typeof Trade2Route
   '/wallets': typeof WalletsRoute
+  '/wallets2': typeof Wallets2Route
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
   '/api/pad-meta': typeof ApiPadMetaRoute
@@ -420,24 +537,37 @@ export interface FileRouteTypes {
     | '/'
     | '/app'
     | '/bridge'
+    | '/bridge2'
     | '/diag'
     | '/feed'
     | '/insiders'
+    | '/insiders2'
     | '/intel'
+    | '/intel2'
     | '/launchpad'
+    | '/launchpad2'
     | '/leaderboard'
+    | '/leaderboard2'
     | '/pay'
+    | '/pay2'
     | '/portfolio'
+    | '/portfolio2'
     | '/profile'
+    | '/profile2'
     | '/referrals'
+    | '/referrals2'
     | '/rewards'
+    | '/rewards2'
     | '/robots.txt'
     | '/scan'
+    | '/scan2'
     | '/sitemap.xml'
     | '/swap'
+    | '/swap2'
     | '/trade'
     | '/trade2'
     | '/wallets'
+    | '/wallets2'
     | '/api/heal'
     | '/api/help'
     | '/api/pad-meta'
@@ -466,24 +596,37 @@ export interface FileRouteTypes {
     | '/'
     | '/app'
     | '/bridge'
+    | '/bridge2'
     | '/diag'
     | '/feed'
     | '/insiders'
+    | '/insiders2'
     | '/intel'
+    | '/intel2'
     | '/launchpad'
+    | '/launchpad2'
     | '/leaderboard'
+    | '/leaderboard2'
     | '/pay'
+    | '/pay2'
     | '/portfolio'
+    | '/portfolio2'
     | '/profile'
+    | '/profile2'
     | '/referrals'
+    | '/referrals2'
     | '/rewards'
+    | '/rewards2'
     | '/robots.txt'
     | '/scan'
+    | '/scan2'
     | '/sitemap.xml'
     | '/swap'
+    | '/swap2'
     | '/trade'
     | '/trade2'
     | '/wallets'
+    | '/wallets2'
     | '/api/heal'
     | '/api/help'
     | '/api/pad-meta'
@@ -512,24 +655,37 @@ export interface FileRouteTypes {
     | '/'
     | '/app'
     | '/bridge'
+    | '/bridge2'
     | '/diag'
     | '/feed'
     | '/insiders'
+    | '/insiders2'
     | '/intel'
+    | '/intel2'
     | '/launchpad'
+    | '/launchpad2'
     | '/leaderboard'
+    | '/leaderboard2'
     | '/pay'
+    | '/pay2'
     | '/portfolio'
+    | '/portfolio2'
     | '/profile'
+    | '/profile2'
     | '/referrals'
+    | '/referrals2'
     | '/rewards'
+    | '/rewards2'
     | '/robots.txt'
     | '/scan'
+    | '/scan2'
     | '/sitemap.xml'
     | '/swap'
+    | '/swap2'
     | '/trade'
     | '/trade2'
     | '/wallets'
+    | '/wallets2'
     | '/api/heal'
     | '/api/help'
     | '/api/pad-meta'
@@ -559,24 +715,37 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRoute
   BridgeRoute: typeof BridgeRoute
+  Bridge2Route: typeof Bridge2Route
   DiagRoute: typeof DiagRoute
   FeedRoute: typeof FeedRoute
   InsidersRoute: typeof InsidersRoute
+  Insiders2Route: typeof Insiders2Route
   IntelRoute: typeof IntelRoute
+  Intel2Route: typeof Intel2Route
   LaunchpadRoute: typeof LaunchpadRoute
+  Launchpad2Route: typeof Launchpad2Route
   LeaderboardRoute: typeof LeaderboardRoute
+  Leaderboard2Route: typeof Leaderboard2Route
   PayRoute: typeof PayRoute
+  Pay2Route: typeof Pay2Route
   PortfolioRoute: typeof PortfolioRoute
+  Portfolio2Route: typeof Portfolio2Route
   ProfileRoute: typeof ProfileRoute
+  Profile2Route: typeof Profile2Route
   ReferralsRoute: typeof ReferralsRoute
+  Referrals2Route: typeof Referrals2Route
   RewardsRoute: typeof RewardsRoute
+  Rewards2Route: typeof Rewards2Route
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   ScanRoute: typeof ScanRoute
+  Scan2Route: typeof Scan2Route
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SwapRoute: typeof SwapRoute
+  Swap2Route: typeof Swap2Route
   TradeRoute: typeof TradeRoute
   Trade2Route: typeof Trade2Route
   WalletsRoute: typeof WalletsRoute
+  Wallets2Route: typeof Wallets2Route
   ApiHealRoute: typeof ApiHealRoute
   ApiHelpRoute: typeof ApiHelpRoute
   ApiPadMetaRoute: typeof ApiPadMetaRoute
@@ -604,6 +773,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/wallets2': {
+      id: '/wallets2'
+      path: '/wallets2'
+      fullPath: '/wallets2'
+      preLoaderRoute: typeof Wallets2RouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/wallets': {
       id: '/wallets'
       path: '/wallets'
@@ -625,6 +801,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TradeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/swap2': {
+      id: '/swap2'
+      path: '/swap2'
+      fullPath: '/swap2'
+      preLoaderRoute: typeof Swap2RouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/swap': {
       id: '/swap'
       path: '/swap'
@@ -637,6 +820,13 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scan2': {
+      id: '/scan2'
+      path: '/scan2'
+      fullPath: '/scan2'
+      preLoaderRoute: typeof Scan2RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/scan': {
@@ -653,11 +843,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RobotsDottxtRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/rewards2': {
+      id: '/rewards2'
+      path: '/rewards2'
+      fullPath: '/rewards2'
+      preLoaderRoute: typeof Rewards2RouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/rewards': {
       id: '/rewards'
       path: '/rewards'
       fullPath: '/rewards'
       preLoaderRoute: typeof RewardsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/referrals2': {
+      id: '/referrals2'
+      path: '/referrals2'
+      fullPath: '/referrals2'
+      preLoaderRoute: typeof Referrals2RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/referrals': {
@@ -667,11 +871,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReferralsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/profile2': {
+      id: '/profile2'
+      path: '/profile2'
+      fullPath: '/profile2'
+      preLoaderRoute: typeof Profile2RouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/profile': {
       id: '/profile'
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/portfolio2': {
+      id: '/portfolio2'
+      path: '/portfolio2'
+      fullPath: '/portfolio2'
+      preLoaderRoute: typeof Portfolio2RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/portfolio': {
@@ -681,11 +899,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortfolioRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pay2': {
+      id: '/pay2'
+      path: '/pay2'
+      fullPath: '/pay2'
+      preLoaderRoute: typeof Pay2RouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/pay': {
       id: '/pay'
       path: '/pay'
       fullPath: '/pay'
       preLoaderRoute: typeof PayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/leaderboard2': {
+      id: '/leaderboard2'
+      path: '/leaderboard2'
+      fullPath: '/leaderboard2'
+      preLoaderRoute: typeof Leaderboard2RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/leaderboard': {
@@ -695,6 +927,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LeaderboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/launchpad2': {
+      id: '/launchpad2'
+      path: '/launchpad2'
+      fullPath: '/launchpad2'
+      preLoaderRoute: typeof Launchpad2RouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/launchpad': {
       id: '/launchpad'
       path: '/launchpad'
@@ -702,11 +941,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LaunchpadRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/intel2': {
+      id: '/intel2'
+      path: '/intel2'
+      fullPath: '/intel2'
+      preLoaderRoute: typeof Intel2RouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/intel': {
       id: '/intel'
       path: '/intel'
       fullPath: '/intel'
       preLoaderRoute: typeof IntelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/insiders2': {
+      id: '/insiders2'
+      path: '/insiders2'
+      fullPath: '/insiders2'
+      preLoaderRoute: typeof Insiders2RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/insiders': {
@@ -728,6 +981,13 @@ declare module '@tanstack/react-router' {
       path: '/diag'
       fullPath: '/diag'
       preLoaderRoute: typeof DiagRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bridge2': {
+      id: '/bridge2'
+      path: '/bridge2'
+      fullPath: '/bridge2'
+      preLoaderRoute: typeof Bridge2RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/bridge': {
@@ -919,24 +1179,37 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRoute,
   BridgeRoute: BridgeRoute,
+  Bridge2Route: Bridge2Route,
   DiagRoute: DiagRoute,
   FeedRoute: FeedRoute,
   InsidersRoute: InsidersRoute,
+  Insiders2Route: Insiders2Route,
   IntelRoute: IntelRoute,
+  Intel2Route: Intel2Route,
   LaunchpadRoute: LaunchpadRoute,
+  Launchpad2Route: Launchpad2Route,
   LeaderboardRoute: LeaderboardRoute,
+  Leaderboard2Route: Leaderboard2Route,
   PayRoute: PayRoute,
+  Pay2Route: Pay2Route,
   PortfolioRoute: PortfolioRoute,
+  Portfolio2Route: Portfolio2Route,
   ProfileRoute: ProfileRoute,
+  Profile2Route: Profile2Route,
   ReferralsRoute: ReferralsRoute,
+  Referrals2Route: Referrals2Route,
   RewardsRoute: RewardsRoute,
+  Rewards2Route: Rewards2Route,
   RobotsDottxtRoute: RobotsDottxtRoute,
   ScanRoute: ScanRoute,
+  Scan2Route: Scan2Route,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   SwapRoute: SwapRoute,
+  Swap2Route: Swap2Route,
   TradeRoute: TradeRoute,
   Trade2Route: Trade2Route,
   WalletsRoute: WalletsRoute,
+  Wallets2Route: Wallets2Route,
   ApiHealRoute: ApiHealRoute,
   ApiHelpRoute: ApiHelpRoute,
   ApiPadMetaRoute: ApiPadMetaRoute,

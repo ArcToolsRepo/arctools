@@ -8,14 +8,22 @@ import { BOT_API } from "@/lib/bot-api";
  *  axis that means anything on a single chain: the launchpad a token was born on. A click lands in the Terminal
  *  with that source already filtered, so the rail is navigation, not decoration.
  */
+// every destination stays inside the v2 preview, so the whole experience can be judged as one product
 const TOOLS: [string, string, string][] = [
-  ["star", "Watchlist", "/trade?tab=favs"],
+  ["grid", "Terminal", "/trade2"],
+  ["swap", "Swap", "/swap2"],
+  ["star", "Watchlist", "/trade2?tab=favs"],
+  ["spark", "New pairs", "/trade2?tab=new"],
+  ["arrows", "Gainers & losers", "/trade2?sort=chg"],
+  ["eye", "Insiders", "/insiders2"],
   ["bell", "Alerts", "https://t.me/ArcToolsBuyBot"],
-  ["grid", "Terminal", "/trade"],
-  ["spark", "New pairs", "/trade?tab=new"],
-  ["arrows", "Gainers & losers", "/trade?sort=chg"],
-  ["eye", "Insiders", "/insiders"],
-  ["swap", "Swap", "/swap"],
+  ["wallet", "Trading wallet", "/trade2#wallet"],
+];
+const MORE: [string, string][] = [
+  ["/portfolio2", "Portfolio"], ["/wallets2", "Wallets"], ["/rewards2", "Rewards"],
+  ["/launchpad2", "Launchpad"], ["/pay2", "Pay"], ["/bridge2", "Bridge"],
+  ["/leaderboard2", "Traders"], ["/scan2", "Scanner"], ["/intel2", "Intel"],
+  ["/referrals2", "Referrals"], ["/profile2", "Profile"],
 ];
 
 const TINT = ["#7c5cff", "#22c55e", "#f5c542", "#ff6ea9", "#2fd6c4", "#ff7ac6", "#7cc4ff", "#ff9f45",
@@ -31,6 +39,7 @@ function Icon({ kind }: { kind: string }) {
       {kind === "spark" && <path {...p} d="M2 12l3.6-5 2.7 3L14 3.5" />}
       {kind === "arrows" && <><path {...p} d="M4.5 13V3.5M4.5 3.5L2.4 5.8M4.5 3.5l2.1 2.3" /><path {...p} d="M11.5 3v9.5M11.5 12.5l2.1-2.3M11.5 12.5L9.4 10.2" /></>}
       {kind === "eye" && <><path {...p} d="M1.6 8S3.9 4.2 8 4.2 14.4 8 14.4 8 12.1 11.8 8 11.8 1.6 8 1.6 8z" /><circle {...p} cx="8" cy="8" r="1.7" /></>}
+      {kind === "wallet" && <><rect {...p} height="8" rx="2" width="12" x="2" y="5" /><path {...p} d="M11 9h2" /><path {...p} d="M2 6.5V4.5a1 1 0 011-1h8" /></>}
       {kind === "swap" && <><path {...p} d="M2.5 5.5h9M9.5 3.2l2.3 2.3-2.3 2.3" /><path {...p} d="M13.5 10.5h-9M6.5 8.2l-2.3 2.3 2.3 2.3" /></>}
     </svg>
   );
@@ -124,7 +133,7 @@ export function DsRail({ active }: { active?: string | null }) {
         {pads.map((p, i) => {
           const on = !!active && norm(active) === norm(p.pad);
           return (
-            <a className={"arc-dsp__pad" + (on ? " is-on" : "")} href={`/trade?pad=${encodeURIComponent(p.pad)}`} key={p.pad}>
+            <a className={"arc-dsp__pad" + (on ? " is-on" : "")} href={`/trade2?pad=${encodeURIComponent(p.pad)}`} key={p.pad}>
               <PadMark meta={meta[norm(p.pad)]} name={p.pad} tint={TINT[i % TINT.length]} />
               <b>{p.pad}</b>
               <span>{p.n.toLocaleString("en-US")}</span>
@@ -132,6 +141,10 @@ export function DsRail({ active }: { active?: string | null }) {
           );
         })}
         {pads.length === 0 && <p className="arc-dsp__hint">loading launchpads…</p>}
+      </div>
+
+      <div className="arc-dsp__more">
+        {MORE.map(([href, label]) => <a href={href} key={href}>{label}</a>)}
       </div>
 
       <div className="arc-dsp__net">

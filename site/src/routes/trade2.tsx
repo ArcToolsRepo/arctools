@@ -1016,7 +1016,7 @@ function Trade() {
           </div>
 
           {/* RIGHT: wallet + toast */}
-          <div className="arc-aside" style={{ display: "grid", gap: 12, height: "fit-content", position: "sticky", top: 96 }}>
+          <div className="arc-aside" id="wallet" style={{ display: "grid", gap: 12, height: "fit-content", position: "sticky", top: 96 }}>
             <WalletPanel onReady={setAddr} />
             {toast && (
               <div style={{ background: "var(--arc-paper)", border: "1px solid " + (toast.ok ? UP : DOWN), fontSize: 13, padding: 12 }}>
