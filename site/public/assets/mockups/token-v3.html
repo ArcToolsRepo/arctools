@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Token page v3 — launchpad rail</title>
+<style>
+  /* Proposal only: static HTML with the real numbers ARGUS had when this was captured, so the density is
+     honest. Every value here already exists in our own endpoints. */
+  :root{
+    --paper:#0a0c10; --panel:#11151f; --panel2:#0e1420; --ink:#e9edf5; --muted:#98a1b3;
+    --line:rgba(233,237,245,.14); --cobalt:#2f7ff5; --up:#22c55e; --down:#f0534f; --gold:#f5c542;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.45 Inter,system-ui,Segoe UI,Roboto,sans-serif}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .app{display:grid;grid-template-columns:190px 1fr 330px;min-height:100vh}
+
+  /* ---- left rail: platform nav (grouped) + token neighbours ---- */
+  .rail{border-right:1px solid var(--line);padding:14px 12px;background:#080a0e}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:14px}
+  .brand i{display:block;width:20px;height:20px;border-radius:5px;background:linear-gradient(135deg,#2f7ff5,#22c55e)}
+  .rail a{display:block;color:var(--muted);text-decoration:none;padding:5px 0;font-size:13px}
+  .rail a.on{color:var(--ink);font-weight:600}
+  .grp{color:#aab3c4;font-size:10px;letter-spacing:.12em;text-transform:uppercase;margin:14px 0 4px}
+  .grp+div{border-left:1px solid var(--line);padding-left:10px}
+  .peers{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+  .search{display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);
+    border-radius:9px;padding:7px 9px;color:var(--muted);font-size:12px;margin-bottom:12px}
+  .tool{display:flex;align-items:center;gap:9px;padding:6px 0;color:var(--muted);text-decoration:none;font-size:13px}
+  .tool b{font-weight:500;color:#c8d1e0}
+  .pads{margin-top:4px;max-height:300px;overflow:auto;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  .pad{display:flex;align-items:center;gap:9px;padding:6px 6px;border-radius:8px;text-decoration:none}
+  .pad.on{background:rgba(47,127,245,.22);box-shadow:inset 3px 0 0 0 var(--cobalt)}
+  .pad.on b{color:#fff}
+  .pad.on .n{color:#cfe0ff}
+  .pad b{font-size:12.5px;color:#dbe2ee;font-weight:600}
+  .pad .n{margin-left:auto;font-size:10.5px;color:#9fa9ba;font-variant-numeric:tabular-nums;padding-left:10px}
+  .sq{width:20px;height:20px;border-radius:6px;flex:none;display:grid;place-items:center;font-size:8.5px;color:#0b0f17;font-weight:700}
+  .peer{display:flex;align-items:center;gap:8px;padding:6px 0;text-decoration:none}
+  .dot{width:22px;height:22px;border-radius:6px;flex:none;background:linear-gradient(135deg,#3a4a6b,#22314d);display:grid;place-items:center;font-size:9px;color:#cfd8e8}
+  .peer b{font-size:12px;color:var(--ink);font-weight:600}
+  .peer span{font-size:11px;color:var(--muted);margin-left:auto;padding-right:2px}
+
+  /* ---- centre ---- */
+  .main{padding:12px 14px;min-width:0}
+  .head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#7a4dd1,#2f7ff5);display:grid;place-items:center;font-weight:700;font-size:13px}
+  .sym{font-size:19px;font-weight:700}
+  .pair{color:var(--muted);font-size:13px}
+  .chip{border:1px solid var(--line);border-radius:6px;padding:2px 7px;font-size:10px;color:var(--muted)}
+  .chip.pad{border-color:rgba(47,127,245,.5);color:#9dc0ff;background:rgba(47,127,245,.12)}
+  .chip.ok{border-color:rgba(34,197,94,.5);color:#7ee2a8;background:rgba(34,197,94,.10)}
+  .head .ca{margin-left:auto;display:flex;gap:8px;align-items:center;color:var(--muted);font-size:11px}
+  .chart{height:330px;border:1px solid var(--line);border-radius:12px;background:
+      linear-gradient(180deg,#0d1220,#0b0f17);position:relative;overflow:hidden}
+  .chart .tf{position:absolute;left:10px;top:10px;display:flex;gap:6px}
+  .chart .tf b{font-size:10px;padding:3px 7px;border:1px solid var(--line);border-radius:6px;color:var(--muted);font-weight:500}
+  .chart .tf b.on{color:#fff;border-color:var(--cobalt);background:rgba(47,127,245,.18)}
+  .bars{position:absolute;inset:38px 12px 26px 12px;display:flex;align-items:flex-end;gap:3px}
+  .bars i{flex:1;display:block;border-radius:1px}
+  .axis{position:absolute;left:12px;right:12px;bottom:8px;display:flex;justify-content:space-between;color:var(--muted);font-size:10px}
+
+  .tabs{display:flex;gap:4px;margin:12px 0 0;border-bottom:1px solid var(--line)}
+  .tabs button{background:none;border:none;border-bottom:2px solid transparent;color:#aab3c4;
+    font:700 13px/1 Inter,system-ui;padding:11px 14px;cursor:pointer;display:flex;gap:6px;align-items:center}
+  .tabs button.on{color:var(--ink);border-bottom-color:var(--cobalt)}
+  .tabs em{font-style:normal;font-size:10px;color:var(--muted);background:rgba(255,255,255,.06);border-radius:5px;padding:1px 5px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{color:var(--muted);font-weight:500;text-align:left;padding:7px 8px;font-size:11px}
+  td{padding:7px 8px;border-top:1px solid rgba(233,237,245,.06)}
+  td.b{color:var(--up)} td.s{color:var(--down)}
+  .w{color:var(--cobalt)}
+
+  /* ---- right column ---- */
+  .side{border-left:1px solid var(--line);padding:12px;background:#080a0e}
+  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+  .tile u{display:block;text-decoration:none;color:var(--muted);font-size:9.5px;letter-spacing:.08em}
+  .tile b{font-size:15px}
+  .tiles4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}
+  .tiles4 .tile{text-align:center;padding:7px 4px}
+  .tiles4 b{font-size:13px;color:var(--up)}
+  .split{margin-top:10px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px}
+  .row{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:4px}
+  .row b{color:var(--ink);font-size:12px}
+  .bar{height:5px;border-radius:3px;background:var(--down);overflow:hidden;margin:2px 0 10px}
+  .bar i{display:block;height:100%;background:var(--up)}
+  .acts{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
+  .acts button{background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--ink);
+    padding:9px;font:600 12px Inter,system-ui;cursor:pointer}
+  .buy{margin-top:8px;background:var(--cobalt);border:none;border-radius:10px;color:#fff;padding:12px;width:100%;font:700 14px Inter,system-ui;cursor:pointer}
+  .safety{margin-top:10px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px}
+  .safety h4{margin:0 0 7px;font-size:10px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+  .srow{display:flex;justify-content:space-between;font-size:11.5px;padding:3px 0}
+  .srow span{color:#aab3c4}
+  .srow b{text-align:right}
+  .good{color:var(--up)} .warn{color:var(--gold)}
+  .note{margin:10px 2px 14px;color:var(--muted);font-size:10.5px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <aside class="rail">
+    <div class="brand"><i></i>ArcTools</div>
+    <div class="search">⌕ Search token or paste CA</div>
+
+    <a class="tool" href="#"><span>▤</span><b>Terminal</b></a>
+    <a class="tool" href="#"><span>⇄</span><b>Swap</b></a>
+    <a class="tool" href="#"><span>★</span><b>Watchlist</b></a>
+    <a class="tool" href="#"><span>✦</span><b>New pairs</b></a>
+    <a class="tool" href="#"><span>↕</span><b>Gainers &amp; losers</b></a>
+    <a class="tool" href="#"><span>◎</span><b>Insiders</b></a>
+
+    <div class="peers">
+      <div class="grp" style="margin-top:0">Launchpads</div>
+      <div class="pads">
+        <a class="pad on" href="/trade?pad=Arguspad"><span class="sq" style="background:#7c5cff">AR</span><b>Arguspad</b><span class="n">2 500</span></a>
+        <a class="pad" href="/trade?pad=Lift"><span class="sq" style="background:#22c55e">LI</span><b>Lift</b><span class="n">2 500</span></a>
+        <a class="pad" href="/trade?pad=UBI.fun"><span class="sq" style="background:#f5c542">UB</span><b>UBI.fun</b><span class="n">1 557</span></a>
+        <a class="pad" href="/trade?pad=Minara"><span class="sq" style="background:#ff6ea9">MI</span><b>Minara</b><span class="n">1 536</span></a>
+        <a class="pad" href="/trade?pad=Tolly"><span class="sq" style="background:#2fd6c4">TO</span><b>Tolly</b><span class="n">1 477</span></a>
+        <a class="pad" href="/trade?pad=UniswapV4"><span class="sq" style="background:#ff7ac6">U4</span><b>Uniswap V4</b><span class="n">1 219</span></a>
+        <a class="pad" href="/trade?pad=long.supply"><span class="sq" style="background:#7cc4ff">LS</span><b>long.supply</b><span class="n">867</span></a>
+        <a class="pad" href="/trade?pad=faze.fun"><span class="sq" style="background:#ff9f45">FA</span><b>faze.fun</b><span class="n">853</span></a>
+        <a class="pad" href="/trade?pad=peach.ag"><span class="sq" style="background:#ffb3a7">PE</span><b>peach.ag</b><span class="n">788</span></a>
+        <a class="pad" href="/trade?pad=RadarDex"><span class="sq" style="background:#5ee0a0">RD</span><b>RadarDex</b><span class="n">500</span></a>
+        <a class="pad" href="/trade?pad=Warp"><span class="sq" style="background:#9aa6ff">WA</span><b>Warp</b><span class="n">355</span></a>
+        <a class="pad" href="/trade?pad=pools.trade"><span class="sq" style="background:#6fd0ff">PT</span><b>pools.trade</b><span class="n">288</span></a>
+        <a class="pad" href="/trade?pad=DYORSwap"><span class="sq" style="background:#d6b35e">DY</span><b>DYORSwap</b><span class="n">278</span></a>
+        <a class="pad" href="/trade?pad=Hopium"><span class="sq" style="background:#ff5e8a">HO</span><b>Hopium</b><span class="n">19</span></a>
+      </div>
+      <div class="grp">Account</div>
+      <div><a href="#">Portfolio</a><a href="#">Wallets</a><a href="#">Rewards</a><a href="#">Pay</a></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="head">
+      <div class="logo">AR</div>
+      <div>
+        <div><span class="sym">ARGUS</span> <span class="pair">/ USDC · Argus</span></div>
+        <div style="display:flex;gap:6px;margin-top:3px">
+          <span class="chip pad">Arguspad</span><span class="chip">Uniswap V4</span>
+          <span class="chip ok">Sell test passed · 100%</span><span class="chip">Score 78</span>
+        </div>
+      </div>
+      <div class="ca mono">0xece5…cb3c ⧉ · arc-scan ↗ · 𝕏 · ✈︎</div>
+    </div>
+
+    <div class="chart">
+      <div class="tf"><b>1m</b><b>5m</b><b class="on">15m</b><b>1h</b><b>4h</b><b>1d</b><b>Price / MCap</b></div>
+      <div class="bars" id="bars"></div>
+      <div class="axis"><span>08:20</span><span>09:05</span><span>09:50</span><span>10:35</span><span>11:20</span><span>12:05</span></div>
+    </div>
+
+    <div class="tabs">
+      <button class="on">Transactions <em>15 780</em></button>
+      <button>Top traders <em>2 787</em></button>
+      <button>Holders <em>812</em></button>
+      <button>Bubbles</button>
+      <button>Dev <em>4</em></button>
+      <button>My position</button>
+      <button>Info</button>
+    </div>
+
+    <table>
+      <thead><tr><th>Time</th><th>Type</th><th>USDC</th><th>ARGUS</th><th>Price</th><th>Trader</th><th>Txn</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">12s ago</td><td class="b">Buy</td><td class="mono">412.80</td><td class="mono">21 120</td><td class="mono">0.01954</td><td class="w mono">0x7a3e…c1b4</td><td class="mono">↗</td></tr>
+        <tr><td class="mono">38s ago</td><td class="s">Sell</td><td class="mono">96.10</td><td class="mono">4 918</td><td class="mono">0.01954</td><td class="w mono">whale.arc</td><td class="mono">↗</td></tr>
+        <tr><td class="mono">1m ago</td><td class="b">Buy</td><td class="mono">1 204.55</td><td class="mono">61 640</td><td class="mono">0.01953</td><td class="w mono">0x19bd…88fa</td><td class="mono">↗</td></tr>
+        <tr><td class="mono">1m ago</td><td class="b">Buy</td><td class="mono">58.00</td><td class="mono">2 969</td><td class="mono">0.01953</td><td class="w mono">0xcc21…4d02</td><td class="mono">↗</td></tr>
+        <tr><td class="mono">2m ago</td><td class="s">Sell</td><td class="mono">330.42</td><td class="mono">16 920</td><td class="mono">0.01952</td><td class="w mono">0x51aa…9e77</td><td class="mono">↗</td></tr>
+        <tr><td class="mono">2m ago</td><td class="b">Buy</td><td class="mono">74.20</td><td class="mono">3 800</td><td class="mono">0.01952</td><td class="w mono">0x88fe…21aa</td><td class="mono">↗</td></tr>
+        <tr><td class="mono">3m ago</td><td class="b">Buy</td><td class="mono">2 010.00</td><td class="mono">102 950</td><td class="mono">0.01952</td><td class="w mono">kolwallet.arc</td><td class="mono">↗</td></tr>
+        <tr><td class="mono">3m ago</td><td class="s">Sell</td><td class="mono">145.70</td><td class="mono">7 463</td><td class="mono">0.01951</td><td class="w mono">0x2b40…77c9</td><td class="mono">↗</td></tr>
+        <tr><td class="mono">4m ago</td><td class="b">Buy</td><td class="mono">505.00</td><td class="mono">25 880</td><td class="mono">0.01951</td><td class="w mono">0x9d1c…3ef0</td><td class="mono">↗</td></tr>
+        <tr><td class="mono">4m ago</td><td class="s">Sell</td><td class="mono">63.90</td><td class="mono">3 275</td><td class="mono">0.01950</td><td class="w mono">0x4fa7…b620</td><td class="mono">↗</td></tr>
+        <tr><td class="mono">5m ago</td><td class="b">Buy</td><td class="mono">890.12</td><td class="mono">45 650</td><td class="mono">0.01950</td><td class="w mono">0x0ac3…5518</td><td class="mono">↗</td></tr>
+      </tbody>
+    </table>
+  </main>
+
+  <aside class="side">
+    <div class="tiles">
+      <div class="tile"><u>PRICE USD</u><b>$0.01954</b></div>
+      <div class="tile"><u>PRICE PER 1M</u><b>19 544</b></div>
+      <div class="tile"><u>LIQUIDITY</u><b>$579.6K</b></div>
+      <div class="tile"><u>MKT CAP</u><b>$18.74M</b></div>
+    </div>
+    <div class="tiles4">
+      <div class="tile"><u>5M</u><b>+2.7%</b></div>
+      <div class="tile"><u>1H</u><b>+7.8%</b></div>
+      <div class="tile"><u>6H</u><b>+37.8%</b></div>
+      <div class="tile"><u>24H</u><b>+112%</b></div>
+    </div>
+
+    <div class="split">
+      <div class="row"><span>TXNS</span><b>15 780</b></div>
+      <div class="row"><span>Buys 8 245</span><span>Sells 7 535</span></div>
+      <div class="bar"><i style="width:52.2%"></i></div>
+      <div class="row"><span>VOLUME 24H</span><b>$2.84M</b></div>
+      <div class="row"><span>Buy $1.52M</span><span>Sell $1.32M</span></div>
+      <div class="bar"><i style="width:53.5%"></i></div>
+      <div class="row"><span>TRADERS</span><b>2 787</b></div>
+      <div class="row"><span>Buyers 1 903</span><span>Sellers 1 512</span></div>
+      <div class="bar"><i style="width:55.7%"></i></div>
+    </div>
+
+    <div class="acts"><button>☆ Watchlist</button><button>🔔 Alert</button></div>
+    <button class="buy">Buy ARGUS</button>
+
+    <div class="safety">
+      <h4>Safety</h4>
+      <div class="srow"><span>Sell simulation</span><b class="good">passed · 100% round trip</b></div>
+      <div class="srow"><span>Liquidity</span><b class="good">locked · burned LP</b></div>
+      <div class="srow"><span>Dev holdings</span><b class="warn">4.1% · 2 wallets</b></div>
+      <div class="srow"><span>Bundle at launch</span><b class="good">none detected</b></div>
+      <div class="srow"><span>Top 10 holders</span><b class="warn">31.4%</b></div>
+    </div>
+    <p class="note">Everything above already exists in our endpoints — this proposal only changes where it sits.</p>
+  </aside>
+</div>
+<script>
+  // static candle mock, drawn once (no data fetch in a layout proposal)
+  const seed=[6,8,7,11,9,14,12,17,15,13,19,22,18,24,21,27,25,23,29,33,30,36,32,38,35,41,44,40,47,52,49,55,58,54,61,66,63,69,74,71,77,82,79,86,91,88,95,99,96,104];
+  const el=document.getElementById('bars');
+  seed.forEach((v,i)=>{const b=document.createElement('i');const up=i===0||v>=seed[i-1];
+    b.style.height=(v/104*100)+'%';b.style.background=up?'#22c55e':'#f0534f';b.style.opacity=.85;el.appendChild(b);});
+</script>
+</body>
+</html>
