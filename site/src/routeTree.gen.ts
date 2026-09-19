@@ -46,6 +46,7 @@ import { Route as ApiSearchRouteImport } from './routes/api/search'
 import { Route as ApiRpcRouteImport } from './routes/api/rpc'
 import { Route as ApiRefCreditRouteImport } from './routes/api/ref-credit'
 import { Route as ApiPadlistRouteImport } from './routes/api/padlist'
+import { Route as ApiPadcountsRouteImport } from './routes/api/padcounts'
 import { Route as ApiPadMetaRouteImport } from './routes/api/pad-meta'
 import { Route as ApiHelpRouteImport } from './routes/api/help'
 import { Route as ApiHealRouteImport } from './routes/api/heal'
@@ -237,6 +238,11 @@ const ApiPadlistRoute = ApiPadlistRouteImport.update({
   path: '/api/padlist',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPadcountsRoute = ApiPadcountsRouteImport.update({
+  id: '/api/padcounts',
+  path: '/api/padcounts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPadMetaRoute = ApiPadMetaRouteImport.update({
   id: '/api/pad-meta',
   path: '/api/pad-meta',
@@ -287,6 +293,7 @@ export interface FileRoutesByFullPath {
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
   '/api/pad-meta': typeof ApiPadMetaRoute
+  '/api/padcounts': typeof ApiPadcountsRoute
   '/api/padlist': typeof ApiPadlistRoute
   '/api/ref-credit': typeof ApiRefCreditRoute
   '/api/rpc': typeof ApiRpcRoute
@@ -331,6 +338,7 @@ export interface FileRoutesByTo {
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
   '/api/pad-meta': typeof ApiPadMetaRoute
+  '/api/padcounts': typeof ApiPadcountsRoute
   '/api/padlist': typeof ApiPadlistRoute
   '/api/ref-credit': typeof ApiRefCreditRoute
   '/api/rpc': typeof ApiRpcRoute
@@ -376,6 +384,7 @@ export interface FileRoutesById {
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
   '/api/pad-meta': typeof ApiPadMetaRoute
+  '/api/padcounts': typeof ApiPadcountsRoute
   '/api/padlist': typeof ApiPadlistRoute
   '/api/ref-credit': typeof ApiRefCreditRoute
   '/api/rpc': typeof ApiRpcRoute
@@ -422,6 +431,7 @@ export interface FileRouteTypes {
     | '/api/heal'
     | '/api/help'
     | '/api/pad-meta'
+    | '/api/padcounts'
     | '/api/padlist'
     | '/api/ref-credit'
     | '/api/rpc'
@@ -466,6 +476,7 @@ export interface FileRouteTypes {
     | '/api/heal'
     | '/api/help'
     | '/api/pad-meta'
+    | '/api/padcounts'
     | '/api/padlist'
     | '/api/ref-credit'
     | '/api/rpc'
@@ -510,6 +521,7 @@ export interface FileRouteTypes {
     | '/api/heal'
     | '/api/help'
     | '/api/pad-meta'
+    | '/api/padcounts'
     | '/api/padlist'
     | '/api/ref-credit'
     | '/api/rpc'
@@ -555,6 +567,7 @@ export interface RootRouteChildren {
   ApiHealRoute: typeof ApiHealRoute
   ApiHelpRoute: typeof ApiHelpRoute
   ApiPadMetaRoute: typeof ApiPadMetaRoute
+  ApiPadcountsRoute: typeof ApiPadcountsRoute
   ApiPadlistRoute: typeof ApiPadlistRoute
   ApiRefCreditRoute: typeof ApiRefCreditRoute
   ApiRpcRoute: typeof ApiRpcRoute
@@ -837,6 +850,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPadlistRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/padcounts': {
+      id: '/api/padcounts'
+      path: '/api/padcounts'
+      fullPath: '/api/padcounts'
+      preLoaderRoute: typeof ApiPadcountsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/pad-meta': {
       id: '/api/pad-meta'
       path: '/api/pad-meta'
@@ -899,6 +919,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiHealRoute: ApiHealRoute,
   ApiHelpRoute: ApiHelpRoute,
   ApiPadMetaRoute: ApiPadMetaRoute,
+  ApiPadcountsRoute: ApiPadcountsRoute,
   ApiPadlistRoute: ApiPadlistRoute,
   ApiRefCreditRoute: ApiRefCreditRoute,
   ApiRpcRoute: ApiRpcRoute,

@@ -3,6 +3,7 @@ import { BOT_API, BOT_ORIGIN } from "@/lib/bot-api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
+import { DsRail } from "@/components/ds-rail";
 import { usePrefs } from "@/lib/i18n";
 import { SocialCheck } from "@/components/social-check";
 import { SmartFollowers } from "@/components/smart-followers";
@@ -60,9 +61,9 @@ import "../arc-site.css";
 function TokenSkeleton({ lite }: { lite?: PadToken | null } = {}) {
   const money = (v: number | null | undefined) => (v == null ? "—" : v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v >= 1e4 ? `$${(v / 1e3).toFixed(1)}K` : `$${v.toFixed(0)}`);
   return (
-    <main className="arc-site" style={{ minHeight: "100dvh" }}>
-      <ArcNav active="/trade" />
-      <section className="arc-section" style={{ maxWidth: 1360, paddingTop: 118 }}>
+    <main className="arc-dsp">
+      <DsRail active={null} />
+      <section className="arc-dsp__body" style={{ padding: 24 }}>
         {lite && (
           <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 18 }}>
             <TokenLogo size={56} radius={12} src={lite.logo} symbol={lite.symbol} />
@@ -787,9 +788,9 @@ function TokenPage() {
   if (!info && stillLoading) return <TokenSkeleton lite={(loaded as { lite?: PadToken | null }).lite ?? null} />;
   if (!info) {
     return (
-      <main className="arc-site" style={{ minHeight: "100dvh" }}>
-        <ArcNav active="/trade" />
-        <section className="arc-section" style={{ paddingTop: 130 }}>
+      <main className="arc-dsp">
+        <DsRail active={null} />
+        <section className="arc-dsp__body" style={{ padding: 24 }}>
           {/No token contract/.test(error ?? "") ? (
             <>
               <h1 className="arc-h2">Token not found</h1>
@@ -816,12 +817,9 @@ function TokenPage() {
   };
 
   return (
-    <main className="arc-site" style={{ minHeight: "100dvh" }}>
-      <ArcNav active="/trade" />
-      <section className="arc-section arc-token" style={{ maxWidth: 1440, paddingTop: 112 }}>
-        <Link className="arc-mono" preload="intent" style={{ alignItems: "center", background: "rgba(255,255,255,0.03)", border: "1px solid var(--arc-line)", borderRadius: 8, color: "var(--arc-ink)", display: "inline-flex", fontSize: 12, gap: 8, letterSpacing: "0.04em", marginBottom: 12, padding: "7px 12px", textDecoration: "none" }} to="/trade">
-          <span aria-hidden style={{ color: "var(--arc-up)", fontSize: 15, lineHeight: 1 }}>←</span> Back to Terminal
-        </Link>
+    <main className="arc-dsp">
+      <DsRail active={info.launchpad} />
+      <section className="arc-dsp__body arc-token">
         {/* ---------- header ---------- */}
         <div className="arc-token__head">
           <div style={{ alignItems: "center", display: "flex", gap: 14, minWidth: 0 }}>
