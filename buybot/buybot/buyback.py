@@ -61,15 +61,35 @@ async def init_tables() -> None:
     await db.execute(text("CREATE INDEX IF NOT EXISTS buybacks_ts ON buybacks (ts DESC)"))
 
 
-async def _rpc(method: str, params: list) -> object:
-    async with aiohttp.ClientSession() as s:
-        async with s.post(RELAY_RPC, headers={"Content-Type": "application/json", "X-Relay-Key": os.getenv("RELAY_KEY", "")},
-                          json={"id": 1, "jsonrpc": "2.0", "method": method, "params": params},
-                          timeout=aiohttp.ClientTimeout(total=25)) as r:
-            j = await r.json()
-    if "error" in j:
-        raise RuntimeError(f"{method}: {j['error']}")
-    return j.get("result")
+NODE_RPC = os.getenv("PRIMARY_RPC", "http://178.156.197.90:8545")   # the relay is read-only: broadcasts go to our own node
+
+
+async def _rpc(method: str, params: list, *, send: bool = False) -> object:
+    """Reads go through the relay (stable, rate-limited); a broadcast must hit a node that accepts writes."""
+    # the relay refuses writes and prunes history. For logs it is not a fallback at all: it answers a pruned
+    # range with FEWER logs and no error, which silently under-counts the fees (0.18 USDC instead of 8.84).
+    if method == "eth_getLogs":
+        urls = [NODE_RPC]
+    elif send or method == "eth_sendRawTransaction":
+        urls = [NODE_RPC, RELAY_RPC]
+    else:
+        urls = [RELAY_RPC, NODE_RPC]
+    last: Exception | None = None
+    for u in urls:
+        headers = {"Content-Type": "application/json"}
+        if u == RELAY_RPC:
+            headers["X-Relay-Key"] = os.getenv("RELAY_KEY", "")
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.post(u, headers=headers, json={"id": 1, "jsonrpc": "2.0", "method": method, "params": params},
+                                  timeout=aiohttp.ClientTimeout(total=90 if method == "eth_getLogs" else 25)) as r:
+                    j = await r.json()
+            if "error" in j:
+                raise RuntimeError(f"{method}: {j['error']}")
+            return j.get("result")
+        except Exception as e:  # noqa - try the next endpoint before giving up
+            last = e
+    raise last or RuntimeError(f"{method}: no endpoint answered")
 
 
 async def _balance(addr: str) -> int:
@@ -90,9 +110,9 @@ async def _fees_since_block(from_block: int) -> tuple[float, int]:
     if SWAPPED_TOPIC is None:
         SWAPPED_TOPIC = "0x" + _keccak("Swapped(address,address,bool,uint256,uint256,uint256,uint8)")
     head = int(str(await _rpc("eth_blockNumber", [])), 16)
-    start = max(from_block + 1, head - int(os.getenv("BUYBACK_LOOKBACK_BLOCKS", "120000")))
+    start = max(from_block + 1, head - int(os.getenv("BUYBACK_LOOKBACK_BLOCKS", "90000")))
     total = 0.0
-    step = 50_000
+    step = 10_000                                    # small chunks answer inside the timeout; the node caps a query at 100k
     b = start
     while b <= head:
         to = min(b + step - 1, head)
