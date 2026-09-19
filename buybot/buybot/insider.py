@@ -2666,6 +2666,9 @@ async def start_api():
     asyncio.create_task(_dbm.life_loop(), name="token-life")
     from . import buyback as _bb
     asyncio.create_task(_bb.buyback_loop(), name="arct-buyback")
+    from . import simulate as _sim      # honeypot probe: buy+sell round trip in one eth_call, nothing deployed
+    _sim.register(app)
+    asyncio.create_task(_sim.sim_loop(), name="token-sim")
     asyncio.create_task(_dbm.guard_loop(), name="db-guard")
     runner = web.AppRunner(app)
     await runner.setup()

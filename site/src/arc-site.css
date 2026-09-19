@@ -1101,3 +1101,9 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
 .arc-swap__hitright { align-items: center; display: flex; gap: 8px; margin-left: auto; }
 .arc-swap__hitmc { color: var(--arc-muted); font-size: 11px; }
 .arc-swap__hint { color: var(--arc-muted); font-size: 12px; padding: 10px 12px; }
+
+.arc-swap__danger { background: rgba(240,83,79,.09); border: 1px solid var(--arc-down); border-radius: 12px; color: var(--arc-muted); display: block; font-size: 12.5px; line-height: 1.55; margin-top: 12px; padding: 12px 14px; }
+.arc-swap__danger strong { color: #ff8f8b; }
+.arc-swap__ackline { align-items: center; color: var(--arc-ink); cursor: pointer; display: flex; gap: 8px; margin-top: 10px; }
+.arc-swap__go--danger { background: var(--arc-down); }
+.arc-swap__go--danger:disabled { background: #2a1c1f; color: #ff8f8b; }

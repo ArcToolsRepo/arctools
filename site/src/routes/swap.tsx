@@ -113,6 +113,8 @@ function SwapCard() {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState<{ tx: string; got: string } | null>(null);
+  const [sim, setSim] = useState<{ verdict: string; keep_bps: number; detail?: string } | null>(null);
+  const [ack, setAck] = useState(false);              // the buyer explicitly accepted a failed simulation
   const seq = useRef(0);
 
   useEffect(() => { localStorage.setItem(SLIP_KEY, String(slip)); }, [slip]);
@@ -153,6 +155,18 @@ function SwapCard() {
     })();
     return () => { alive = false; };
   }, [payer, side, pick?.token, done?.tx]);
+
+  // tradability: replay a 1 USDC buy + immediate sell against live state before the user commits real money
+  useEffect(() => {
+    setSim(null); setAck(false);
+    if (!pick) return;
+    let alive = true;
+    fetch(`${BOT_API}/api/sim?token=${pick.token}`)
+      .then((r) => r.json())
+      .then((j) => { if (alive && j?.verdict) setSim(j); })
+      .catch(() => { /* no verdict is not a verdict: the card stays neutral */ });
+    return () => { alive = false; };
+  }, [pick?.token]);
 
   const amtUnits = useMemo(() => parseAmt(amount, inDec), [amount, inDec]);
 
@@ -287,7 +301,31 @@ function SwapCard() {
               {quote?.legs?.length ? <Row k={quote.split ? "Route (split)" : "Route"} v={quote.legs.map((l) => l.label).join("  +  ")} /> : null}
               {quote?.unquoted && <Row k="Route" v="pool found, no quote — goes in at market" warn />}
               {quote?.error && <Row k="Route" v={quote.error} warn />}
+              {sim && sim.verdict !== "error" && (
+                <Row
+                  k="Sell simulation"
+                  v={sim.verdict === "ok" ? `passed · ${(sim.keep_bps / 100).toFixed(0)}% round trip`
+                    : sim.verdict === "thin" ? `thin pool · 1 USDC round trip returns ${(sim.keep_bps / 100).toFixed(0)}%`
+                    : sim.verdict === "no_route" ? "no pool reachable yet"
+                    : `FAILED · ${sim.detail ?? "cannot sell"}`}
+                  warn={sim.verdict === "trap"}
+                />
+              )}
             </div>
+          )}
+
+          {sim?.verdict === "trap" && (
+            <label className="arc-swap__danger">
+              <span>
+                <strong>This token failed the sell test.</strong> We bought 1 USDC of it and tried to sell it back in
+                the same call: {sim.detail}. The router quoted a real price for that sale and the token did not honour
+                it — a blocked exit or a hidden tax. Thin liquidity is reported separately and is not this.
+              </span>
+              <span className="arc-swap__ackline">
+                <input checked={ack} onChange={(e) => setAck(e.target.checked)} type="checkbox" />
+                I understand and want to buy anyway
+              </span>
+            </label>
           )}
 
           {err && <p className="arc-swap__err">{err}</p>}
@@ -297,8 +335,10 @@ function SwapCard() {
             </p>
           )}
 
-          <button className="arc-swap__go" disabled={!!busy || !pick || amtUnits <= 0n} onClick={run} type="button">
-            {busy ?? (!payer ? "Connect wallet" : !pick ? "Select a token" : amtUnits <= 0n ? "Enter an amount" : side === "buy" ? `Buy ${pick.symbol}` : `Sell ${pick.symbol}`)}
+          <button className={"arc-swap__go" + (sim?.verdict === "trap" ? " arc-swap__go--danger" : "")} disabled={!!busy || !pick || amtUnits <= 0n || (sim?.verdict === "trap" && side === "buy" && !ack)} onClick={run} type="button">
+            {busy ?? (!payer ? "Connect wallet" : !pick ? "Select a token" : amtUnits <= 0n ? "Enter an amount"
+              : sim?.verdict === "trap" && side === "buy" && !ack ? "Sell test failed — tick the box to continue"
+              : side === "buy" ? `Buy ${pick.symbol}` : `Sell ${pick.symbol}`)}
           </button>
         </div>
       </div>
