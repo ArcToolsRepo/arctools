@@ -526,12 +526,19 @@ def _pad_label(key: str | None) -> str | None:
         return None
     try:
         from .pads_registry import FACTORIES
-        ent = FACTORIES.get(key)
-        if ent and ent.get("label"):
-            return str(ent["label"])
+        k = key.strip().lower()
+        # the swap index and the registry do not always spell a pad the same way ("argus" vs "arguspad"),
+        # so try the obvious variants before giving up and showing a raw key to a human
+        for cand in (k, k + "pad", k.removesuffix("pad"), k.removesuffix(".fun"), k.split(".")[0]):
+            ent = FACTORIES.get(cand)
+            if ent and ent.get("label"):
+                return str(ent["label"])
+        for rk, ent in FACTORIES.items():
+            if (rk.startswith(k) or k.startswith(rk)) and ent.get("label"):
+                return str(ent["label"])
     except Exception:  # noqa
         pass
-    return key
+    return key[:1].upper() + key[1:] if key else key
 
 
 async def api_token_meta(req: web.Request):
