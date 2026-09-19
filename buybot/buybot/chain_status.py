@@ -19,7 +19,7 @@ log = logging.getLogger("chainstatus")
 bot = None                      # set by main (aiogram Bot)
 
 RPCS = ["https://rpc-production-ba7a.up.railway.app", "https://rpc.arc-scan.org", "https://5042.rpc.thirdweb.com"]
-CHECK_S = 30
+CHECK_S = 5          # the head reading feeds a UI badge: a 30 s poll made it look 30 s stale
 POST_EVERY = 300
 DOWN_AFTER = 240
 LIVE_POSTS = 3
@@ -165,6 +165,16 @@ async def api_status(request):
     except Exception:  # noqa
         st = _mem or {}
     now = time.time()
+    # the UI used to label this "index lag", but stale_s is only how long since WE last polled the head.
+    # The real lag is how far the swap indexer's cursor trails the chain, so publish that too.
+    index_lag_s = None
+    try:
+        from .insider import _lag as _ing
+        blocks = int(_ing.get("blocks") or 0)
+        index_lag_s = round(blocks * 0.63, 1)
+    except Exception:  # noqa
+        pass
     out = {"down": bool(st.get("down")), "since": st.get("since"), "last_block": st.get("last_block"),
+           "index_lag_s": index_lag_s, "index_lag_blocks": (int(_ing.get("blocks")) if index_lag_s is not None else None),
            "stale_s": int(now - float(st.get("last_block_ts") or now)), "live_since": st.get("live_since"), "ts": int(now)}
     return web.json_response(out, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=15"})

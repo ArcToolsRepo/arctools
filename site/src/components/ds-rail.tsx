@@ -114,7 +114,7 @@ export function DsRail({ active }: { active?: string | null }) {
       .catch(() => { /* the rail still renders its tools */ });
     const pullChain = () => {
       void fetch(`${BOT_API}/api/chain-status`).then((r) => r.json())
-        .then((j: { last_block?: number; stale_s?: number }) => { if (alive) setChain((c) => ({ ...c, block: j.last_block, lag: j.stale_s })); })
+        .then((j: { last_block?: number; stale_s?: number; index_lag_s?: number | null }) => { if (alive) setChain((c) => ({ ...c, block: j.last_block, lag: j.index_lag_s ?? j.stale_s })); })
         .catch(() => null);
       void fetch(`${BOT_API}/api/arct-burn`).then((r) => r.json())
         .then((j: { burned?: number }) => { if (alive) setChain((c) => ({ ...c, burned: j.burned })); })
@@ -178,7 +178,7 @@ export function DsRail({ active }: { active?: string | null }) {
       <div className="arc-dsp__net">
         <span className="arc-dsp__netlab">ARC NETWORK</span>
         <div><span>Block</span><b>{chain.block ? chain.block.toLocaleString("en-US") : "—"}</b></div>
-        <div><span>Index lag</span><b style={{ color: (chain.lag ?? 0) < 120 ? "var(--arc-up)" : "#f5c542" }}>{chain.lag != null ? `${chain.lag}s` : "—"}</b></div>
+        <div><span>Index lag</span><b style={{ color: (chain.lag ?? 0) < 15 ? "var(--arc-up)" : (chain.lag ?? 0) < 60 ? "#f5c542" : "var(--arc-down)" }} title="How far the swap index trails the chain head">{chain.lag != null ? `${chain.lag}s` : "—"}</b></div>
         <div><span>ARCT burned</span><b style={{ color: "#f5c542" }}>{chain.burned ? `${(chain.burned / 1e6).toFixed(2)}M` : "—"}</b></div>
       </div>
     </aside>
