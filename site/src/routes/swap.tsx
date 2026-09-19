@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArcNav } from "@/components/arc-nav";
 import { TokenLogo } from "@/components/token-logo";
 import { BOT_API } from "@/lib/bot-api";
+import { loadMeta } from "@/lib/token-meta";
 import { routeSwap, type RouteResult } from "@/lib/arc-route";
 import { hotAddress, hotSend, hotWait, isUnlocked, onHotChange } from "@/lib/arc-hotwallet";
 import { xAvatar } from "@/lib/arc-api";
@@ -416,17 +417,13 @@ function TokenPicker({ onPick, onClose }: { onPick: (p: Pick) => void; onClose: 
         // so ask for them in one batch (40 addresses stay far under the 8 KB request-line limit)
         const want = out.slice(0, 40).map((r) => r.token);
         if (want.length) {
-          fetch(`${BOT_API}/api/token-meta?tokens=${want.join(",")}`)
-            .then((r) => r.json())
-            .then((mj: { meta?: Record<string, { logo?: string | null; name?: string | null; launchpad?: string | null; launchpad_label?: string | null; symbol?: string | null; twitter?: string | null }> }) => {
-              if (my !== seq.current || !mj?.meta) return;
-              const meta = mj.meta;
-              setRows((cur) => (cur ?? []).map((r) => {
-                const m = meta[r.token];
-                return m ? { ...r, logo: r.logo ?? m.logo ?? null, name: r.name ?? m.name ?? null, pad: r.pad ?? m.launchpad_label ?? m.launchpad ?? null, twitter: m.twitter ?? null } : r;
-              }));
-            })
-            .catch(() => { /* names and logos are decoration: the list already works without them */ });
+          void loadMeta(want).then((meta) => {
+            if (my !== seq.current) return;
+            setRows((cur) => (cur ?? []).map((r) => {
+              const m = meta[r.token];
+              return m ? { ...r, logo: r.logo ?? m.logo ?? null, name: r.name ?? m.name ?? null, pad: r.pad ?? m.launchpad_label ?? m.launchpad ?? null, twitter: m.twitter ?? null } : r;
+            }));
+          });
         }
       })
       .catch(() => { if (my === seq.current) { setRows([]); setBusy(false); } });

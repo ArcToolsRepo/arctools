@@ -520,6 +520,9 @@ def register(app: web.Application):
 
 
 
+_META_CACHE: dict[str, tuple[float, dict]] = {}    # question -> (asked_at, answer); trimmed when it grows
+
+
 def _pad_label(key: str | None) -> str | None:
     """Short DB key ("minara") -> the name a human reads ("Minara"). Unknown keys pass through untouched."""
     if not key:
@@ -548,8 +551,18 @@ async def api_token_meta(req: web.Request):
     toks = [t.strip().lower() for t in (req.query.get("tokens") or "").split(",") if t.strip().startswith("0x") and len(t.strip()) == 42][:300]
     if not toks:
         return web.json_response({"meta": {}})
+    # This endpoint shares an event loop with the swap indexer. A client-side remount loop once asked for the
+    # same ten tokens 826 times in 17 seconds and the indexer fell 1529 blocks behind, freezing every market cap
+    # on the site. Identical questions are now answered from memory for a minute, whatever the caller does.
+    ck = ",".join(sorted(set(toks)))
+    hit = _META_CACHE.get(ck)
+    if hit and time.time() - hit[0] < 60:
+        return web.json_response({"meta": hit[1]}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=120"})
     rows = await db.fetchall(text("SELECT token, symbol, name, logo, x_handle, tg_handle, domain, launchpad, ds_enhanced, ds_url FROM social_tokens WHERE token = ANY(:t)").bindparams(t=toks))
     meta = {r["token"]: {"symbol": r["symbol"], "name": r["name"], "logo": r["logo"], "twitter": r["x_handle"], "telegram": r["tg_handle"],
                                  "ds_enhanced": bool(r["ds_enhanced"]), "ds_url": r["ds_url"],
                          "website": r["domain"], "launchpad": r["launchpad"], "launchpad_label": _pad_label(r["launchpad"])} for r in rows}
+    if len(_META_CACHE) > 800:
+        _META_CACHE.clear()
+    _META_CACHE[ck] = (time.time(), meta)
     return web.json_response({"meta": meta}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=120"})

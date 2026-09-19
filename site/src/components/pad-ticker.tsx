@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { BOT_API } from "@/lib/bot-api";
+import { loadMeta } from "@/lib/token-meta";
 
 import { xAvatar } from "@/lib/arc-api";
 import { TokenLogo } from "@/components/token-logo";
@@ -28,31 +29,30 @@ export function PadTicker() {
     return () => { alive = false; clearInterval(t); };
   }, []);
   useEffect(() => {
-    const miss = rows.map((r) => r.token.toLowerCase()).filter((t) => !(t in meta));
-    if (!miss.length) return;
+    const want = rows.map((r) => r.token.toLowerCase());
+    if (!want.length) return;
     let alive = true;
-    // the strip needs ten logos — it used to download the entire token list (4.8 MB) for them, and a token that the
-    // capped list does not carry showed a monogram. One point lookup in the metadata index instead.
-    fetch(`/bot/api/token-meta?tokens=${miss.join(",")}`).then((r) => r.json()).then((j: { meta?: Record<string, { logo?: string | null; symbol?: string | null; launchpad?: string | null; twitter?: string | null }> }) => {
+    // one shared, module-level cache: the strip remounts whenever the Terminal re-renders on a live trade, and
+    // per-component state turned that into ~50 requests a second against the bot
+    void loadMeta(want).then((got) => {
       if (!alive) return;
-      const got = j.meta ?? {};
       setMeta((o) => {
         const n = { ...o };
-        for (const t of miss) {
-          const m = got[t] ?? got[t.toLowerCase()];
+        for (const t of want) {
+          const m = got[t];
           n[t] = { token: t, logo: m?.logo ?? null, twitter: m?.twitter ?? null, ...(m?.launchpad === "long" ? { stock: true } : {}) } as Meta;
         }
         return n;
       });
-      // whatever the index could not resolve (stock wrappers carry their issuer's favicon, not an on-chain logo)
-      const still = miss.filter((x) => !(got[x]?.logo));
-      for (const tk of still.slice(0, 6)) {
-        void fetch(`/api/tokenpage?ca=${tk}`).then((r) => r.json()).then((d: { logo?: string | null; stock?: unknown }) => {
+      // stock wrappers carry their issuer's favicon rather than on-chain artwork: ask the token page, once
+      const still = want.filter((t) => !got[t]?.logo).slice(0, 6);
+      for (const tk of still) {
+        void fetch(`/api/tokenpage?ca=${tk}`).then((r) => r.json()).then((d: { logo?: string | null }) => {
           if (!alive || !d?.logo) return;
           setMeta((o) => ({ ...o, [tk]: { ...(o[tk] ?? { token: tk }), logo: d.logo ?? null } as Meta }));
         }).catch(() => null);
       }
-    }).catch(() => null);
+    });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows.map((r) => r.token).join(",")]);
