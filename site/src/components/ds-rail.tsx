@@ -19,11 +19,18 @@ const TOOLS: [string, string, string][] = [
   ["bell", "Alerts", "https://t.me/ArcToolsBuyBot"],
   ["wallet", "Trading wallet", "/trade2#wallet"],
 ];
-const MORE: [string, string][] = [
-  ["/portfolio2", "Portfolio"], ["/wallets2", "Wallets"], ["/rewards2", "Rewards"],
-  ["/launchpad2", "Launchpad"], ["/pay2", "Pay"], ["/bridge2", "Bridge"],
-  ["/leaderboard2", "Traders"], ["/scan2", "Scanner"], ["/intel2", "Intel"],
-  ["/referrals2", "Referrals"], ["/profile2", "Profile"],
+const MORE: [string, string, string][] = [
+  ["chart", "Portfolio", "/portfolio2"],
+  ["wallet", "Wallets", "/wallets2"],
+  ["gift", "Rewards", "/rewards2"],
+  ["rocket", "Launchpad", "/launchpad2"],
+  ["link", "Pay", "/pay2"],
+  ["bridge", "Bridge", "/bridge2"],
+  ["trophy", "Traders", "/leaderboard2"],
+  ["scan", "Scanner", "/scan2"],
+  ["radar", "Intel", "/intel2"],
+  ["users", "Referrals", "/referrals2"],
+  ["user", "Profile", "/profile2"],
 ];
 
 const TINT = ["#7c5cff", "#22c55e", "#f5c542", "#ff6ea9", "#2fd6c4", "#ff7ac6", "#7cc4ff", "#ff9f45",
@@ -39,6 +46,16 @@ function Icon({ kind }: { kind: string }) {
       {kind === "spark" && <path {...p} d="M2 12l3.6-5 2.7 3L14 3.5" />}
       {kind === "arrows" && <><path {...p} d="M4.5 13V3.5M4.5 3.5L2.4 5.8M4.5 3.5l2.1 2.3" /><path {...p} d="M11.5 3v9.5M11.5 12.5l2.1-2.3M11.5 12.5L9.4 10.2" /></>}
       {kind === "eye" && <><path {...p} d="M1.6 8S3.9 4.2 8 4.2 14.4 8 14.4 8 12.1 11.8 8 11.8 1.6 8 1.6 8z" /><circle {...p} cx="8" cy="8" r="1.7" /></>}
+      {kind === "chart" && <><path {...p} d="M2 13h12" /><path {...p} d="M4 11V7M7.5 11V4M11 11V8.5M14 11V5.5" /></>}
+      {kind === "gift" && <><rect {...p} height="7" rx="1" width="12" x="2" y="6" /><path {...p} d="M8 6v7M2 9h12" /><path {...p} d="M8 6S6.5 2.8 5 3.6 6.4 6 8 6s3.4-1.6 2-2.4S8 6 8 6z" /></>}
+      {kind === "rocket" && <><path {...p} d="M8 1.5s3.2 1.8 3.2 5.4c0 2-1 3.7-1.6 4.4H6.4C5.8 10.6 4.8 8.9 4.8 6.9 4.8 3.3 8 1.5 8 1.5z" /><path {...p} d="M6.4 11.3L5 14l2-1 1 1.5 1-1.5 2 1-1.4-2.7" /></>}
+      {kind === "link" && <><path {...p} d="M6.8 9.2a2.6 2.6 0 010-3.7l2-2a2.6 2.6 0 013.7 3.7l-1 1" /><path {...p} d="M9.2 6.8a2.6 2.6 0 010 3.7l-2 2a2.6 2.6 0 01-3.7-3.7l1-1" /></>}
+      {kind === "bridge" && <><path {...p} d="M1.5 11h13" /><path {...p} d="M3 11V8.5a5 5 0 0110 0V11" /><path {...p} d="M5.6 11V9.6M10.4 11V9.6M8 11V9" /></>}
+      {kind === "trophy" && <><path {...p} d="M5 2.5h6v3a3 3 0 01-6 0z" /><path {...p} d="M5 3.4H3.2a2 2 0 002 2M11 3.4h1.8a2 2 0 01-2 2" /><path {...p} d="M8 8.5V11M6 13.5h4" /></>}
+      {kind === "scan" && <><path {...p} d="M2.5 5.5v-3h3M13.5 5.5v-3h-3M2.5 10.5v3h3M13.5 10.5v3h-3" /><path {...p} d="M2.5 8h11" /></>}
+      {kind === "radar" && <><circle {...p} cx="8" cy="8" r="5.6" /><circle {...p} cx="8" cy="8" r="2.4" /><path {...p} d="M8 8l4-3.2" /></>}
+      {kind === "users" && <><circle {...p} cx="6" cy="6" r="2.2" /><path {...p} d="M2.4 13c0-2 1.6-3.4 3.6-3.4S9.6 11 9.6 13" /><path {...p} d="M10.6 4.2a2.2 2.2 0 010 3.9M11.4 9.9c1.4.4 2.4 1.6 2.4 3.1" /></>}
+      {kind === "user" && <><circle {...p} cx="8" cy="5.6" r="2.6" /><path {...p} d="M3.2 13.2c0-2.4 2.1-4 4.8-4s4.8 1.6 4.8 4" /></>}
       {kind === "wallet" && <><rect {...p} height="8" rx="2" width="12" x="2" y="5" /><path {...p} d="M11 9h2" /><path {...p} d="M2 6.5V4.5a1 1 0 011-1h8" /></>}
       {kind === "swap" && <><path {...p} d="M2.5 5.5h9M9.5 3.2l2.3 2.3-2.3 2.3" /><path {...p} d="M13.5 10.5h-9M6.5 8.2l-2.3 2.3 2.3 2.3" /></>}
     </svg>
@@ -88,7 +105,7 @@ export function DsRail({ active }: { active?: string | null }) {
       })
       .catch(() => { /* monograms remain */ });
     fetch("/api/padcounts").then((r) => r.json())
-      .then((j: { rows?: PadRow[]; total?: number }) => { if (alive && j.rows) { setPads(j.rows.slice(0, 14)); setTotal(j.total ?? null); } })
+      .then((j: { rows?: PadRow[]; total?: number }) => { if (alive && j.rows) { setPads(j.rows); setTotal(j.total ?? null); } })
       .catch(() => { /* the rail still renders its tools */ });
     const pullChain = () => {
       void fetch(`${BOT_API}/api/chain-status`).then((r) => r.json())
@@ -143,9 +160,12 @@ export function DsRail({ active }: { active?: string | null }) {
         {pads.length === 0 && <p className="arc-dsp__hint">loading launchpads…</p>}
       </div>
 
-      <div className="arc-dsp__more">
-        {MORE.map(([href, label]) => <a href={href} key={href}>{label}</a>)}
-      </div>
+      <div className="arc-dsp__morehead"><span>MORE</span></div>
+      <nav className="arc-dsp__tools arc-dsp__tools--more">
+        {MORE.map(([icon, label, href]) => (
+          <a className="arc-dsp__tool" href={href} key={href}><Icon kind={icon} />{label}</a>
+        ))}
+      </nav>
 
       <div className="arc-dsp__net">
         <span className="arc-dsp__netlab">ARC NETWORK</span>

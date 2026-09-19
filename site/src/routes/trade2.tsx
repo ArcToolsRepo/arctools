@@ -8,7 +8,7 @@ import { usePrefs } from "@/lib/i18n";
 import { holderRisk, listAllTokens, tokenLogos, xAvatar, type PadToken } from "@/lib/arc-api";
 import { rememberRows } from "@/lib/lite-cache";
 import { ARC_AGGREGATOR, connectWallet, encodeAggregatorSwap, ethCall, getStoredWallet, onWalletChange, p32, sendTx, waitReceipt } from "@/lib/arc-wallet";
-import { hotAddress, hotCall, hotSend, hotWait } from "@/lib/arc-hotwallet";
+import { hasWallet, hotAddress, hotCall, hotSend, hotWait } from "@/lib/arc-hotwallet";
 import { TokenLogo } from "@/components/token-logo";
 import { QuickBuy } from "@/components/quick-buy";
 import { TradeToasts } from "@/components/trade-toasts";
@@ -728,6 +728,10 @@ function Trade() {
       <DsRail active={padF !== "all" ? padF : null} />
       <section className="arc-dsp__body">
         <DsChainStrip />
+        <details className="arc-dsp__wallet" id="wallet" open={!hasWallet()}>
+          <summary>{hasWallet() ? "Trading wallet · unlock or manage" : "Trading wallet · create one to trade in one click"}</summary>
+          <WalletPanel onReady={setAddr} />
+        </details>
         <div className="arc-2col" style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr) 340px" }}>
           {/* LEFT: terminal */}
           <div>
@@ -1016,8 +1020,7 @@ function Trade() {
           </div>
 
           {/* RIGHT: wallet + toast */}
-          <div className="arc-aside" id="wallet" style={{ display: "grid", gap: 12, height: "fit-content", position: "sticky", top: 96 }}>
-            <WalletPanel onReady={setAddr} />
+          <div className="arc-aside" style={{ display: "grid", gap: 12, height: "fit-content", position: "sticky", top: 96 }}>
             {toast && (
               <div style={{ background: "var(--arc-paper)", border: "1px solid " + (toast.ok ? UP : DOWN), fontSize: 13, padding: 12 }}>
                 <p style={{ margin: 0 }}>{toast.text}</p>

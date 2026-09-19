@@ -1297,9 +1297,17 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
 .arc-dsp .arc-col-win { min-width: 62px; }
 .arc-dsp .arc-col-price { min-width: 96px; }
 
-.arc-dsp__more { border-top: 1px solid var(--arc-line); display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 10px; padding: 10px 8px 0; }
-.arc-dsp__more a { color: var(--arc-muted); font-size: 11.5px; text-decoration: none; }
-.arc-dsp__more a:hover { color: var(--arc-ink); }
+.arc-dsp__morehead { border-top: 1px solid var(--arc-line); color: var(--arc-muted); font-size: 9.5px; letter-spacing: .12em;
+  margin: 10px 8px 4px; padding-top: 10px; }
+.arc-dsp__tools--more .arc-dsp__tool { font-size: 12.5px; padding: 5px 8px; }
+/* the trading wallet sits at the top of the Terminal, where someone new actually looks for it */
+.arc-dsp__wallet { background: var(--arc-paper-deep); border: 1px solid var(--arc-line); border-radius: 10px; margin: 0 0 10px; max-width: 560px; }
+.arc-dsp__wallet > summary { cursor: pointer; font-size: 13px; font-weight: 600; list-style: none; padding: 10px 14px; }
+.arc-dsp__wallet > summary::-webkit-details-marker { display: none; }
+.arc-dsp__wallet > summary::before { content: "▸ "; color: var(--arc-cobalt); }
+.arc-dsp__wallet[open] > summary::before { content: "▾ "; }
+.arc-dsp__wallet > *:not(summary) { padding: 0 12px 12px; }
+.arc-dsp__wallet:target { outline: 2px solid var(--arc-cobalt); outline-offset: 4px; }
 /* the trading-wallet + feed column stays available on the preview Terminal, folded to the bottom */
 .arc-dsp .arc-aside { display: grid !important; margin-top: 12px; position: static !important; }
 .arc-dsp .arc-2col { grid-template-columns: minmax(0, 1fr) !important; }
