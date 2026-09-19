@@ -435,6 +435,15 @@ export function ScrollScrub({
         if (reduceMotion) {
           opacity = outside === 0 ? 1 : 0;
         }
+        // Opacity falls off with distance from the segment, so ABOVE the first scene (and below the last one)
+        // every layer was faded to zero and the stage rendered as a black hole — which is exactly what a visitor
+        // sees at the top of the page, before scrolling into the film. The end scenes therefore hold.
+        if (index === 0 && y <= segment.start) {
+          opacity = 1;
+        }
+        if (index === segments.length - 1 && y >= segment.end) {
+          opacity = 1;
+        }
 
         segment.visible = opacity > 0.001;
         segment.layer.style.opacity = String(opacity);

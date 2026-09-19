@@ -44,17 +44,18 @@ export function ArcNav({ active }: { active?: string }) {
     try { await connectWallet({ forcePicker: true }); } catch { /* user closed the chooser: stays disconnected */ }
   };
 
-  const links = [
+  // Fourteen equal links told a newcomer nothing: "Intel", "Insiders", "Scanner" and "Traders" are unguessable
+  // side by side. Three destinations people arrive for stay in the open; the rest sit in three named groups.
+  const primary = [
     ["/trade", "Terminal"],
     ["/swap", "Swap"],
-    ["/profile", "Profile"],
-    ["/wallets", "Wallets"],
-    ["/referrals", "Referrals"],
-    ["/scan", "Scanner"],
     ["/portfolio", "Portfolio"],
-    ["/bridge", "Bridge"],
-    ["/pay", "Pay"],
   ] as const;
+  const groups: { label: string; items: readonly (readonly [string, string])[] }[] = [
+    { items: [["/scan", "Scanner"], ["/insiders", "Insiders"], ["/leaderboard", "Traders"], ["/intel", "Intel"]], label: "Discover" },
+    { items: [["/launchpad", "Launchpad"], ["/rewards", "Rewards"], ["/referrals", "Referrals"], ["/pay", "Pay"]], label: "Earn" },
+    { items: [["/profile", "Profile"], ["/wallets", "Wallets"], ["/bridge", "Bridge"]], label: "Account" },
+  ];
 
   const { t } = usePrefs();
   const side = !!(active && active !== "/");
@@ -69,9 +70,10 @@ export function ArcNav({ active }: { active?: string }) {
         <a className="arc-nav__back arc-mono" href="/trade" title="Back to the trading terminal">{t("← Terminal")}</a>
       )}
       <div className="arc-nav__links" style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 18 }}>
-        {links.map(([href, label]) => (
+        {primary.map(([href, label]) => (
           <a
             className="arc-link-tick"
+            data-active={active === href || undefined}
             href={href}
             key={href}
             style={active === href ? { textDecoration: "underline", textUnderlineOffset: 6 } : undefined}
@@ -79,21 +81,35 @@ export function ArcNav({ active }: { active?: string }) {
             {t(label)}
           </a>
         ))}
-        <a className="arc-link-tick" data-active={active === "/launchpad" || undefined} href="/launchpad">
-          {t("Launchpad")}
-        </a>
-        <a className="arc-link-tick" data-active={active === "/rewards" || undefined} href="/rewards">
-          {t("Rewards")}
-        </a>
-        <a className="arc-link-tick" data-active={active === "/insiders" || undefined} href="/insiders">
-          {t("Insiders")}
-        </a>
-        <a className="arc-link-tick" data-active={active === "/leaderboard" || undefined} href="/leaderboard">
-          {t("Traders")}
-        </a>
-        <a className="arc-link-tick" data-active={active === "/intel" || undefined} href="/intel">
-          {t("Intel")}
-        </a>
+        {groups.map((g) => {
+          const here = g.items.some(([href]) => href === active);
+          return (
+            // <details> gives an accessible, keyboard-operable menu that also works before hydration;
+            // inside a page (side rail) the group is simply left open, so nothing hides behind a click
+            <details className={"arc-nav__group" + (side ? " arc-nav__group--rail" : "")} key={g.label} open={side || undefined}>
+              <summary
+                className="arc-link-tick arc-nav__groupsum"
+                data-active={here || undefined}
+                style={here ? { textDecoration: "underline", textUnderlineOffset: 6 } : undefined}
+              >
+                {t(g.label)}<span aria-hidden className="arc-nav__caret">▾</span>
+              </summary>
+              <div className="arc-nav__menu">
+                {g.items.map(([href, label]) => (
+                  <a
+                    className="arc-link-tick"
+                    data-active={active === href || undefined}
+                    href={href}
+                    key={href}
+                    style={active === href ? { textDecoration: "underline", textUnderlineOffset: 6 } : undefined}
+                  >
+                    {t(label)}
+                  </a>
+                ))}
+              </div>
+            </details>
+          );
+        })}
       </div>
       <div className="arc-nav__socials" aria-label="ArcTools links">
         {[

@@ -280,3 +280,13 @@
     transition: none;
   }
 }
+
+
+/* The layers fade in under script control. Until that script runs — slow phone, blocked JS, a crawler taking a
+   screenshot — the first screen was pure black. The opening frame is therefore visible by default and the
+   script takes over from there. */
+.scroll-scrub__layer:first-of-type { opacity: 1; }
+.scroll-scrub__stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background: linear-gradient(180deg, rgba(10,12,16,.72) 0%, rgba(10,12,16,.25) 38%, rgba(10,12,16,.85) 100%);
+}

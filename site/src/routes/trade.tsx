@@ -148,9 +148,12 @@ function Trade() {
   }, [flashOn]);
   // feed-style filters: launchpad / source, market-cap band, min volume (all persisted in the URL-free local state)
   const [padF, setPadF] = useState<string>("all");
+  // 28 source chips in one row is a wall: show the handful people actually filter by and keep the rest one click away
+  const [padsOpen, setPadsOpen] = useState(false);
   const PAGE = 50;
   const [page, setPage] = useState(1);
   const [minMc, setMinMc] = useState(""); const [maxMc, setMaxMc] = useState(""); const [minVol, setMinVol] = useState("");
+  const PAD_PRIMARY = ["all", "ArcToolsPad", "UniswapV4", "Hopium", "Minara", "Stocks"];
   const PADS: [string, string][] = [["all", tr_("All sources")], ["ArcToolsPad", "ArcToolsPad"], ["ArcPad", "ArcPad"], ["RadarDex", "RadarDex"], ["Warp", "Warp"], ["Tolly", "Tolly"], ["Archemist", "Archemist"], ["Arguspad", "Arguspad"], ["UniswapV4", "Uniswap V4"], ["UniswapV3", "Uniswap V3 pools"], ["Lift", "Lift"], ["eve.fun", "eve.fun"], ["Ellipse", "Ellipse"], ["Sashimi", "Sashimi"], ["aka.fun", "aka.fun"], ["long.supply", "📈 Stock pairs"], ["Stocks", "📈 Stocks"], ["DYORSwap", "DYORSwap · V2"], ["UBI.fun", "UBI.fun"], ["Klik", "Klik"], ["Minara", "Minara"], ["faze.fun", "faze.fun"], ["sharc.fun", "sharc.fun"], ["creo.family", "creo.family"], ["peach.ag", "peach.ag"], ["pools.trade", "pools.trade"], ["Hopium", "Hopium"]];
   useEffect(() => { try { setToastsOn(localStorage.getItem("arctools_toasts") !== "0"); } catch { /* ignore */ } }, []);
   const toggleToasts = () => setToastsOn((v) => { try { localStorage.setItem("arctools_toasts", v ? "0" : "1"); } catch { /* ignore */ } return !v; });
@@ -697,7 +700,16 @@ function Trade() {
             </button>
             <div className={`arc-filters${mobileOpen === "filters" ? " arc-mobile-open" : ""}`} style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, margin: "2px 0 8px" }}>
               <div className="arc-chips" style={{ display: "contents" }}>
-              {PADS.map(([k, l]) => <button className="arc-mono" key={k} onClick={() => setPadF(k)} style={{ background: padF === k ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (padF === k ? "var(--arc-cobalt)" : "var(--arc-line)"), borderRadius: 999, color: padF === k ? "#fff" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "3px 10px" }} type="button">{l}</button>)}
+              {(padsOpen ? PADS : PADS.filter(([k]) => PAD_PRIMARY.includes(k) || k === padF)).map(([k, l]) => <button className="arc-mono" key={k} onClick={() => setPadF(k)} style={{ background: padF === k ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (padF === k ? "var(--arc-cobalt)" : "var(--arc-line)"), borderRadius: 999, color: padF === k ? "#fff" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "3px 10px" }} type="button">{l}</button>)}
+                <button
+                  className="arc-mono"
+                  onClick={() => setPadsOpen((v) => !v)}
+                  style={{ background: "transparent", border: "1px dashed var(--arc-line)", borderRadius: 999, color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 11, padding: "3px 10px" }}
+                  title={padsOpen ? "Show only the main sources" : "Show every launchpad and venue we index"}
+                  type="button"
+                >
+                  {padsOpen ? tr_("Fewer sources") : `+${Math.max(0, PADS.length - PADS.filter(([k]) => PAD_PRIMARY.includes(k) || k === padF).length)} ${tr_("more")}`}
+                </button>
               </div>
               <span style={{ flex: 1 }} />
               {[[tr_("min MC $"), minMc, setMinMc], [tr_("max MC $"), maxMc, setMaxMc], [tr_("min vol $"), minVol, setMinVol]].map(([ph, v, set]) => (

@@ -332,7 +332,12 @@
   .arc-nav:not(.arc-nav--side) .arc-nav__brand { font-size: 0; gap: 0; }
 }
 /* ---- mobile polish ---- */
-.arc-hero-mobile { display: none; }
+/* The lede used to be mobile-only: a desktop visitor landed on the scroll film with no sentence telling them
+   what ArcTools is (and a black frame until the film painted). It is now the first thing on every screen. */
+.arc-hero-mobile { display: block; margin: 0 auto; max-width: 1120px; padding: 104px 24px 8px; position: relative; z-index: 3; }
+.arc-hero-mobile .arc-h2 { font-size: 40px; margin: 6px 0 8px; }
+.arc-hero-mobile .arc-body { max-width: 640px; }
+.arc-hero-mobile .arc-cta { display: inline-block; margin: 14px 12px 0 0; text-decoration: none; }
 @media (max-width: 720px) {
   /* nav: static two-row layout — no fixed overlap, no cut links */
   .arc-nav:not(.arc-nav--side) { flex-wrap: wrap; height: auto; padding: 10px 14px; }
@@ -375,12 +380,8 @@
   .arc-alert { padding: 12px; }
   /* the scroll-film hero is desktop-only; phones get a static hero */
   .scroll-scrub { display: none; }
-  .arc-hero-mobile {
-    display: block;
-    padding: 40px 16px 4px;
-    max-width: 1120px;
-    margin: 0 auto;
-  }
+  .arc-hero-mobile { padding: 40px 16px 4px; }
+  .arc-hero-mobile .arc-h2 { font-size: 27px; }
   .arc-hero-mobile .arc-cta { display: inline-block; margin: 14px 12px 0 0; text-decoration: none; }
 }
 @media (max-width: 460px) {
@@ -1107,3 +1108,31 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
 .arc-swap__ackline { align-items: center; color: var(--arc-ink); cursor: pointer; display: flex; gap: 8px; margin-top: 10px; }
 .arc-swap__go--danger { background: var(--arc-down); }
 .arc-swap__go--danger:disabled { background: #2a1c1f; color: #ff8f8b; }
+
+
+/* ---- grouped navigation ---------------------------------------------------
+   Top bar: a group is a popover (native <details>, so it works without JS).
+   Side rail: the same group is rendered open, as a labelled cluster — in a vertical rail there is room, and
+   hiding a destination behind a click inside the app would be worse than the flat list we replaced. */
+.arc-nav__group { position: relative; }
+.arc-nav__group > summary { align-items: center; cursor: pointer; display: inline-flex; gap: 4px; list-style: none; }
+.arc-nav__group > summary::-webkit-details-marker { display: none; }
+.arc-nav__caret { font-size: 9px; opacity: .6; transition: transform 140ms ease; }
+.arc-nav__group[open] > summary .arc-nav__caret { transform: rotate(180deg); }
+.arc-nav__group > .arc-nav__menu {
+  background: #0b0f17; border: 1px solid var(--arc-line); border-radius: 12px; box-shadow: 0 18px 40px rgba(0,0,0,.55);
+  display: flex; flex-direction: column; gap: 12px; left: 0; min-width: 168px; padding: 12px 14px; position: absolute;
+  top: calc(100% + 10px); z-index: 40;
+}
+.arc-nav--side .arc-nav__group { width: 100%; }
+.arc-nav--side .arc-nav__group > summary { color: var(--arc-muted); font-size: 10px; letter-spacing: .12em; pointer-events: none; text-transform: uppercase; }
+.arc-nav--side .arc-nav__group > summary .arc-nav__caret { display: none; }
+.arc-nav--side .arc-nav__group > .arc-nav__menu {
+  background: none; border: none; box-shadow: none; gap: 10px; margin: 6px 0 2px; padding: 0 0 0 10px; position: static;
+  border-left: 1px solid var(--arc-line);
+}
+@media (max-width: 720px) {
+  /* a popover inside a wrapped two-row bar would cover the table: groups stay open and flow inline */
+  .arc-nav:not(.arc-nav--side) .arc-nav__group > .arc-nav__menu { background: none; border: none; box-shadow: none; flex-direction: row; flex-wrap: wrap; padding: 0; position: static; }
+  .arc-nav:not(.arc-nav--side) .arc-nav__group { display: contents; }
+}
