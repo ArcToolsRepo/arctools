@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { BOT_API } from "@/lib/bot-api";
+import { installV2LinkGuard } from "@/lib/v2-links";
 
 /** Left rail of the DexScreener-style token page: tools on top, then every launchpad we index.
  *
@@ -93,6 +94,9 @@ export function DsRail({ active }: { active?: string | null }) {
   const [meta, setMeta] = useState<Record<string, PadMeta>>({});
   const [total, setTotal] = useState<number | null>(null);
   const [chain, setChain] = useState<{ block?: number; lag?: number; swaps?: number; burned?: number }>({});
+
+  // v2 must not hand the visitor back to v1 through a shared component's link
+  useEffect(installV2LinkGuard, []);
 
   useEffect(() => {
     let alive = true;

@@ -139,7 +139,7 @@ function Trade() {
     if (el.closest("button, a, input")) return;
     // phones: a whole-row tap target makes scrolling/mis-taps open token pages — only the token cell navigates there
     if (typeof window !== "undefined" && window.innerWidth <= 760 && !el.closest(".arc-tokcell")) return;
-    void navigate({ to: "/token/$ca", params: { ca: token } });
+    void navigate({ to: "/token2/$ca", params: { ca: token } });
   };
   const [hotAddr, setHotAddr] = useState<string | null>(null);
   const [pendingBuy, setPendingBuy] = useState<string | null>(null);
@@ -430,7 +430,7 @@ function Trade() {
   // ?buy=<ca>: if the token is not in any of our lists once they loaded, the token page is the right place (it has the swap panel)
   useEffect(() => {
     if (!pendingBuy || rows.length === 0) return;
-    const t = setTimeout(() => { if (!rows.some((r) => r.token.toLowerCase() === pendingBuy)) void navigate({ to: "/token/$ca", params: { ca: pendingBuy } }); setPendingBuy(null); }, 1500);
+    const t = setTimeout(() => { if (!rows.some((r) => r.token.toLowerCase() === pendingBuy)) void navigate({ to: "/token2/$ca", params: { ca: pendingBuy } }); setPendingBuy(null); }, 1500);
     return () => clearTimeout(t);
   }, [pendingBuy, rows]);
 
@@ -478,7 +478,7 @@ function Trade() {
     const t = setTimeout(() => {
       void import("../components/tv-chart"); void import("lightweight-charts");
       const first = (rows as PadToken[])[0]?.token;
-      if (first) void router.preloadRoute({ to: "/token/$ca", params: { ca: first } }).catch(() => null);
+      if (first) void router.preloadRoute({ to: "/token2/$ca", params: { ca: first } }).catch(() => null);
     }, 1200);
     return () => clearTimeout(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -865,9 +865,9 @@ function Trade() {
                         ) : null}<button onClick={() => toggleFav(r.token)} style={{ background: "none", border: "none", color: favs.has(r.token) ? "#f5c542" : "var(--arc-muted)", cursor: "pointer", fontSize: 15, padding: 0 }} title="favourite" type="button">{favs.has(r.token) ? "★" : "☆"}</button></td>
                         <td className="arc-tokcell" style={{ ...cell, minWidth: 230 }}>
                           <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
-                            <Link params={{ ca: r.token }} preload="intent" style={{ textDecoration: "none" }} to="/token/$ca"><TokenLogo fallback={xAvatar(r.twitter)} src={r.logo} symbol={r.symbol} /></Link>
+                            <Link params={{ ca: r.token }} preload="intent" style={{ textDecoration: "none" }} to="/token2/$ca"><TokenLogo fallback={xAvatar(r.twitter)} src={r.logo} symbol={r.symbol} /></Link>
                             <div style={{ lineHeight: 1.25 }}>
-                              <div><Link data-notranslate params={{ ca: r.token }} preload="intent" style={{ color: "var(--arc-ink)", fontWeight: 700, textDecoration: "none" }} to="/token/$ca">{r.symbol}</Link>{r.token.toLowerCase() === OFFICIAL_TOKEN && <span className="arc-mono" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "#fff", fontSize: 10, marginLeft: 6, padding: "1px 6px", verticalAlign: "middle" }}>⭐ OFFICIAL</span>}{simOf(r.token) && (
+                              <div><Link data-notranslate params={{ ca: r.token }} preload="intent" style={{ color: "var(--arc-ink)", fontWeight: 700, textDecoration: "none" }} to="/token2/$ca">{r.symbol}</Link>{r.token.toLowerCase() === OFFICIAL_TOKEN && <span className="arc-mono" style={{ background: "rgba(46,124,255,0.18)", border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "#fff", fontSize: 10, marginLeft: 6, padding: "1px 6px", verticalAlign: "middle" }}>⭐ OFFICIAL</span>}{simOf(r.token) && (
                                 simOf(r.token)![0] === "t"
                                   ? <span className="arc-mono" style={{ background: "rgba(240,83,79,0.18)", border: "1px solid var(--arc-down)", borderRadius: 4, color: "#ff8f8b", fontSize: 10, marginLeft: 6, padding: "1px 5px", verticalAlign: "middle" }} title={`Sell test failed: we bought 1 USDC of this token and tried to sell it back in the same call. The sale either reverted or paid far less than the router quoted for it — a blocked exit or a hidden tax. Re-checked every 6 hours.`}>⚠ CANNOT EXIT</span>
                                   : <span className="arc-mono" style={{ background: "rgba(245,197,66,0.14)", border: "1px solid #f5c542", borderRadius: 4, color: "#f5c542", fontSize: 10, marginLeft: 6, padding: "1px 5px", verticalAlign: "middle" }} title={`Thin pool: the sell works and pays what the router quotes, but 1 USDC moves the price so much that a round trip returns ${(simOf(r.token)![1] / 100).toFixed(0)}%. Liquidity warning, not a scam warning.`}>THIN POOL</span>
@@ -982,7 +982,7 @@ function Trade() {
                             </div>
                             <div style={{ minWidth: 0 }}>
                               <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 8 }}>
-                                <Link params={{ ca: a.token }} preload="intent" style={{ alignItems: "center", color: "var(--arc-ink)", display: "inline-flex", fontWeight: 700, gap: 8, textDecoration: "none" }} to="/token/$ca">
+                                <Link params={{ ca: a.token }} preload="intent" style={{ alignItems: "center", color: "var(--arc-ink)", display: "inline-flex", fontWeight: 700, gap: 8, textDecoration: "none" }} to="/token2/$ca">
                                   <TokenLogo fallback={xAvatar(t?.twitter)} src={t?.logo ?? null} symbol={a.symbol ?? t?.symbol ?? "?"} />{a.symbol ?? t?.symbol ?? a.token.slice(0, 8)}
                                 </Link>
                                 <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{t?.pad ?? ""} · age {ageS(a.age_s)} · <b style={{ color: "var(--arc-ink)" }}>MC {usd(a.mcap ?? toRow(a.token).mcap)}</b> · vol 6h {usd(a.vol_6h)}{a.liq != null ? ` · liq ${usd(a.liq)}` : ""}</span>
@@ -1020,7 +1020,7 @@ function Trade() {
                     {addr && positions.length === 0 && <tr><td className="arc-mono" colSpan={8} style={{ ...cell, color: "var(--arc-muted)" }}>No open positions yet (positions come from your on-chain swaps; new buys appear within seconds).</td></tr>}
                     {positions.map((p) => { const t = byToken.get(p.token.toLowerCase()); const sym = p.symbol ?? t?.symbol ?? short(p.token); return (
                       <tr key={p.token}>
-                        <td style={cell}><Link params={{ ca: p.token }} preload="intent" style={{ color: "var(--arc-ink)", textDecoration: "none" }} to="/token/$ca"><Logo t={{ logo: t?.logo, symbol: sym }} /><strong>{sym}</strong></Link></td>
+                        <td style={cell}><Link params={{ ca: p.token }} preload="intent" style={{ color: "var(--arc-ink)", textDecoration: "none" }} to="/token2/$ca"><Logo t={{ logo: t?.logo, symbol: sym }} /><strong>{sym}</strong></Link></td>
                         <td className="arc-mono" style={cell}>{num(p.net)}</td>
                         <td className="arc-mono" style={{ ...cell, color: "var(--arc-muted)" }}>{priceStr(p.avg || null)}</td>
                         <td className="arc-mono" style={cell}>{priceStr(p.price)}</td>
