@@ -479,6 +479,33 @@ async def _v4_register_init(lg):
 _v4_neg: dict[str, float] = {}
 
 
+
+async def _v4_pools_bulk(pids: set[str]) -> None:
+    """Warm _v4_cache for a whole window in ONE query.
+
+    Each V4 swap log used to resolve its pool with its own SELECT inside the scan loop — a hundred sequential
+    round trips per window, which is where most of the scan time went (profiled: 6.7-17 s scans with only
+    47-162 logs, pools 0.07 s, fetch 0.5-5.9 s; the rest was this).
+    """
+    want = [q for q in {p.lower() for p in pids} if q not in _v4_cache and not (_v4_neg.get(q) and time.time() - _v4_neg[q] < 600)]
+    if not want:
+        return
+    rows = await db.fetchall(text(
+        "SELECT id, token, is0, usdc_dec, quote FROM v4_pools WHERE id = ANY(:ids)"
+    ).bindparams(ids=want))
+    seen = set()
+    for r in rows:
+        pid = str(r["id"]).lower()
+        seen.add(pid)
+        _v4_cache[pid] = ({"is0": bool(r["is0"]), "token": r["token"], "usdc_dec": int(r["usdc_dec"] or 18), "quote": r["quote"]}
+                          if r["token"] else None)
+    now = time.time()
+    for pid in want:
+        if pid not in seen:
+            _v4_neg[pid] = now
+    if len(_v4_neg) > 20000:
+        _v4_neg.clear()
+
 async def _v4_pool(pid: str) -> dict | None:
     pid = pid.lower()
     if pid in _v4_cache:
@@ -1449,7 +1476,10 @@ async def api_ingest_stats(request: web.Request) -> web.Response:
                    "cached_blocks": len(_remote_logs)},
         "stats": _remote_stats,
         "ingest": {"cursor": _lag.get("cursor"), "lag_blocks": _lag.get("blocks"), "t_fetch": _lag.get("t_fetch"),
-                   "t_scan": _lag.get("t_scan"), "source": "agent" if remote_alive() else "node-rpc"},
+                   "t_scan": _lag.get("t_scan"), "s_pools": _lag.get("s_pools"), "n_pools": _lag.get("n_pools"),
+                              "s_fetch": _lag.get("s_fetch"), "s_v4": _lag.get("s_v4"), "s_clock": _lag.get("s_clock"),
+                              "s_padq": _lag.get("s_padq"), "n_logs": _lag.get("n_logs"),
+                              "source": "agent" if remote_alive() else "node-rpc"},
         "node": {"in_use": node_rpc(), "primary": _PRIMARY_RPC, "backup": _BACKUP_RPC,
                  "primary_ok": _node_state.get("primary_ok"), "primary_lag_blocks": _node_state.get("primary_lag"),
                  "switched_at": _node_state.get("since") or None},
@@ -1518,7 +1548,9 @@ async def _scan_window(frm: int, to: int, senders: bool = True, prefetched: tupl
     if prefetched:
         results, rsend = prefetched
     elif to - frm + 1 <= 600:
+        _t_fetch = time.time()
         got = await _fetch_receipt_logs(frm, to)
+        _lag["s_fetch"] = round(time.time() - _t_fetch, 2)
         if got:
             results, rsend = got
     if results is None:
@@ -1541,7 +1573,13 @@ async def _scan_window(frm: int, to: int, senders: bool = True, prefetched: tupl
                     await _v4_register_init(lg)
     pools = {lg["address"].lower() for topic, logs in results
              if topic in (V3_SWAP_TOPIC, V2_SWAP_TOPIC) for lg in logs}
+    _t_pools = time.time()
     await asyncio.gather(*[_resolve_pool(p) for p in pools])
+    _lag["s_pools"] = round(time.time() - _t_pools, 2); _lag["n_pools"] = len(pools)
+    _t_v4 = time.time()
+    await _v4_pools_bulk({_topic_hex(lg["topics"][1]) for topic, logs in results
+                          if topic == V4_SWAP_TOPIC and logs for lg in logs if len(lg.get("topics") or []) > 1})
+    _lag["s_v4"] = round(time.time() - _t_v4, 2)
     # a pool whose token0/token1 read failed (RPC 429/503) is not in the cache at all (a genuine non-USDC pool IS cached
     # as None) → this window must be retried, otherwise the first swaps of a brand-new pool vanish for good
     unresolved = [p for p in pools if p not in _pool_cache and p not in _pool_neg]   # liquidity-less (fake) pools are settled, not pending
@@ -1559,7 +1597,9 @@ async def _scan_window(frm: int, to: int, senders: bool = True, prefetched: tupl
                 if lg["address"].lower() == ARCPAD_V3:
                     _pad_quote_usd(ARCPAD_V3, ("0x" + _topic_hex(lg["topics"][1])[-40:]).lower())
     if _pad_quote_missing or _pad_quote:
+        _t_pq = time.time()
         await _refresh_pad_quotes()
+        _lag["s_padq"] = round(time.time() - _t_pq, 2)
     decoded = []
     for topic, logs in results:
         if topic == V4_INIT_TOPIC:
@@ -1578,13 +1618,16 @@ async def _scan_window(frm: int, to: int, senders: bool = True, prefetched: tupl
         return []
 
     if rsend is not None:
-        senders, clock = rsend, await _window_clock(frm, to)   # senders came with the receipts
+        _t_clk = time.time(); senders, clock = rsend, await _window_clock(frm, to); _lag["s_clock"] = round(time.time() - _t_clk, 2)   # senders came with the receipts
     elif senders:
+        _t_clk = time.time()
         senders, clock = await asyncio.gather(
             _tx_senders(list({lg["transactionHash"] for _, lg, _ in decoded}), {lg["transactionHash"]: lg["blockNumber"] for _, lg, _ in decoded}),
             _window_clock(frm, to))
+
+        _lag["s_clock"] = round(time.time() - _t_clk, 2)
     else:
-        senders, clock = {}, await _window_clock(frm, to)      # wallets filled later by sender_fill_loop (catch-up mode)
+        _t_clk = time.time(); senders, clock = {}, await _window_clock(frm, to); _lag["s_clock"] = round(time.time() - _t_clk, 2)      # wallets filled later by sender_fill_loop (catch-up mode)
     t0, slope = clock
     rows = []
     for topic, lg, dec in decoded:
@@ -1598,6 +1641,8 @@ async def _scan_window(frm: int, to: int, senders: bool = True, prefetched: tupl
             "venue": "faze" if topic in (FAZE_BUY_TOPIC, FAZE_SELL_TOPIC) else ("pad" if topic == ARCPAD_TRADE_TOPIC else ("v3" if topic == V3_SWAP_TOPIC else ("v4" if topic == V4_SWAP_TOPIC else "v2"))),
             "wallet": senders.get(txh, ""),
         })
+    _lag["n_logs"] = sum(len(l) for _, l in results if l)
+
     return rows
 
 
