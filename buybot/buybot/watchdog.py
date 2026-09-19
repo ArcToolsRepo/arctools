@@ -120,7 +120,9 @@ async def chk_tokens_api(s):
         _healed["_logo_n"] = len(toks)
         prev = _healed.get("_logo_cov", cov)
         _healed["_logo_cov"] = max(prev, cov) if garbled == 0 else prev
-        if garbled > 0 or cov < prev - 0.15:
+        # one unnameable token out of ~15k is not an incident (it paged for 110 rounds): a lost upstream chunk
+        # shows up as many at once
+        if garbled >= max(3, len(toks) // 500) or cov < prev - 0.15:
             await _warm(s)   # never purge: during an RPC outage the cached list is the only good copy
             _healed["quality"] = _healed.get("quality", 0) + 1
             return False, f"list quality: {garbled} garbled rows, logo coverage {cov:.0%} (was {prev:.0%})"

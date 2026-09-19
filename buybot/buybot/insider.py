@@ -100,7 +100,28 @@ async def _symbol(token: str) -> str:
                 break
         except Exception:  # noqa
             await asyncio.sleep(0.5 * (attempt + 1))
-    sym = "".join(ch for ch in sym if ch.isprintable())[:24] or "?"
+    sym = "".join(ch for ch in sym if ch.isprintable())[:24] or ""
+    if not sym:
+        # a contract whose symbol() answers with an empty string is still nameable: MEGA MILLIONS shipped as "?"
+        # into the Terminal and tripped the list-quality check for 110 watchdog rounds
+        try:
+            async with _aiohttp.ClientSession() as s2:
+                async with s2.post(RELAY_RPC, headers={"Content-Type": "application/json", "X-Relay-Key": os.getenv("RELAY_KEY", ""), "X-Priority": "high"}, json={
+                    "id": 1, "jsonrpc": "2.0", "method": "eth_call",
+                    "params": [{"data": "0x06fdde03", "to": token}, "latest"],
+                }, timeout=_aiohttp.ClientTimeout(total=12)) as r2:
+                    res2 = (await r2.json()).get("result") or ""
+            if res2 and res2 != "0x":
+                raw2 = bytes.fromhex(res2[2:])
+                if len(raw2) >= 96:
+                    ln2 = int.from_bytes(raw2[32:64], "big")
+                    nm = raw2[64:64 + ln2].decode("utf-8", "ignore").strip()
+                else:
+                    nm = raw2[:32].decode("utf-8", "ignore").replace("\x00", "").strip()
+                sym = "".join(ch for ch in nm if ch.isprintable())[:12]
+        except Exception:  # noqa
+            pass
+    sym = sym or "?"
     if sym == "?":
         _sym_neg[key] = time.time()
         return key[2:8].upper()
@@ -859,7 +880,7 @@ async def warm_supply_cache():
         log.warning("warm_supply_cache: %s", e)
 
 
-SUPPLY_RPCS = [RELAY_RPC, "https://sharc.fun/rpc", "https://rpc.arc-scan.org"]
+SUPPLY_RPCS = [RELAY_RPC, "https://rpc.arc-scan.org"]   # sharc.fun is a parking page since 18.09
 
 
 async def _total_supply_fetch(token: str) -> float | None:

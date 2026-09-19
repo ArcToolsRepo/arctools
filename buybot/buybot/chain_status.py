@@ -18,7 +18,7 @@ from .config import CFG
 log = logging.getLogger("chainstatus")
 bot = None                      # set by main (aiogram Bot)
 
-RPCS = ["https://rpc-production-ba7a.up.railway.app", "https://rpc.arc-scan.org", "https://sharc.fun/rpc", "https://5042.rpc.thirdweb.com"]
+RPCS = ["https://rpc-production-ba7a.up.railway.app", "https://rpc.arc-scan.org", "https://5042.rpc.thirdweb.com"]
 CHECK_S = 30
 POST_EVERY = 300
 DOWN_AFTER = 240

@@ -34,7 +34,7 @@ ENDPOINTS: list[tuple[str, str]] = [("node", PRIMARY), ("node-backup", BACKUP)] 
     for u in (CFG.rpc_urls if hasattr(CFG, "rpc_urls") else [])
     if u.rstrip("/") not in (PRIMARY.rstrip("/"), BACKUP.rstrip("/"))
 ]
-for extra in ("https://rpc.arc-scan.org", "https://sharc.fun/rpc", "https://rpc-production-ba7a.up.railway.app"):
+for extra in ("https://rpc.arc-scan.org", "https://rpc-production-ba7a.up.railway.app"):
     if all(u.rstrip("/") != extra for _, u in ENDPOINTS):
         ENDPOINTS.append((extra.split("//")[1].split("/")[0].replace("rpc.", "").replace(".up.railway.app", " (relay)"), extra))
 

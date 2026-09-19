@@ -1568,7 +1568,7 @@ async function listTokensImpl(pad: string): Promise<PadToken[]> {
           stage: "V4 pool",
           pool: null,
           priceUsd: p.price1m ? p.price1m / 1e6 : null,
-          symbol: p.symbol ?? "?",
+          symbol: p.symbol || `${p.token.slice(0, 6)}…${p.token.slice(-4)}`,
           telegram: null,
           token: p.token,
           twitter: null,
