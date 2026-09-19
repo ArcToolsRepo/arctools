@@ -551,6 +551,9 @@ def _pad_label(key: str | None) -> str | None:
 # the oldest one — that first transfer is the mint, so its timestamp is the token's real birth. It never
 # changes, so once resolved it is stored for good.
 _DEPLOY_INFLIGHT: set[str] = set()
+_DEPLOY_SEEN: set[str] = set()
+_DEPLOY_Q: "asyncio.Queue[str]" = asyncio.Queue()
+_DEPLOY_WORKER: "asyncio.Task | None" = None
 
 
 async def _arcscan(session, url: str):
@@ -593,16 +596,37 @@ async def resolve_deploy_ts(token: str) -> int | None:
 
 
 async def fill_deploy_ts(tokens: list[str]) -> None:
-    """Resolve the birthdays we do not have yet, a few at a time, in the background."""
-    missing = [t for t in tokens if t not in _DEPLOY_INFLIGHT][:8]
-    if not missing:
-        return
-    rows = await db.fetchall(text("SELECT token FROM social_tokens WHERE token = ANY(:t) AND deploy_ts IS NOT NULL")
-                             .bindparams(t=missing))
-    known = {r["token"] for r in rows}
-    todo = [t for t in missing if t not in known]
-    if todo:
-        await asyncio.gather(*[resolve_deploy_ts(t) for t in todo], return_exceptions=True)
+    """Queue unknown birthdays. One worker drains the queue slowly.
+
+    The first version spawned a task per token-meta request. The bot serves its HTTP API on the same event
+    loop as the swap indexer, so a screenful of unknown tokens turned into dozens of concurrent explorer
+    calls and pushed the index 73 s behind the chain. Same lesson as the ticker: never let a nice-to-have
+    lookup compete with the indexer.
+    """
+    for t in tokens[:40]:
+        if t not in _DEPLOY_SEEN and _DEPLOY_Q.qsize() < 500:
+            _DEPLOY_SEEN.add(t)
+            _DEPLOY_Q.put_nowait(t)
+    global _DEPLOY_WORKER
+    if _DEPLOY_WORKER is None or _DEPLOY_WORKER.done():
+        _DEPLOY_WORKER = asyncio.create_task(_deploy_worker())
+
+
+async def _deploy_worker() -> None:
+    """One token at a time, with a breath in between, and never while the index is behind."""
+    while True:
+        try:
+            token = await asyncio.wait_for(_DEPLOY_Q.get(), timeout=60)
+        except asyncio.TimeoutError:
+            return                                        # nothing left to do: let the task end
+        try:
+            row = await db.fetchone(text("SELECT deploy_ts FROM social_tokens WHERE token = :t").bindparams(t=token))
+            if not (row and row["deploy_ts"]):
+                await resolve_deploy_ts(token)
+        except Exception:  # noqa - a birthday is never worth an exception in the API loop
+            pass
+        await asyncio.sleep(1.5)
+
 
 async def api_token_meta(req: web.Request):
     """GET /api/token-meta?tokens=a,b,… (≤300) → {meta: {token: {symbol, name, logo, twitter, telegram, website, launchpad}}}
