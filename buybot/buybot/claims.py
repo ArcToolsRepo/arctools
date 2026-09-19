@@ -171,19 +171,27 @@ async def api_by_sender(req: web.Request) -> web.Response:
     if hit and time.time() - hit[0] < 20:
         return web.json_response({"wallet": w, "links": hit[1]}, headers={**CORS, "Cache-Control": "no-store"})
     latest = int(await _rpc("eth_blockNumber", []), 16)
-    logs = []
+    # the node caps a getLogs query at 100k blocks: the old 200k stride made every call fail and the endpoint
+    # answered 500, which took the "my links" list on /pay down with it. The windows are independent, so ask
+    # for them at once — sequentially this walk took 19.5 s.
+    windows = []
     frm = DEPLOY_BLOCK
-    while frm <= latest:                                   # our node has no range cap, but stay polite: 200k per call
-        to = min(latest, frm + 200_000)
-        logs += await _rpc("eth_getLogs", [{"address": CLAIM, "fromBlock": hex(frm), "toBlock": hex(to),
-                                            "topics": [TOPIC_CREATED, None, "0x" + w[2:].rjust(64, "0")]}])
+    while frm <= latest:
+        to = min(latest, frm + 90_000)
+        windows.append((frm, to))
         frm = to + 1
+
+    async def _window(a: int, b: int) -> list:
+        try:
+            return await _rpc("eth_getLogs", [{"address": CLAIM, "fromBlock": hex(a), "toBlock": hex(b),
+                                               "topics": [TOPIC_CREATED, None, "0x" + w[2:].rjust(64, "0")]}]) or []
+        except Exception as e:  # noqa - a pruned or busy window must not lose the rest of the history
+            log.warning("claims by-sender: window %s-%s failed: %s", a, b, str(e)[:120])
+            return []
+
+    logs = [lg for part in await asyncio.gather(*[_window(a, b) for a, b in windows]) for lg in part]
     ids = sorted({int(l["topics"][1], 16) for l in logs}, reverse=True)[:100]
-    out = []
-    for i in ids:
-        l = await read_link(i)
-        if l:
-            out.append(l)
+    out = [l for l in await asyncio.gather(*[read_link(i) for i in ids]) if l]
     _sender_cache[w] = (time.time(), out)
     return web.json_response({"wallet": w, "links": out}, headers={**CORS, "Cache-Control": "no-store"})
 
