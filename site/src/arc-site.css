@@ -1311,3 +1311,14 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
 /* the trading-wallet + feed column stays available on the preview Terminal, folded to the bottom */
 .arc-dsp .arc-aside { display: grid !important; margin-top: 12px; position: static !important; }
 .arc-dsp .arc-2col { grid-template-columns: minmax(0, 1fr) !important; }
+
+/* version switch: manual only, never a redirect */
+.arc-vswitch { align-items: center; background: var(--arc-paper); border: 1px solid var(--arc-line); border-radius: 999px;
+  color: var(--arc-muted); display: inline-flex; gap: 7px; font-size: 11px; padding: 4px 10px; text-decoration: none; white-space: nowrap; }
+.arc-vswitch b { color: var(--arc-ink); font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+.arc-vswitch span { color: var(--arc-cobalt); }
+.arc-vswitch:hover { border-color: var(--arc-cobalt); }
+.arc-vswitch.is-v2 b { color: #ffb74a; }
+.arc-vswitch--compact { margin-left: 8px; }
+.arc-dsp__top { display: flex; justify-content: flex-start; margin-bottom: 8px; }
+@media (max-width: 720px) { .arc-vswitch--compact span { display: none; } }

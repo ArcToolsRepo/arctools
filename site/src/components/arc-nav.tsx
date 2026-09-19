@@ -8,6 +8,7 @@ import { PadTicker } from "./pad-ticker";
 import { ChainBanner } from "./chain-banner";
 import { HelpDrawer, openHelp } from "./help-drawer";
 import { PrefsBar } from "./prefs-bar";
+import { VersionSwitch } from "@/components/version-switch";
 import { usePrefs } from "@/lib/i18n";
 
 /** Shared site nav: tool links, launchpad, rewards, wallet connect. */
@@ -111,6 +112,7 @@ export function ArcNav({ active }: { active?: string }) {
           );
         })}
       </div>
+      <VersionSwitch compact />
       <div className="arc-nav__socials" aria-label="ArcTools links">
         {[
           ["https://t.me/ArcSniper_bot", "🔫", "Sniper bot"],

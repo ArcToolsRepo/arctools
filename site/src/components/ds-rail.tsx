@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { BOT_API } from "@/lib/bot-api";
 import { installV2LinkGuard } from "@/lib/v2-links";
+import { VersionSwitch } from "@/components/version-switch";
 
 /** Left rail of the DexScreener-style token page: tools on top, then every launchpad we index.
  *
@@ -126,6 +127,9 @@ export function DsRail({ active }: { active?: string | null }) {
 
   return (
     <aside className="arc-dsp__rail">
+      <div className="arc-dsp__top">
+        <VersionSwitch />
+      </div>
       <a className="arc-dsp__brand" href="/">
         <img alt="" src="/assets/brand/logo-mark.png" />
         ArcTools

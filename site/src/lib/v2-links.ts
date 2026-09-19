@@ -46,3 +46,29 @@ export function installV2LinkGuard(): () => void {
   document.addEventListener("click", onClick, true);
   return () => document.removeEventListener("click", onClick, true);
 }
+
+
+/** /token2/0xabc → /token/0xabc, /trade2?pad=X → /trade?pad=X. The inverse of toV2. */
+export function toV1(href: string): string {
+  if (!href.startsWith("/")) return href;
+  const path = href.split(/[?#]/)[0];
+  const rest = href.slice(path.length);
+  if (path.startsWith("/token2/")) return `/token/${path.slice("/token2/".length)}${rest}`;
+  const page = path.replace(/^\//, "").split("/")[0];
+  if (page.endsWith("2") && PAGES.includes(page.slice(0, -1))) {
+    return `/${page.slice(0, -1)}${path.slice(page.length + 1)}${rest}`;
+  }
+  return href;
+}
+
+/** The same page in the other version, keeping the query and hash. Returns null when there is no twin. */
+export function counterpart(): { href: string; to: "v1" | "v2" } | null {
+  if (typeof location === "undefined") return null;
+  const here = location.pathname + location.search + location.hash;
+  if (isV2Path(location.pathname)) {
+    const v1 = toV1(here);
+    return v1 === here ? null : { href: v1, to: "v1" };
+  }
+  const v2 = toV2(here);
+  return v2 === here ? null : { href: v2, to: "v2" };
+}
