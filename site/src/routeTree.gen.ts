@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WalletsRouteImport } from './routes/wallets'
 import { Route as TradeRouteImport } from './routes/trade'
+import { Route as SwapRouteImport } from './routes/swap'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ScanRouteImport } from './routes/scan'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
@@ -58,6 +59,11 @@ const WalletsRoute = WalletsRouteImport.update({
 const TradeRoute = TradeRouteImport.update({
   id: '/trade',
   path: '/trade',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SwapRoute = SwapRouteImport.update({
+  id: '/swap',
+  path: '/swap',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -269,6 +275,7 @@ export interface FileRoutesByFullPath {
   '/robots.txt': typeof RobotsDottxtRoute
   '/scan': typeof ScanRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/swap': typeof SwapRoute
   '/trade': typeof TradeRoute
   '/wallets': typeof WalletsRoute
   '/api/heal': typeof ApiHealRoute
@@ -311,6 +318,7 @@ export interface FileRoutesByTo {
   '/robots.txt': typeof RobotsDottxtRoute
   '/scan': typeof ScanRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/swap': typeof SwapRoute
   '/trade': typeof TradeRoute
   '/wallets': typeof WalletsRoute
   '/api/heal': typeof ApiHealRoute
@@ -354,6 +362,7 @@ export interface FileRoutesById {
   '/robots.txt': typeof RobotsDottxtRoute
   '/scan': typeof ScanRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/swap': typeof SwapRoute
   '/trade': typeof TradeRoute
   '/wallets': typeof WalletsRoute
   '/api/heal': typeof ApiHealRoute
@@ -398,6 +407,7 @@ export interface FileRouteTypes {
     | '/robots.txt'
     | '/scan'
     | '/sitemap.xml'
+    | '/swap'
     | '/trade'
     | '/wallets'
     | '/api/heal'
@@ -440,6 +450,7 @@ export interface FileRouteTypes {
     | '/robots.txt'
     | '/scan'
     | '/sitemap.xml'
+    | '/swap'
     | '/trade'
     | '/wallets'
     | '/api/heal'
@@ -482,6 +493,7 @@ export interface FileRouteTypes {
     | '/robots.txt'
     | '/scan'
     | '/sitemap.xml'
+    | '/swap'
     | '/trade'
     | '/wallets'
     | '/api/heal'
@@ -525,6 +537,7 @@ export interface RootRouteChildren {
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   ScanRoute: typeof ScanRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  SwapRoute: typeof SwapRoute
   TradeRoute: typeof TradeRoute
   WalletsRoute: typeof WalletsRoute
   ApiHealRoute: typeof ApiHealRoute
@@ -564,6 +577,13 @@ declare module '@tanstack/react-router' {
       path: '/trade'
       fullPath: '/trade'
       preLoaderRoute: typeof TradeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/swap': {
+      id: '/swap'
+      path: '/swap'
+      fullPath: '/swap'
+      preLoaderRoute: typeof SwapRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sitemap.xml': {
@@ -853,6 +873,7 @@ const rootRouteChildren: RootRouteChildren = {
   RobotsDottxtRoute: RobotsDottxtRoute,
   ScanRoute: ScanRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  SwapRoute: SwapRoute,
   TradeRoute: TradeRoute,
   WalletsRoute: WalletsRoute,
   ApiHealRoute: ApiHealRoute,

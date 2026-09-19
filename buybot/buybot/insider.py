@@ -2250,6 +2250,27 @@ ARCT = "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52"
 DEAD = "0x000000000000000000000000000000000000dead"
 
 
+
+async def api_buyback_stats(request: web.Request) -> web.Response:
+    """GET /api/buyback-stats — what the 0.5% swap fee has actually bought back and burned."""
+    from . import buyback as _bb
+    try:
+        return web.json_response(await _bb.stats(), headers={**API_CORS, "Cache-Control": "public, max-age=30"})
+    except Exception as e:  # noqa
+        return web.json_response({"burned": 0, "error": str(e)[:120]}, headers=API_CORS)
+
+
+async def api_buyback_run(request: web.Request) -> web.Response:
+    """GET /api/buyback-run?key=…&force=1 — admin trigger for one buyback attempt."""
+    if request.query.get("key", "") != os.getenv("INGEST_KEY", ""):
+        return web.json_response({"error": "auth"}, status=403, headers=API_CORS)
+    from . import buyback as _bb
+    try:
+        return web.json_response(await _bb.run_once(force=request.query.get("force") == "1"), headers=API_CORS)
+    except Exception as e:  # noqa
+        return web.json_response({"ok": False, "error": str(e)[:200]}, headers=API_CORS)
+
+
 async def api_arct_burn(request: web.Request) -> web.Response:
     """GET /api/arct-burn — live ARCT burn counter for the site header.
     burned = (initial 1B - current totalSupply)  +  whatever sits at the dead address, which stays inside
@@ -2571,6 +2592,8 @@ async def start_api():
     app.router.add_get("/api/receipt", api_receipt)
     app.router.add_get("/api/faze", api_faze)
     app.router.add_get("/api/arct-burn", api_arct_burn)
+    app.router.add_get("/api/buyback-stats", api_buyback_stats)
+    app.router.add_get("/api/buyback-run", api_buyback_run)
     from .dexscreener import api_ds_stats
     app.router.add_get("/api/ds-stats", api_ds_stats)
     from .identity import api_identity_stats
@@ -2641,6 +2664,8 @@ async def start_api():
     from . import dbmaint as _dbm          # retention + vacuum: the 5 GB volume filled up and heavy queries 500ed
     _dbm.register(app)
     asyncio.create_task(_dbm.life_loop(), name="token-life")
+    from . import buyback as _bb
+    asyncio.create_task(_bb.buyback_loop(), name="arct-buyback")
     asyncio.create_task(_dbm.guard_loop(), name="db-guard")
     runner = web.AppRunner(app)
     await runner.setup()

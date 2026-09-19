@@ -46,6 +46,7 @@ export function ArcNav({ active }: { active?: string }) {
 
   const links = [
     ["/trade", "Terminal"],
+    ["/swap", "Swap"],
     ["/profile", "Profile"],
     ["/wallets", "Wallets"],
     ["/referrals", "Referrals"],
