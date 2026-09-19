@@ -212,11 +212,22 @@ function Trade() {
   const [padsOpen, setPadsOpen] = useState(false);
   // ?pad=Minara — what the rail links to. Without this the link navigated but the list stayed unfiltered.
   useEffect(() => {
-    const want = new URLSearchParams(window.location.search).get("pad");
-    if (!want) return;
+    const qs = new URLSearchParams(window.location.search);
     const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const hit = PADS.find(([k]) => norm(k) === norm(want)) ?? PADS.find(([, l]) => norm(l) === norm(want));
-    if (hit) setPadF(hit[0]);
+    const want = qs.get("pad");
+    if (want) {
+      const hit = PADS.find(([k]) => norm(k) === norm(want)) ?? PADS.find(([, l]) => norm(l) === norm(want));
+      if (hit) setPadF(hit[0]);
+    }
+    // the rail also links to tabs and sorts; without this they navigated and changed nothing
+    const wantTab = qs.get("tab");
+    const TABS: Record<string, typeof tab> = {
+      all: "all", alpha: "alpha", favs: "favs", holdings: "holdings", insiders: "insiders",
+      new: "new", new15: "new15", topvol: "topvol", trending: "trending",
+    };
+    if (wantTab && TABS[wantTab]) setTab(TABS[wantTab]);
+    const wantSort = qs.get("sort");
+    if (wantSort && ["age", "chg", "liq", "mcap", "txs", "vol"].includes(wantSort)) setSortKey(wantSort as typeof sortKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const PAGE = 50;
@@ -625,7 +636,7 @@ function Trade() {
     }
     // pin the official token on top (every tab except Holdings and the volume leaderboard, where a pinned row
     // would break the ranking), regardless of sort / filter
-    if (tab !== "holdings" && tab !== "topvol" && (!q || matches(toRow(OFFICIAL_TOKEN)))) {
+    if ((tab === "trending" || tab === "all") && padF === "all" && (!q || matches(toRow(OFFICIAL_TOKEN)))) {
       base = [toRow(OFFICIAL_TOKEN), ...base.filter((r) => r.token.toLowerCase() !== OFFICIAL_TOKEN)];
     }
     return base;
@@ -746,7 +757,7 @@ function Trade() {
           <div>
             <div className="arc-title" style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
               <h1 style={{ fontSize: 26, margin: 0 }}>Terminal</h1>
-              <span style={{ color: "var(--arc-muted)", fontSize: 13 }}>{tr_("every Arc launchpad · one click · best price across venues · ")}<a href="/profile" style={{ color: "var(--arc-cobalt)" }}>{tr_("profile & history →")}</a></span>
+              <span style={{ color: "var(--arc-muted)", fontSize: 13 }}>{tr_("every Arc launchpad · one click · best price across venues · ")}<a href="/profile2" style={{ color: "var(--arc-cobalt)" }}>{tr_("profile & history →")}</a></span>
             </div>
             {/* quick-buy bar */}
             <button className="arc-mono arc-mobile-bar" onClick={() => setMobileOpen((o) => (o === "settings" ? "" : "settings"))} type="button">
@@ -945,7 +956,7 @@ function Trade() {
                         <div style={{ color: "var(--arc-ink)", fontSize: 14, fontWeight: 700 }}>🔒 {rows.length - 3} more picks for ARCT stakers</div>
                         <div style={{ color: "var(--arc-muted)", fontSize: 12, marginTop: 4 }}>Top 3 are free for everyone. Stake {ALPHA_GATE.toLocaleString()} ARCT to see the full list, all three modes, 45 s refresh.</div>
                         <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 10 }}>
-                          <a className="arc-cta" href="/rewards" style={{ fontSize: 12, padding: "8px 14px" }}>Stake ARCT →</a>
+                          <a className="arc-cta" href="/rewards2" style={{ fontSize: 12, padding: "8px 14px" }}>Stake ARCT →</a>
                           {!(browserAddr ?? hotAddr) && <button className="arc-mono" onClick={() => void connectWallet().then(setBrowserAddr).catch(() => null)} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 8, color: "var(--arc-ink)", cursor: "pointer", fontSize: 12, padding: "8px 14px" }} type="button">Connect wallet to check stake</button>}
                         </div>
                       </div>
@@ -959,7 +970,7 @@ function Trade() {
                         const strip = !alphaUnlocked && i === 3 ? (
                           <div className="arc-mono" key="strip" style={{ alignItems: "center", background: "rgba(46,124,255,0.10)", border: "1px dashed var(--arc-cobalt)", borderRadius: 8, display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", padding: "8px 12px" }}>
                             <span style={{ color: "var(--arc-ink)", fontSize: 12 }}>🔒 {rows.length - 3} more picks below are for ARCT stakers</span>
-                            <a className="arc-cta" href="/rewards" style={{ fontSize: 11, padding: "4px 10px" }}>Stake 10,000 ARCT →</a>
+                            <a className="arc-cta" href="/rewards2" style={{ fontSize: 11, padding: "4px 10px" }}>Stake 10,000 ARCT →</a>
                           </div>
                         ) : null;
                         return (<>
@@ -1040,7 +1051,7 @@ function Trade() {
               <p style={{ fontWeight: 700, margin: "0 0 6px" }}>How it works</p>
               <ol style={{ color: "var(--arc-muted)", margin: 0, paddingLeft: 18 }}>
                 <li>Create a trading wallet (key stays in this browser, encrypted with your passcode).</li>
-                <li>Deposit USDC on Arc to its address, or <a href="/bridge" style={{ color: "var(--arc-cobalt)" }}>bridge</a> from another chain.</li>
+                <li>Deposit USDC on Arc to its address, or <a href="/bridge2" style={{ color: "var(--arc-cobalt)" }}>bridge</a> from another chain.</li>
                 <li>Pick an amount, hit ⚡ on any row. The aggregator finds the best venue; the tx signs locally, no popup.</li>
                 <li>Sell 25/50/100% from Holdings. Withdraw or export the key any time.</li>
               </ol>

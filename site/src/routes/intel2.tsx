@@ -197,7 +197,7 @@ function Intel() {
               ))}
               <div style={{ alignSelf: "center", display: "flex", flexWrap: "wrap", gap: 8 }}>
                 <a className="arc-cta" href={`/token2/${q.trim().toLowerCase()}`}>Chart & swap →</a>
-                <a className="arc-mono" href={`/scan?ca=${q.trim().toLowerCase()}`} style={{ alignSelf: "center", color: "var(--arc-cobalt)", fontSize: 12 }}>rug check</a>
+                <a className="arc-mono" href={`/scan2?ca=${q.trim().toLowerCase()}`} style={{ alignSelf: "center", color: "var(--arc-cobalt)", fontSize: 12 }}>rug check</a>
                 <a className="arc-mono" href={`${SNIPER}?start=ca_${q.trim().slice(2).toLowerCase()}`} rel="noreferrer" style={{ alignSelf: "center", color: "var(--arc-cobalt)", fontSize: 12 }} target="_blank">snipe</a>
                 <button className="arc-mono" onClick={() => { setRType("token"); setRTok(q.trim()); setSection("alerts"); setTimeout(() => document.getElementById("rule-builder")?.scrollIntoView({ behavior: "smooth" }), 50); }} style={{ background: "transparent", border: "1px solid var(--arc-line)", color: "var(--arc-cobalt)", cursor: "pointer", fontSize: 12, padding: "4px 8px" }} type="button">alert on this token</button>
               </div>
@@ -215,7 +215,7 @@ function Intel() {
                 <div style={{ alignSelf: "center", display: "flex", flexWrap: "wrap", gap: 8 }}>
                   <a className="arc-cta" href={`${BOT}?start=watch_${q.trim().slice(2).toLowerCase()}`} rel="noreferrer" target="_blank">Watch on Telegram →</a>
                   <a className="arc-mono" href={`${SNIPER}?start=copy_${q.trim().slice(2).toLowerCase()}`} rel="noreferrer" style={{ alignSelf: "center", color: "var(--arc-cobalt)", fontSize: 12 }} target="_blank">copy-trade</a>
-                  <a className="arc-mono" href={`/portfolio?w=${q.trim().toLowerCase()}`} style={{ alignSelf: "center", color: "var(--arc-cobalt)", fontSize: 12 }}>portfolio</a>
+                  <a className="arc-mono" href={`/portfolio2?w=${q.trim().toLowerCase()}`} style={{ alignSelf: "center", color: "var(--arc-cobalt)", fontSize: 12 }}>portfolio</a>
                   <a className="arc-mono" href={`https://arc-scan.org/address/${q.trim().toLowerCase()}`} rel="noreferrer" style={{ alignSelf: "center", color: "var(--arc-cobalt)", fontSize: 12 }} target="_blank">explorer ↗</a>
                 </div>
                 {t.length > 0 && <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, gridColumn: "1 / -1" }}>last: {t.slice(0, 5).map((x: any) => `${x.side} ${usd(x.usdc)} ${ago(x.ts)} ago`).join(" · ")}</div>}
@@ -272,7 +272,7 @@ function Intel() {
                         {r.rank && !whaleLabels[r.wallet.toLowerCase()]?.some((l) => l.kind === "insider") && <span style={{ background: "rgba(46,124,255,0.15)", border: "1px solid var(--arc-cobalt)", borderRadius: 3, color: "var(--arc-cobalt)", fontSize: 9, marginLeft: 6, padding: "0 4px" }}>#{r.rank}</span>}
                       </td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.venue}</td>
-                      <td style={td}><a className="arc-mono" href={`/wallets?add=${r.wallet}`} style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} >watch</a></td>
+                      <td style={td}><a className="arc-mono" href={`/wallets2?add=${r.wallet}`} style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} >watch</a></td>
                     </tr>
                   ))}
                   {whales && whales.rows.length === 0 && <tr><td colSpan={7} className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>Quiet: no swaps ≥ ${whaleMin} in this window.</td></tr>}
@@ -325,7 +325,7 @@ function Intel() {
                       <td style={td}><a href={`/token2/${r.token}`} style={{ color: "var(--arc-ink)" }}>${r.symbol ?? short(r.token)}</a></td>
                       <td className="arc-mono" style={{ ...td, color: DOWN, fontWeight: 700 }}>{usd(r.usdc)}</td>
                       <td className="arc-mono" style={td}><a className="arc-mono" href={`https://arc-scan.org/address/${r.wallet}`} rel="noreferrer" style={{ color: "var(--arc-ink)", fontSize: 12, textDecoration: "none" }} target="_blank">{short(r.wallet)}</a></td>
-                      <td style={td}><a className="arc-mono" href={`/wallets?add=${r.wallet}`} style={{ border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-muted)", fontSize: 11, padding: "2px 7px", textDecoration: "none" }}>watch</a></td>
+                      <td style={td}><a className="arc-mono" href={`/wallets2?add=${r.wallet}`} style={{ border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-muted)", fontSize: 11, padding: "2px 7px", textDecoration: "none" }}>watch</a></td>
                     </tr>
                   ))}
                   {devSells && devSells.rows.length === 0 && <tr><td colSpan={5} className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>No deployer sold their own token in the last 24 h.</td></tr>}
@@ -350,7 +350,7 @@ function Intel() {
                       <td className="arc-mono" style={{ ...td, color: (r.pnl_total ?? 0) >= 0 ? UP : DOWN }}>{r.pnl_total != null ? `${r.pnl_total >= 0 ? "+" : "−"}${usd(Math.abs(r.pnl_total))}` : "—"}</td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.swaps}</td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.last_trade ? ago(r.last_trade) : "—"}</td>
-                      <td style={td}><a className="arc-mono" href={`/wallets?add=${r.wallet}`} style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} >watch</a></td>
+                      <td style={td}><a className="arc-mono" href={`/wallets2?add=${r.wallet}`} style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} >watch</a></td>
                     </tr>
                   ))}
                   {rich && rich.rows.length === 0 && <tr><td colSpan={8} className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>First balance snapshot is running — back in a few minutes.</td></tr>}
@@ -396,7 +396,7 @@ function Intel() {
                       <td className="arc-mono" style={{ ...td, fontWeight: 700 }}>{usd(r.usdc)}</td>
                       <td style={td}><a href={`/token2/${r.token}`} style={{ color: "var(--arc-ink)" }}>${r.symbol ?? short(r.token)}</a></td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.swaps} swaps · {usd(r.bought ?? 0)}</td>
-                      <td style={td}><a className="arc-mono" href={`/wallets?add=${r.wallet}`} style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} >watch</a></td>
+                      <td style={td}><a className="arc-mono" href={`/wallets2?add=${r.wallet}`} style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} >watch</a></td>
                     </tr>
                   ))}
                 </tbody>
@@ -462,7 +462,7 @@ function Intel() {
                       <td className="arc-mono" style={{ ...td, color: r.delta >= 0 ? UP : DOWN, fontWeight: 700 }}>{r.delta >= 0 ? "+" : "−"}{usd(Math.abs(r.delta))}</td>
                       <td className="arc-mono" style={td}>{usd(r.balance)}</td>
                       <td className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>{r.swaps}</td>
-                      <td style={td}><a className="arc-mono" href={`/wallets?add=${r.wallet}`} style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} >watch</a></td>
+                      <td style={td}><a className="arc-mono" href={`/wallets2?add=${r.wallet}`} style={{ border: "1px solid var(--arc-cobalt)", borderRadius: 4, color: "var(--arc-cobalt)", fontSize: 11, padding: "3px 8px" }} >watch</a></td>
                     </tr>
                   ))}
                   {moves && moves.rows.length === 0 && <tr><td colSpan={6} className="arc-mono" style={{ ...td, color: "var(--arc-muted)" }}>No balance move ≥ $1,000 between snapshots yet (snapshots every 10 min).</td></tr>}

@@ -212,7 +212,7 @@ function InsidersPage() {
                   {r.best_symbol && r.best_symbol !== "?" ? ` · ${r.best_symbol}` : ""}
                 </span>
                 <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, width: 36 }}>{ago(r.last_trade)}</span>
-                <a className="arc-mono" href={`/wallets?add=${r.wallet}`} style={{ border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-muted)", fontSize: 11, padding: "6px 9px", textDecoration: "none" }} title="Open positions, last trades, live feed, Telegram alerts">watch</a>
+                <a className="arc-mono" href={`/wallets2?add=${r.wallet}`} style={{ border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-muted)", fontSize: 11, padding: "6px 9px", textDecoration: "none" }} title="Open positions, last trades, live feed, Telegram alerts">watch</a>
                 <a
                   className="arc-cta"
                   href={`https://t.me/ArcSniper_bot?start=copy_${r.wallet.slice(2)}`}

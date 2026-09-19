@@ -157,7 +157,7 @@ export function WalletPanel({ onReady }: { onReady: (addr: string | null) => voi
               <div style={{ fontSize: 12 }}>
                 <p style={{ margin: "0 0 4px" }}>Send <strong>USDC on Arc</strong> (native, chain 5042) to:</p>
                 <p className="arc-mono" style={{ fontSize: 11, margin: "0 0 6px", wordBreak: "break-all" }}>{addr}</p>
-                <p style={{ color: "var(--arc-muted)", margin: 0 }}>From another chain: <a href="/bridge" style={{ color: "var(--arc-cobalt)" }}>bridge</a> USDC to this address. Gas is USDC too — keep 0.05 spare.</p>
+                <p style={{ color: "var(--arc-muted)", margin: 0 }}>From another chain: <a href={typeof location !== "undefined" && location.pathname.endsWith("2") ? "/bridge2" : "/bridge"} style={{ color: "var(--arc-cobalt)" }}>bridge</a> USDC to this address. Gas is USDC too — keep 0.05 spare.</p>
               </div>
             </div>
           )}

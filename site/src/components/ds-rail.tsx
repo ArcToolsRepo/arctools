@@ -127,7 +127,7 @@ export function DsRail({ active }: { active?: string | null }) {
         ArcTools
       </a>
 
-      <a className="arc-dsp__search" href="/trade">
+      <a className="arc-dsp__search" href="/trade2">
         <svg aria-hidden height="13" viewBox="0 0 16 16" width="13"><circle cx="7" cy="7" fill="none" r="4.6" stroke="currentColor" strokeWidth="1.6" /><path d="M10.6 10.6L14 14" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" /></svg>
         Search token or CA
         <span>/</span>
