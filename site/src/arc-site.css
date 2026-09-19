@@ -1272,3 +1272,27 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
   .arc-dsp { grid-template-columns: minmax(0, 1fr); }
   .arc-dsp__rail { display: none; }
 }
+
+
+/* ---- preview Terminal (/trade2): chain strip + denser table ---------------- */
+.arc-dss { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 4px 0 10px; }
+.arc-dss > div { background: var(--arc-paper-deep); border: 1px solid var(--arc-line); border-radius: 10px; padding: 10px 14px; }
+.arc-dss span { color: var(--arc-muted); display: block; font-size: 9.5px; letter-spacing: .12em; }
+.arc-dss b { align-items: baseline; display: flex; font-size: 19px; gap: 8px; margin-top: 3px; }
+.arc-dss i { color: var(--arc-muted); font-size: 10.5px; font-style: normal; font-weight: 400; }
+
+/* the list reads like a terminal: tight rows, tabular numbers, a sticky header and a quiet zebra */
+.arc-dsp table { font-variant-numeric: tabular-nums; }
+.arc-dsp .arc-tablewrap thead th { background: var(--arc-paper); border-bottom: 1px solid var(--arc-line); font-size: 10px;
+  letter-spacing: .1em; position: sticky; top: 0; z-index: 3; }
+.arc-dsp .arc-tablewrap tbody tr:nth-child(even) { background: rgba(127,137,158,.045); }
+.arc-dsp .arc-tablewrap tbody tr:hover { background: rgba(47,127,245,.10); }
+.arc-dsp .arc-tablewrap td { padding-bottom: 7px; padding-top: 7px; }
+.arc-dsp .arc-row-link { cursor: pointer; }
+@media (max-width: 1100px) { .arc-dss { grid-template-columns: 1fr; } }
+
+/* the reference list page has no right sidebar: the table gets the full width here */
+.arc-dsp .arc-aside { display: none !important; }
+.arc-dsp .arc-2col { grid-template-columns: minmax(0, 1fr) !important; }
+.arc-dsp .arc-col-win { min-width: 62px; }
+.arc-dsp .arc-col-price { min-width: 96px; }

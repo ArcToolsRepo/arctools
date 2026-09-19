@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WalletsRouteImport } from './routes/wallets'
+import { Route as Trade2RouteImport } from './routes/trade2'
 import { Route as TradeRouteImport } from './routes/trade'
 import { Route as SwapRouteImport } from './routes/swap'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
@@ -56,6 +57,11 @@ import { Route as ApiLogoIpfsCidRouteImport } from './routes/api/logo.ipfs.$cid'
 const WalletsRoute = WalletsRouteImport.update({
   id: '/wallets',
   path: '/wallets',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Trade2Route = Trade2RouteImport.update({
+  id: '/trade2',
+  path: '/trade2',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TradeRoute = TradeRouteImport.update({
@@ -289,6 +295,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/swap': typeof SwapRoute
   '/trade': typeof TradeRoute
+  '/trade2': typeof Trade2Route
   '/wallets': typeof WalletsRoute
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
@@ -334,6 +341,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/swap': typeof SwapRoute
   '/trade': typeof TradeRoute
+  '/trade2': typeof Trade2Route
   '/wallets': typeof WalletsRoute
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
@@ -380,6 +388,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/swap': typeof SwapRoute
   '/trade': typeof TradeRoute
+  '/trade2': typeof Trade2Route
   '/wallets': typeof WalletsRoute
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
@@ -427,6 +436,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/swap'
     | '/trade'
+    | '/trade2'
     | '/wallets'
     | '/api/heal'
     | '/api/help'
@@ -472,6 +482,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/swap'
     | '/trade'
+    | '/trade2'
     | '/wallets'
     | '/api/heal'
     | '/api/help'
@@ -517,6 +528,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/swap'
     | '/trade'
+    | '/trade2'
     | '/wallets'
     | '/api/heal'
     | '/api/help'
@@ -563,6 +575,7 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SwapRoute: typeof SwapRoute
   TradeRoute: typeof TradeRoute
+  Trade2Route: typeof Trade2Route
   WalletsRoute: typeof WalletsRoute
   ApiHealRoute: typeof ApiHealRoute
   ApiHelpRoute: typeof ApiHelpRoute
@@ -596,6 +609,13 @@ declare module '@tanstack/react-router' {
       path: '/wallets'
       fullPath: '/wallets'
       preLoaderRoute: typeof WalletsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/trade2': {
+      id: '/trade2'
+      path: '/trade2'
+      fullPath: '/trade2'
+      preLoaderRoute: typeof Trade2RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/trade': {
@@ -915,6 +935,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   SwapRoute: SwapRoute,
   TradeRoute: TradeRoute,
+  Trade2Route: Trade2Route,
   WalletsRoute: WalletsRoute,
   ApiHealRoute: ApiHealRoute,
   ApiHelpRoute: ApiHelpRoute,
