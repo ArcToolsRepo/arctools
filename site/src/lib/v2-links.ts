@@ -34,6 +34,8 @@ export function installV2LinkGuard(): () => void {
     const a = (e.target as HTMLElement | null)?.closest?.("a");
     if (!a) return;
     if (a.target === "_blank" || a.hasAttribute("download")) return;
+    // the version switch exists to leave v2; rewriting its href back to v2 made the button do nothing
+    if (a.hasAttribute("data-leave-v2")) return;
     const href = a.getAttribute("href") ?? "";
     if (!href.startsWith("/") || href.startsWith("/api/") || href.startsWith("/assets/") || href.startsWith("/bot/")) return;
     const dest = toV2(href);

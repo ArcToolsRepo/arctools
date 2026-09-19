@@ -1322,3 +1322,18 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
 .arc-vswitch--compact { margin-left: 8px; }
 .arc-dsp__top { display: flex; justify-content: flex-start; margin-bottom: 8px; }
 @media (max-width: 720px) { .arc-vswitch--compact span { display: none; } }
+
+
+/* the rail search became a real form: the input has to look like the box it replaced */
+.arc-dsp__search input {
+  background: transparent;
+  border: 0;
+  color: var(--arc-ink);
+  flex: 1;
+  font: inherit;
+  min-width: 0;
+  outline: none;
+  padding: 0;
+}
+.arc-dsp__search input::placeholder { color: var(--arc-muted); }
+.arc-dsp__search:focus-within { border-color: rgba(96 150 255 / 55%); }

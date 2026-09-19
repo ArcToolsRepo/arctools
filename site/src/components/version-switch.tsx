@@ -14,7 +14,7 @@ export function VersionSwitch({ compact }: { compact?: boolean }) {
   if (!alt) return null;
   const onV2 = alt.to === "v1";
   return (
-    <a
+    <a data-leave-v2
       className={"arc-vswitch" + (compact ? " arc-vswitch--compact" : "") + (onV2 ? " is-v2" : "")}
       href={alt.href}
       title={onV2 ? "Back to the current site" : "Open this page in the preview interface"}

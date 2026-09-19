@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { BOT_API } from "@/lib/bot-api";
 import { installV2LinkGuard } from "@/lib/v2-links";
@@ -125,6 +125,20 @@ export function DsRail({ active }: { active?: string | null }) {
     return () => { alive = false; clearInterval(id); };
   }, []);
 
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   return (
     <aside className="arc-dsp__rail">
       <div className="arc-dsp__top">
@@ -135,11 +149,26 @@ export function DsRail({ active }: { active?: string | null }) {
         ArcTools
       </a>
 
-      <a className="arc-dsp__search" href="/trade2">
-        <svg aria-hidden height="13" viewBox="0 0 16 16" width="13"><circle cx="7" cy="7" fill="none" r="4.6" stroke="currentColor" strokeWidth="1.6" /><path d="M10.6 10.6L14 14" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" /></svg>
-        Search token or CA
+      <form
+        className="arc-dsp__search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const v = query.trim();
+          if (!v) return;
+          // a bare CA goes straight to its token page; anything else searches the Terminal list
+          window.location.assign(/^0x[0-9a-fA-F]{40}$/.test(v) ? `/token2/${v.toLowerCase()}` : `/trade2?q=${encodeURIComponent(v)}`);
+        }}
+      >
+        <svg aria-hidden height="13" viewBox="0 0 16 16" width="13"><circle cx="7" cy="7" fill="none" r="4.6" stroke="currentColor" strokeWidth="1.6" /><path d="M10.4 10.4 L14 14" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" /></svg>
+        <input
+          aria-label="Search token or CA"
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search token or CA"
+          ref={searchRef}
+          value={query}
+        />
         <span>/</span>
-      </a>
+      </form>
 
       <nav className="arc-dsp__tools">
         {TOOLS.map(([icon, label, href]) => (

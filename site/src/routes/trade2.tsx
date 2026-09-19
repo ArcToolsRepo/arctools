@@ -424,6 +424,9 @@ function Trade() {
   useEffect(() => {
     const a = quickAmount();
     if ([1, 5, 20, 100].includes(a)) setAmount(a); else setCustom(String(a));
+    // ?q= — what the rail's search box sends here
+    const wantQ = new URLSearchParams(window.location.search).get("q");
+    if (wantQ) setQ(wantQ);
     const ca = new URLSearchParams(window.location.search).get("buy");
     if (ca && /^0x[0-9a-fA-F]{40}$/.test(ca)) { setQ(ca); setPendingBuy(ca.toLowerCase()); }
   }, []);
