@@ -210,6 +210,15 @@ function Trade() {
   }, []);
   // 28 source chips in one row is a wall: show the handful people actually filter by and keep the rest one click away
   const [padsOpen, setPadsOpen] = useState(false);
+  // ?pad=Minara — what the rail links to. Without this the link navigated but the list stayed unfiltered.
+  useEffect(() => {
+    const want = new URLSearchParams(window.location.search).get("pad");
+    if (!want) return;
+    const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const hit = PADS.find(([k]) => norm(k) === norm(want)) ?? PADS.find(([, l]) => norm(l) === norm(want));
+    if (hit) setPadF(hit[0]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const PAGE = 50;
   const [page, setPage] = useState(1);
   const [minMc, setMinMc] = useState(""); const [maxMc, setMaxMc] = useState(""); const [minVol, setMinVol] = useState("");
