@@ -403,7 +403,17 @@ function TokenPage() {
     const open = () => {
       if (closed) return;
       es = new EventSource(`${BOT_ORIGIN}/api/stream?token=${ca}`);
-      es.addEventListener("hello", () => { backoff = 1000; liveRef.current = true; setLive(true); });
+      let lastBeat = Date.now();
+      const beat = () => { lastBeat = Date.now(); if (!liveRef.current) { liveRef.current = true; setLive(true); } };
+      es.addEventListener("hello", () => { backoff = 1000; beat(); });
+      es.addEventListener("hb", beat);
+      const pulse = setInterval(() => {
+        if (Date.now() - lastBeat > 40_000) {            // socket open, nothing arriving: treat as dead
+          clearInterval(pulse); liveRef.current = false; setLive(false); es?.close(); es = null;
+          if (!closed) setTimeout(open, backoff); backoff = Math.min(backoff * 2, 15_000);
+        }
+      }, 5_000);
+      const stopPulse = () => clearInterval(pulse);
       const onTrade = (t: Trade & { log_index?: number }) => {
           // a print with no/zero price (quote-token leg, decode miss) or a multi-hop outlier must never touch the candle:
           // one such event drew a wick to $0 and "-100%" on the live chart
@@ -420,16 +430,19 @@ function TokenPage() {
             return prev;
           });
       };
-      es.addEventListener("trade", (ev) => { try { onTrade(JSON.parse((ev as MessageEvent).data)); } catch { /* malformed */ } });
-      es.addEventListener("trades", (ev) => { try { for (const t of JSON.parse((ev as MessageEvent).data) as (Trade & { log_index?: number })[]) onTrade(t); } catch { /* malformed */ } });
-      es.onerror = () => { liveRef.current = false; setLive(false); es?.close(); es = null; if (!closed) setTimeout(open, backoff); backoff = Math.min(backoff * 2, 15_000); };
+      es.addEventListener("trade", (ev) => { beat(); try { onTrade(JSON.parse((ev as MessageEvent).data)); } catch { /* malformed */ } });
+      es.addEventListener("trades", (ev) => { beat(); try { for (const t of JSON.parse((ev as MessageEvent).data) as (Trade & { log_index?: number })[]) onTrade(t); } catch { /* malformed */ } });
+      es.onerror = () => { stopPulse(); liveRef.current = false; setLive(false); es?.close(); es = null; if (!closed) setTimeout(open, backoff); backoff = Math.min(backoff * 2, 15_000); };
+      cleanups.push(stopPulse);
     };
+    const cleanups: Array<() => void> = [];
     open();
-    return () => { closed = true; liveRef.current = false; es?.close(); };
+    return () => { closed = true; liveRef.current = false; for (const c of cleanups) c(); es?.close(); };
   }, [ca, tf]);
   useEffect(() => {
     void loadCandles();
-    const id = setInterval(() => { if (!liveRef.current || document.visibilityState === "visible") void loadCandles(); }, liveRef.current ? 30_000 : 5_000);
+    let m = 0;
+    const id = setInterval(() => { m++; if (document.visibilityState !== "visible") return; if (!liveRef.current || m % 6 === 0) void loadCandles(); }, 5_000);
     return () => clearInterval(id);
   }, [loadCandles, live]);
   // a pool we know but our swap index never saw (brand-new launchpad pool whose first swaps hit an RPC hiccup):
@@ -445,7 +458,8 @@ function TokenPage() {
   }, [info?.pool, candles.length, stats]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     void loadSide();
-    const id = setInterval(loadSide, liveRef.current ? 30_000 : 5_000);
+    let n = 0;
+    const id = setInterval(() => { n++; if (!liveRef.current || n % 6 === 0) void loadSide(); }, 5_000);   // 5 s when the stream is down, 30 s as a safety net when it is up
     return () => clearInterval(id);
   }, [loadSide, live]);
   useEffect(() => {
