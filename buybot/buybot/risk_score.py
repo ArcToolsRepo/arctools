@@ -542,7 +542,16 @@ async def api_dev_audit(req):
              WHERE UPPER(st.symbol) = :s ORDER BY st.updated DESC LIMIT 200
         """).bindparams(s=sym))
         out_fam = [dict(r) for r in fam]
-        return web.json_response({"symbol": sym, "n": len(out_fam), "rows": out_fam[:60],
+        # and the same family as the clone rule sees it: token_symbols + swaps in the window
+        seen = await db.fetchall(text("""
+            SELECT s.token, COUNT(*) AS n_swaps, MIN(s.ts) AS first_ts,
+                   COALESCE(MODE() WITHIN GROUP (ORDER BY s.venue), '?') AS venue
+              FROM swaps s JOIN token_symbols sy ON sy.token = s.token
+             WHERE UPPER(sy.symbol) = :s AND s.ts > :cut
+          GROUP BY s.token ORDER BY COUNT(*) DESC LIMIT 12
+        """).bindparams(s=sym, cut=int(time.time()) - 48 * 3600))
+        out_seen = [dict(r) for r in seen]
+        return web.json_response({"symbol": sym, "n": len(out_fam), "rows": out_fam[:60], "clone_view": out_seen,
                                   "pads": {k: sum(1 for r in out_fam if (r.get("launchpad") or r.get("pad_pad")) == k)
                                            for k in {(r.get("launchpad") or r.get("pad_pad")) for r in out_fam}},
                                   "traded": sum(1 for r in out_fam if (r.get("n_swaps") or 0) > 0)}, headers=CORS)

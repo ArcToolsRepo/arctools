@@ -83,30 +83,31 @@ async def clone_tokens(max_age_h: int = 48, min_clones: int = 5) -> set[str]:
             WITH per_token AS (
                 SELECT s.token, UPPER(COALESCE(sy.symbol, '')) AS sym,
                        MIN(s.ts) AS first_ts, COUNT(*) AS n_swaps,
-                       MODE() WITHIN GROUP (ORDER BY s.venue) AS venue
+                       COALESCE(MODE() WITHIN GROUP (ORDER BY s.venue), '?') AS venue
                   FROM swaps s JOIN token_symbols sy ON sy.token = s.token
                  WHERE s.ts > :cut
               GROUP BY s.token, sy.symbol
             ),
             fam AS (
-                SELECT sym, venue, COUNT(*) AS n_venue, MIN(first_ts) AS oldest_on_venue,
-                       SUM(n_swaps) AS swaps_on_venue
-                  FROM per_token
-                 WHERE sym <> '' AND sym NOT IN ('USDC', 'WETH', 'ETH', 'USDT', 'ARC')
-              GROUP BY sym, venue
-                HAVING COUNT(*) >= :m                  -- this venue minted the name at least :m times: a farm
-            ),
-            busiest AS (
-                SELECT DISTINCT ON (sym) sym, token AS keep FROM per_token ORDER BY sym, n_swaps DESC, first_ts ASC
+                -- A farm's copies are stamped out alike: near-identical swap counts, minted minutes apart
+                -- (QUEEF: 14 copies at 125-136 swaps, all inside two hours). Real tokens sharing a ticker
+                -- are nothing alike (ARGUS: 1830 / 692 / 99 / 63 ...). So a family is a farm when the
+                -- copies' swap counts are tightly clustered: max under 1.6x the median.
+                SELECT p.sym, p.venue, COUNT(*) AS n_venue,
+                       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY p.n_swaps) AS med_swaps,
+                       MAX(p.n_swaps) AS max_swaps
+                  FROM per_token p
+                 WHERE p.sym <> '' AND p.sym NOT IN ('USDC', 'WETH', 'ETH', 'USDT', 'ARC')
+              GROUP BY p.sym, p.venue
+                HAVING COUNT(*) >= :m
             )
-            SELECT p.token, p.first_ts, 0 AS oldest, (p.token = b.keep) AS is_original
+            SELECT p.token, p.n_swaps, f.med_swaps, f.max_swaps
               FROM per_token p
               JOIN fam f ON f.sym = p.sym AND f.venue = p.venue
-              JOIN busiest b ON b.sym = p.sym
+             WHERE f.max_swaps < f.med_swaps * 1.6 + 20       -- stamped-out copies, no real book among them
         """).bindparams(cut=cut, m=min_clones))
         for r in rows:
-            if not r["is_original"]:                                  # the one people trade keeps its name
-                out.add(str(r["token"]).lower())
+            out.add(str(r["token"]).lower())
     except Exception as e:  # noqa
         log.warning("clone scan: %s", str(e)[:160])
     _CLONE_CACHE["all"] = (time.time(), out)
