@@ -217,15 +217,17 @@ async def _tick_positions() -> None:
                     continue
                 # only sells AFTER we bought count (since is the min over guards; filter per position here)
                 opened = int(p["created_at"] or 0)
-                dev_after = d["dev_sold_usd"] if (d.get("dev_last_sell") or 0) >= opened else 0.0
-                bun_after = d["bundle_sold_usd"] if (d.get("bundle_last_sell") or 0) >= opened else 0.0
+                dev_net = d.get("dev_net_usd", d.get("dev_sold_usd", 0.0))
+                bun_net = d.get("bundle_net_usd", d.get("bundle_sold_usd", 0.0))
+                dev_after = max(0.0, float(dev_net)) if (d.get("dev_last_sell") or 0) >= opened else 0.0
+                bun_after = max(0.0, float(bun_net)) if (d.get("bundle_last_sell") or 0) >= opened else 0.0
                 total = dev_after + bun_after
                 if total >= float(o["trigger"] or 50):
                     who = []
                     if dev_after:
-                        who.append(f"deployer sold ${dev_after:,.0f}")
+                        who.append(f"deployer net −${dev_after:,.0f} (sold ${d.get('dev_sold_usd', 0):,.0f}, bought back ${d.get('dev_bought_usd', 0):,.0f})")
                     if bun_after:
-                        who.append(f"launch-block wallets sold ${bun_after:,.0f}")
+                        who.append(f"launch-block wallets net −${bun_after:,.0f}")
                     await _fire_sell(o, p, " · ".join(who))
                     return  # position state changed; next tick re-reads
                 continue

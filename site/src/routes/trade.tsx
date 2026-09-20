@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { loadMeta, peekBirthdays } from "@/lib/token-meta";
 import { BOT_API, BOT_ORIGIN } from "@/lib/bot-api";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
 import { usePrefs } from "@/lib/i18n";
@@ -338,7 +338,8 @@ function Trade() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ ok: boolean; text: string; tx?: string } | null>(null);
-  const [q, setQ] = useState("");
+  const [qRaw, setQ] = useState("");
+  const q = useDeferredValue(qRaw);
   const lastRoute = useRef<Map<string, RouteResult>>(new Map());
   const buyAmt = custom && Number(custom) > 0 ? Number(custom) : amount;
   useEffect(() => { setQuickAmount(buyAmt); }, [buyAmt]);
@@ -359,7 +360,7 @@ function Trade() {
     let alive = true;
     const load = async () => {
       try {
-        const all = await fetch("/api/tokens?full=1").then((r) => r.json()).then((j: { tokens?: PadToken[] }) => (j.tokens?.length ?? 0) > 100 ? j.tokens! : null).catch(() => null) ?? await listAllTokens();
+        const all = await fetch("/api/tokens?lite=1").then((r) => r.json()).then((j: { tokens?: PadToken[] }) => (j.tokens?.length ?? 0) > 100 ? j.tokens! : null).catch(() => null) ?? await listAllTokens();
         // merge: a refresh that lost a field upstream (logo, name, mcap…) must not blank a cell that was fine a second ago
         if (alive) setRows((prev) => {
           const pm = new Map(prev.map((r) => [r.token.toLowerCase(), r]));
@@ -518,6 +519,13 @@ function Trade() {
     void loadMeta(want).then(() => setBirthdays(peekBirthdays(want)));
   }, [rows]);
 
+  const cloneSet = useMemo(() => {
+    const m = new Set<string>();
+    for (const t of trend) if ((t as { clone?: boolean }).clone) m.add(t.token.toLowerCase());
+    for (const t of hot) if ((t as { clone?: boolean }).clone) m.add(t.token.toLowerCase());
+    return m;
+  }, [trend, hot]);
+
   const toRow = (token: string): Row => {
     const k = token.toLowerCase();
     const t = byToken.get(k); const tr = trendMap.get(k); const c = clusterMap.get(k);
@@ -560,6 +568,9 @@ function Trade() {
       else if (tab === "insiders") base = src.filter((r) => clusterMap.has(r.token));
       else base = src;
     }
+    // a spam farm minting one name across dozens of contracts owned every sort: same rows under every tab,
+    // every source chip and every window. Hidden unless you go looking for them (search, or that launchpad).
+    if (padF === "all" && !q) base = base.filter((r) => !cloneSet.has(r.token.toLowerCase()));
     base = base.filter(matches);
     const lo = Number(minMc) || 0, hi = Number(maxMc) || 0, mv = Number(minVol) || 0;
     if (lo) base = base.filter((r) => (r.mcap ?? 0) >= lo);
@@ -575,7 +586,7 @@ function Trade() {
       base = [toRow(OFFICIAL_TOKEN), ...base.filter((r) => r.token.toLowerCase() !== OFFICIAL_TOKEN)];
     }
     return base;
-  }, [tab, rows, trend, hot, volAll, clusters, favs, q, sortKey, byToken, trendMap, clusterMap, liq, logos, padF, minMc, maxMc, minVol, tf]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, rows, trend, hot, volAll, clusters, favs, q, sortKey, byToken, trendMap, clusterMap, liq, logos, padF, minMc, maxMc, minVol, tf, cloneSet]); // eslint-disable-line react-hooks/exhaustive-deps
   const pages = Math.max(1, Math.ceil(tableRows.length / PAGE));
   // Top-10 ranking tint. Only meaningful while the table is actually ordered by volume and we are on page 1;
   // 1-3 get medal hues, 4-10 fade out in the house cobalt. Tints stay under 10% alpha so ticker, numbers and
@@ -706,7 +717,7 @@ function Trade() {
               <span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 8 }}>{tr_("SLIPPAGE")}</span>
               {[1, 5, 15, 30].map((s) => <button key={s} className="arc-mono" onClick={() => setSlip(s)} style={{ background: slip === s ? "rgba(46,124,255,0.18)" : "transparent", border: "1px solid " + (slip === s ? "var(--arc-cobalt)" : "var(--arc-line)"), color: slip === s ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "3px 8px" }} type="button">{s}%</button>)}
               <div className={"arc-laser" + (q ? " is-typing" : "")}>
-                <input className="arc-mono" onChange={(e) => setQ(e.target.value)} placeholder={tr_("search any Arc token · name / symbol / CA")} style={{ background: "var(--arc-paper-deep)", color: "var(--arc-ink)", fontSize: 12, padding: "5px 9px" }} value={q} />
+                <input className="arc-mono" onChange={(e) => setQ(e.target.value)} placeholder={tr_("search any Arc token · name / symbol / CA")} style={{ background: "var(--arc-paper-deep)", color: "var(--arc-ink)", fontSize: 12, padding: "5px 9px" }} value={qRaw} />
               </div>
             </div>
             {/* tabs */}
@@ -836,7 +847,7 @@ function Trade() {
                         <td className="arc-mono arc-col-vol" style={{ ...cell, color: "#f5c542" }}>{r.vol > 0 ? usd(r.vol) : "—"}</td>
                         <td className="arc-mono arc-col-txs" style={cell}><div>{r.txs > 0 ? r.txs.toLocaleString() : "—"}</div>{r.txs > 0 && <div style={{ fontSize: 11 }}><span style={{ color: UP }}>{r.buys}</span> / <span style={{ color: DOWN }}>{r.sells}</span></div>}</td>
                         <td className="arc-mono" style={cell}>{(() => { if (r.stock) return <span className="arc-mono" style={{ border: "1px solid #7cc4ff", borderRadius: 5, color: "#7cc4ff", fontSize: 11, padding: "3px 6px" }} title="Custodial IOU — score not applicable; risk = trust in long.supply's vault and Robinhood's token">IOU</span>; const k = risk[r.token.toLowerCase()]; if (!k) return <span style={{ color: "var(--arc-muted)" }} title={riskMiss.current.has(r.token.toLowerCase()) ? "no holder data yet (token has not traded on an indexed venue)" : "loading"}>{riskMiss.current.has(r.token.toLowerCase()) ? "—" : "…"}</span>; const t10 = k.top10; return <><ScoreBadge risk={k} /><div style={{ color: "var(--arc-muted)", fontSize: 10.5, marginTop: 3 }} title={`${k.holders ?? "?"} holders · top-10 hold ${t10 != null ? t10.toFixed(0) : "?"}%`}>{k.holders ? `${k.holders >= 1000 ? (k.holders / 1000).toFixed(1) + "k" : k.holders}h` : ""}{t10 != null && r.token.toLowerCase() !== OFFICIAL_TOKEN ? ` · t10 ${t10.toFixed(0)}%` : ""}</div></>; })()}</td>
-                        <td className="arc-mono arc-col-dev" style={cell}>{(() => { if (r.stock) return <span style={{ color: "var(--arc-muted)", fontSize: 11 }} title="Wrapped stock: supply is minted/burned by the long.supply custodian, so deployer and bundle metrics do not apply">custodian-minted</span>; const k = risk[r.token.toLowerCase()]; if (!k) return <span style={{ color: "var(--arc-muted)" }}>{riskMiss.current.has(r.token.toLowerCase()) ? "—" : "…"}</span>; const dv = k.dev_pct, bd = k.bundle_pct; const c = (v: number | null | undefined, warn: number, bad: number) => v == null ? "var(--arc-muted)" : v >= bad ? DOWN : v >= warn ? "#f5c542" : UP; const ds = k.dev_sold_usd ?? 0, bs = k.bundle_sold_usd ?? 0; return <><div style={{ color: c(dv, 5, 15), fontWeight: 700 }} title="Deployer wallet's share of supply (top-50 holders)">{dv == null ? "—" : `${dv.toFixed(dv < 1 ? 1 : 0)}%`}{ds > 0 && <span style={{ background: "rgba(240,83,79,0.16)", border: "1px solid #f0534f", borderRadius: 4, color: "#f0534f", display: "inline-block", fontSize: 9, lineHeight: "13px", marginLeft: 5, padding: "0 4px", verticalAlign: "middle" }} title={`Deployer sold ${usd(ds)} in the last 24 h (${k.dev_sells} sell${k.dev_sells === 1 ? "" : "s"}, last ${ago(k.dev_last_sell ?? null)} ago)`}>DEV −{usd(ds)}</span>}</div><div style={{ color: c(bd, 10, 25), fontSize: 11 }} title={`Bundled: supply held by wallets that bought within 2 s of the first trade (${k.bundlers ?? 0} wallets)`}>{bd == null ? "" : `bundle ${bd.toFixed(bd < 1 ? 1 : 0)}%`}{bs > 0 && <span style={{ color: "#f0534f", fontSize: 10, marginLeft: 4 }} title={`${k.bundle_sellers} launch-block wallet${k.bundle_sellers === 1 ? "" : "s"} sold ${usd(bs)} in the last 24 h (last ${ago(k.bundle_last_sell ?? null)} ago)`}>−{usd(bs)}</span>}</div></>; })()}</td>
+                        <td className="arc-mono arc-col-dev" style={cell}>{(() => { if (r.stock) return <span style={{ color: "var(--arc-muted)", fontSize: 11 }} title="Wrapped stock: supply is minted/burned by the long.supply custodian, so deployer and bundle metrics do not apply">custodian-minted</span>; const k = risk[r.token.toLowerCase()]; if (!k) return <span style={{ color: "var(--arc-muted)" }}>{riskMiss.current.has(r.token.toLowerCase()) ? "—" : "…"}</span>; const dv = k.dev_pct, bd = k.bundle_pct; const c = (v: number | null | undefined, warn: number, bad: number) => v == null ? "var(--arc-muted)" : v >= bad ? DOWN : v >= warn ? "#f5c542" : UP; const ds = k.dev_net_usd ?? ((k.dev_sold_usd ?? 0) - (k.dev_bought_usd ?? 0)), bs = k.bundle_net_usd ?? ((k.bundle_sold_usd ?? 0) - (k.bundle_bought_usd ?? 0)); return <><div style={{ color: c(dv, 5, 15), fontWeight: 700 }} title="Deployer wallet's share of supply (top-50 holders)">{dv == null ? "—" : `${dv.toFixed(dv < 1 ? 1 : 0)}%`}{ds > 0 && <span style={{ background: "rgba(240,83,79,0.16)", border: "1px solid #f0534f", borderRadius: 4, color: "#f0534f", display: "inline-block", fontSize: 9, lineHeight: "13px", marginLeft: 5, padding: "0 4px", verticalAlign: "middle" }} title={`Deployer took ${usd(ds)} out in the last 24 h — sold ${usd(k.dev_sold_usd ?? 0)} across ${k.dev_sells} sell${k.dev_sells === 1 ? "" : "s"}, bought back ${usd(k.dev_bought_usd ?? 0)}, last sell ${ago(k.dev_last_sell ?? null)} ago`}>DEV −{usd(ds)}</span>}</div><div style={{ color: c(bd, 10, 25), fontSize: 11 }} title={`Bundled: supply held by wallets that bought within 2 s of the first trade (${k.bundlers ?? 0} wallets)`}>{bd == null ? "" : `bundle ${bd.toFixed(bd < 1 ? 1 : 0)}%`}{bs > 0 && <span style={{ color: "#f0534f", fontSize: 10, marginLeft: 4 }} title={`${k.bundle_sellers} launch-block wallet${k.bundle_sellers === 1 ? "" : "s"} took ${usd(bs)} out in the last 24 h — sold ${usd(k.bundle_sold_usd ?? 0)}, bought back ${usd(k.bundle_bought_usd ?? 0)}, last sell ${ago(k.bundle_last_sell ?? null)} ago`}>−{usd(bs)}</span>}</div></>; })()}</td>
                         <td className="arc-mono arc-col-ins" style={{ ...cell, minWidth: 72, paddingRight: 8 }}>{r.smart ? (r.smart.buyers + r.smart.sellers === 0 ? <span style={{ color: "var(--arc-muted)" }} title={`no top-100 insider trades in the ${tfLabel(tf)} window`}>0</span> : <div title={`top-100 insiders (${tfLabel(tf)}): bought ${usd(r.smart.bought)} · sold ${usd(r.smart.sold)} · ${r.smart.buyers} buying / ${r.smart.sellers} selling${r.smart.best_rank ? ` · best rank #${r.smart.best_rank}` : ""}`}><div style={{ color: r.smart.net >= 0 ? UP : DOWN, fontWeight: 700 }}>{r.smart.net >= 0 ? "+" : "−"}{usd(Math.abs(r.smart.net))}</div><div style={{ color: "var(--arc-muted)", fontSize: 10.5 }}>{r.smart.buyers}↑ {r.smart.sellers}↓</div></div>) : <span style={{ color: "var(--arc-muted)" }}>…</span>}</td>
                         <td style={{ ...cell, textAlign: "right" }}><BuyBtn symbol={r.symbol} token={r.token} /></td>
                       </tr>

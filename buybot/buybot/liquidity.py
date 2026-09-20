@@ -225,19 +225,43 @@ def _bundle_from_rows(rows, dev):
 
 
 async def dev_activity(token: str, dev: str | None, bundle: set[str]) -> dict:
-    """Sells by the deployer and by launch-block buyers in the last 24 h (usd, count, last ts)."""
-    out = {"dev_sold_usd": 0.0, "dev_sells": 0, "dev_last_sell": None, "bundle_sold_usd": 0.0, "bundle_sells": 0, "bundle_last_sell": None, "bundle_sellers": 0}
+    """What the deployer and the launch-block wallets did in the last 24 h — NET, not sells only.
+
+    Counting sells alone called a dev a dumper for selling $73 while he bought more back in the same hour.
+    A position that grew is not a dump, so every figure here is sells minus buys: positive means the wallet
+    took money OUT of the token, zero or negative means it did not.
+    """
+    out = {"dev_sold_usd": 0.0, "dev_sells": 0, "dev_last_sell": None, "dev_bought_usd": 0.0, "dev_net_usd": 0.0,
+           "bundle_sold_usd": 0.0, "bundle_sells": 0, "bundle_last_sell": None, "bundle_sellers": 0,
+           "bundle_bought_usd": 0.0, "bundle_net_usd": 0.0}
     since = int(time.time()) - 86400
     try:
         if dev:
-            r = await db.fetchone(text("SELECT COALESCE(SUM(usdc),0) AS u, COUNT(*) AS n, MAX(ts) AS t FROM swaps WHERE token = :t AND wallet = :w AND side = 'sell' AND ts > :s")
-                                  .bindparams(t=token, w=dev, s=since))
-            out.update(dev_sold_usd=round(float(r["u"] or 0), 2), dev_sells=int(r["n"] or 0), dev_last_sell=int(r["t"]) if r["t"] else None)
+            r = await db.fetchone(text("""
+                SELECT COALESCE(SUM(usdc) FILTER (WHERE side = 'sell'), 0) AS sold,
+                       COALESCE(SUM(usdc) FILTER (WHERE side = 'buy'), 0)  AS bought,
+                       COUNT(*) FILTER (WHERE side = 'sell')               AS n,
+                       MAX(ts)  FILTER (WHERE side = 'sell')               AS t
+                  FROM swaps WHERE token = :t AND wallet = :w AND ts > :s
+            """).bindparams(t=token, w=dev, s=since))
+            sold, bought = float(r["sold"] or 0), float(r["bought"] or 0)
+            out.update(dev_sold_usd=round(sold, 2), dev_bought_usd=round(bought, 2),
+                       dev_net_usd=round(sold - bought, 2), dev_sells=int(r["n"] or 0),
+                       dev_last_sell=int(r["t"]) if r["t"] else None)
         if bundle:
             from sqlalchemy import bindparam
-            r = await db.fetchone(text("SELECT COALESCE(SUM(usdc),0) AS u, COUNT(*) AS n, MAX(ts) AS t, COUNT(DISTINCT wallet) AS w FROM swaps WHERE token = :t AND wallet IN :ws AND side = 'sell' AND ts > :s")
-                                  .bindparams(bindparam("ws", value=sorted(bundle), expanding=True)).bindparams(t=token, s=since))
-            out.update(bundle_sold_usd=round(float(r["u"] or 0), 2), bundle_sells=int(r["n"] or 0), bundle_last_sell=int(r["t"]) if r["t"] else None, bundle_sellers=int(r["w"] or 0))
+            r = await db.fetchone(text("""
+                SELECT COALESCE(SUM(usdc) FILTER (WHERE side = 'sell'), 0) AS sold,
+                       COALESCE(SUM(usdc) FILTER (WHERE side = 'buy'), 0)  AS bought,
+                       COUNT(*) FILTER (WHERE side = 'sell')               AS n,
+                       MAX(ts)  FILTER (WHERE side = 'sell')               AS t,
+                       COUNT(DISTINCT wallet) FILTER (WHERE side = 'sell') AS w
+                  FROM swaps WHERE token = :t AND wallet IN :ws AND ts > :s
+            """).bindparams(bindparam("ws", value=sorted(bundle), expanding=True)).bindparams(t=token, s=since))
+            sold, bought = float(r["sold"] or 0), float(r["bought"] or 0)
+            out.update(bundle_sold_usd=round(sold, 2), bundle_bought_usd=round(bought, 2),
+                       bundle_net_usd=round(sold - bought, 2), bundle_sells=int(r["n"] or 0),
+                       bundle_last_sell=int(r["t"]) if r["t"] else None, bundle_sellers=int(r["w"] or 0))
     except Exception as e:  # noqa
         log.debug("dev activity %s: %s", token, e)
     return out

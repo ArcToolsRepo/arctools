@@ -2732,6 +2732,8 @@ async def start_api():
     _sim.register(app)
     asyncio.create_task(_sim.sim_loop(), name="token-sim")
     asyncio.create_task(_dbm.guard_loop(), name="db-guard")
+    from . import watchlist as _wl
+    asyncio.create_task(_wl.warm_trending_loop(), name="trending-warm")   # the Terminal never waits on a cold window again
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", "8080")))

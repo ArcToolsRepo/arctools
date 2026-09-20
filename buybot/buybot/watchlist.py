@@ -29,6 +29,88 @@ SNIPER = "https://t.me/ArcSniper_bot"
 API_CORS = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type"}
 
 
+
+# Arc's entire chain is worth a tiny fraction of this. A "market cap" above it is never a market cap: it is a
+# price read off a pool with no liquidity, or a token whose decimals lie. CIRCLE was printing $771 septillion
+# and topped every sort, which is exactly why the same rubbish appeared under every filter.
+MCAP_CEILING = 5_000_000_000.0
+
+
+def _sane_mcap(mcap, liq=None):
+    """A market cap nobody can act on is worse than no number at all."""
+    try:
+        m = float(mcap or 0)
+    except (TypeError, ValueError):
+        return None
+    if m <= 0 or m != m or m == float("inf") or m > MCAP_CEILING:
+        return None
+    # a cap that dwarfs the pool backing it is arithmetic, not value: $2 M "cap" on $40 of liquidity
+    if liq is not None:
+        try:
+            l = float(liq or 0)
+            if l > 0 and m > l * 50_000:
+                return None
+        except (TypeError, ValueError):
+            pass
+    return m
+
+
+
+# One name, eighty contracts, all minted within minutes of each other: a spam farm. They carried fake caps and
+# fake volume, so they owned every sort and every filter — the whole site looked like it was showing the same
+# token no matter what you clicked. Mark them so the default lists can drop them; a source filter still shows
+# them, because sometimes you want to look at the sewer.
+_CLONE_CACHE: dict[str, tuple[float, set[str]]] = {}
+
+
+async def clone_tokens(max_age_h: int = 48, min_clones: int = 5) -> set[str]:
+    """Addresses that belong to a spam farm — and ONLY those.
+
+    Built on what the farm cannot hide: its trades. pad_tokens only knows 2 of the 80 JEANPHIL contracts
+    (they were minted straight on Uniswap V4, no launchpad feed saw them), so a launchpad-based rule found
+    nothing. `swaps` saw every one of them. A farm is one name, many contracts, all trading on the SAME venue,
+    all appearing within the window (JEANPHIL: 80 contracts, 80 on v4, first seen inside a few hours).
+    Copycats of a real coin are scattered across venues and mostly never trade (COOL: 71 contracts, 12 pads,
+    a few dozen with any swap). The oldest contract of a family keeps its name: that is the original.
+    """
+    hit = _CLONE_CACHE.get("all")
+    if hit and time.time() - hit[0] < 300:
+        return hit[1]
+    out: set[str] = set()
+    try:
+        cut = int(time.time()) - max_age_h * 3600
+        rows = await db.fetchall(text("""
+            WITH per_token AS (
+                SELECT s.token, UPPER(COALESCE(sy.symbol, '')) AS sym,
+                       MIN(s.ts) AS first_ts, COUNT(*) AS n_swaps,
+                       MODE() WITHIN GROUP (ORDER BY s.venue) AS venue
+                  FROM swaps s JOIN token_symbols sy ON sy.token = s.token
+                 WHERE s.ts > :cut
+              GROUP BY s.token, sy.symbol
+            ),
+            fam AS (
+                SELECT sym, venue, COUNT(*) AS n_venue, MIN(first_ts) AS oldest_on_venue,
+                       SUM(n_swaps) AS swaps_on_venue
+                  FROM per_token
+                 WHERE sym <> '' AND sym NOT IN ('USDC', 'WETH', 'ETH', 'USDT', 'ARC')
+              GROUP BY sym, venue
+                HAVING COUNT(*) >= :m                  -- this venue minted the name at least :m times: a farm
+            ),
+            oldest AS (SELECT sym, MIN(first_ts) AS oldest FROM per_token GROUP BY sym)
+            SELECT p.token, p.first_ts, o.oldest
+              FROM per_token p
+              JOIN fam f ON f.sym = p.sym AND f.venue = p.venue
+              JOIN oldest o ON o.sym = p.sym
+        """).bindparams(cut=cut, m=min_clones))
+        for r in rows:
+            if int(r["first_ts"] or 0) > int(r["oldest"] or 0):      # the first one is the original
+                out.add(str(r["token"]).lower())
+    except Exception as e:  # noqa
+        log.warning("clone scan: %s", str(e)[:160])
+    _CLONE_CACHE["all"] = (time.time(), out)
+    return out
+
+
 async def init_tables():
     await db.execute(text("""CREATE TABLE IF NOT EXISTS watchlist (
         tg_id BIGINT NOT NULL, wallet VARCHAR(64) NOT NULL, label VARCHAR(48), min_usd DOUBLE PRECISION DEFAULT 1,
@@ -455,10 +537,42 @@ async def _api_stats_impl(request: web.Request) -> web.Response:
             pass
     for d in out:                      # own loop: MC must be computed for EVERY row (this was nested in `if miss:`)
         px = float(d["p1"] or 0) / 1e6
-        d["mcap"] = (px * d["supply"]) if (d["supply"] and px > 0) else None
-        d["ath_mcap"] = (float(d["ath"]) / 1e6 * d["supply"]) if (d["supply"] and d.get("ath")) else None
+        d["mcap"] = _sane_mcap((px * d["supply"]) if (d["supply"] and px > 0) else None, d.get("liq"))
+        d["ath_mcap"] = _sane_mcap((float(d["ath"]) / 1e6 * d["supply"]) if (d["supply"] and d.get("ath")) else None, d.get("liq"))
     await _fill_symbols(out)
     return web.json_response({"minutes": mins, "rows": out}, headers={**API_CORS, "Cache-Control": "public, max-age=15"})
+
+
+
+# The Terminal asks for a handful of fixed windows every 15-60 s. Once a cache entry is older than its TTL the
+# first visitor to ask pays the full recompute (10 s measured for a cold ?minutes=60&limit=50) while the table
+# sits frozen. So keep exactly those entries warm from the event loop, on our schedule: every visitor then hits
+# a fresh cache and the heavy queries run once per period instead of once per visitor.
+_WARM_QUERIES = (
+    "minutes=0&limit=400", "minutes=1440&limit=400", "minutes=60&limit=400", "minutes=5&limit=400",
+    "minutes=360&limit=400", "minutes=15&limit=400", "minutes=60&limit=200&sort=trend",
+    "minutes=1440&limit=200&sort=trend", "minutes=1440&limit=10", "minutes=60&limit=50",
+)
+
+
+async def warm_trending_loop() -> None:
+    from aiohttp.test_utils import make_mocked_request
+    await asyncio.sleep(20)
+    while True:
+        for qs in _WARM_QUERIES:
+            try:
+                req = make_mocked_request("GET", f"/api/trending?{qs}")
+                key = "trending:" + qs
+                hit = _rc.get(key)
+                all_time = qs.startswith("minutes=0&") or qs.startswith("minutes=-1&")
+                ttl = 600 if all_time else 30
+                if not hit or time.time() - hit[0] > ttl * 0.7:      # refresh before it goes stale, never after
+                    if key not in _rc_inflight:
+                        await _refresh(key, lambda r=req: _resp_body(_api_trending_impl(r)))
+            except Exception as e:  # noqa
+                log.debug("warm %s: %s", qs, str(e)[:80])
+            await asyncio.sleep(1.0)                      # one at a time; the indexer shares this loop
+        await asyncio.sleep(5)
 
 
 async def api_trending(request: web.Request) -> web.Response:
@@ -563,8 +677,12 @@ async def _finish_trending(out: list, mins: int, sort: str, limit: int) -> web.R
             pass
     for d in out:                      # own loop: MC must be computed for EVERY row (this was nested in `if miss:`)
         px = float(d["p1"] or 0) / 1e6
-        d["mcap"] = (px * d["supply"]) if (d["supply"] and px > 0) else None
-        d["ath_mcap"] = (float(d["ath"]) / 1e6 * d["supply"]) if (d["supply"] and d.get("ath")) else None
+        d["mcap"] = _sane_mcap((px * d["supply"]) if (d["supply"] and px > 0) else None, d.get("liq"))
+        d["ath_mcap"] = _sane_mcap((float(d["ath"]) / 1e6 * d["supply"]) if (d["supply"] and d.get("ath")) else None, d.get("liq"))
+    # tag the spam farm so the UI can keep it out of the default view
+    clones = await clone_tokens()
+    for d in out:
+        d["clone"] = (d.get("token") or "").lower() in clones
     await _fill_symbols(out)
     if sort == "trend":
         # a trend is many people, buying, more and more — not one wallet and a big number

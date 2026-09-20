@@ -6,7 +6,7 @@ const API = BOT_API;
 
 export type Risk = {
   holders: number; top10: number | null; top1: number | null; dev: string | null; dev_pct: number | null; bundle_pct: number | null; bundlers: number;
-  bundle_wallets?: string[]; dev_rugs?: number; dev_launches?: number; dev_sold_usd?: number; dev_sells?: number; dev_last_sell?: number | null;
+  bundle_wallets?: string[]; dev_rugs?: number; dev_launches?: number; dev_sold_usd?: number; dev_bought_usd?: number; dev_net_usd?: number; bundle_bought_usd?: number; bundle_net_usd?: number; dev_sells?: number; dev_last_sell?: number | null;
   bundle_sold_usd?: number; bundle_sells?: number; bundle_last_sell?: number | null; bundle_sellers?: number; lookalike?: boolean; score?: number; grade?: "A" | "B" | "C" | "D"; flags?: string[];
 };
 export type XLink = { handle: string; verified: boolean; shared: boolean; tokens: string[] };
@@ -113,7 +113,7 @@ export function RiskCard({ token, official = false }: { token: string; official?
           <Row k="deployer holds" v={risk.dev_pct == null ? "—" : `${risk.dev_pct.toFixed(risk.dev_pct < 1 ? 1 : 0)}%`} warn={(risk.dev_pct ?? 0) > 15} />
           <Row k={`bundle (${risk.bundlers} launch-block wallets)`} v={risk.bundle_pct == null ? "—" : `${risk.bundle_pct.toFixed(risk.bundle_pct < 1 ? 1 : 0)}%`} warn={(risk.bundle_pct ?? 0) > 25} />
           <Row k="top-10 holders (LP/vaults excluded)" v={risk.top10 == null ? "—" : `${risk.top10.toFixed(0)}%`} warn={!official && (risk.top10 ?? 0) > 60} />
-          <Row k="dev sold · 24h" v={risk.dev_sold_usd ? `${usd(risk.dev_sold_usd)} (${risk.dev_sells}×)` : "nothing"} warn={!!risk.dev_sold_usd} />
+          <Row k="dev net · 24h" v={(() => { const net = risk.dev_net_usd ?? ((risk.dev_sold_usd ?? 0) - (risk.dev_bought_usd ?? 0)); if (!risk.dev_sold_usd && !risk.dev_bought_usd) return "nothing"; return `${net > 0 ? "−" : "+"}${usd(Math.abs(net))} (sold ${usd(risk.dev_sold_usd ?? 0)}, bought ${usd(risk.dev_bought_usd ?? 0)})`; })()} warn={!!risk.dev_sold_usd} />
           <Row k="bundle sold · 24h" v={risk.bundle_sold_usd ? `${usd(risk.bundle_sold_usd)} by ${risk.bundle_sellers}` : "nothing"} warn={!!risk.bundle_sold_usd} />
           {hist?.x && hist.x.length > 0 && (
             <div style={{ display: "flex", fontSize: 12.5, justifyContent: "space-between", padding: "5px 0" }}>

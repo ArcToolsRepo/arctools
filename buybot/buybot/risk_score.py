@@ -283,16 +283,16 @@ def score(k: dict, official: bool = False) -> tuple[int, str, list[str]]:
             s -= 20; flags.append(f"top-10 hold {t10:.0f}%")
         elif t10 > 35:
             s -= 8; flags.append(f"top-10 hold {t10:.0f}%")
-    ds = k.get("dev_sold_usd") or 0
+    ds = max(0.0, float(k.get("dev_net_usd", (k.get("dev_sold_usd") or 0) - (k.get("dev_bought_usd") or 0)) or 0))
     if ds > 200:
-        s -= 25; flags.append(f"dev sold ${ds:,.0f} (24h)")
+        s -= 25; flags.append(f"dev net −${ds:,.0f} (24h)")
     elif ds > 0:
-        s -= 15; flags.append(f"dev sold ${ds:,.0f} (24h)")
-    bs = k.get("bundle_sold_usd") or 0
+        s -= 15; flags.append(f"dev net −${ds:,.0f} (24h)")
+    bs = max(0.0, float(k.get("bundle_net_usd", (k.get("bundle_sold_usd") or 0) - (k.get("bundle_bought_usd") or 0)) or 0))
     if bs > 200:
-        s -= 10; flags.append(f"bundle sold ${bs:,.0f}")
+        s -= 10; flags.append(f"bundle net −${bs:,.0f}")
     elif bs > 0:
-        s -= 5; flags.append(f"bundle sold ${bs:,.0f}")
+        s -= 5; flags.append(f"bundle net −${bs:,.0f}")
     rugs = k.get("dev_rugs") or 0
     if rugs >= 2:
         s -= 45; flags.append(f"dev dumped {rugs} tokens before")
@@ -490,11 +490,20 @@ async def api_dev_sells(req: web.Request):
         except Exception:  # noqa
             early = set()
         ws = ([dev] if dev else []) + sorted(early)
-        row = {"dev": dev, "dev_sold_usd": 0.0, "dev_sells": 0, "dev_last_sell": None, "bundle_sold_usd": 0.0, "bundle_sells": 0, "bundle_last_sell": None, "bundlers": len(early)}
+        row = {"dev": dev, "dev_sold_usd": 0.0, "dev_sells": 0, "dev_last_sell": None, "bundle_sold_usd": 0.0, "bundle_sells": 0, "bundle_last_sell": None, "dev_bought_usd": 0.0, "bundle_bought_usd": 0.0, "bundlers": len(early)}
         if ws:
-            sells = await db.fetchall(text("SELECT wallet, usdc, ts FROM swaps WHERE token = :t AND side = 'sell' AND ts > :s AND wallet IN :ws ORDER BY ts DESC LIMIT 200")
+            sells = await db.fetchall(text("SELECT wallet, usdc, ts, side FROM swaps WHERE token = :t AND ts > :s AND wallet IN :ws ORDER BY ts DESC LIMIT 400")
                                       .bindparams(bindparam("ws", value=ws, expanding=True)).bindparams(t=t, s=since))
             for sw in sells:
+                if (sw["side"] or "") == "buy":
+                    w = (sw["wallet"] or "").lower()
+                    if w in OWN_WALLETS:
+                        continue
+                    if w == dev:
+                        row["dev_bought_usd"] += float(sw["usdc"] or 0)
+                    else:
+                        row["bundle_bought_usd"] += float(sw["usdc"] or 0)
+                    continue
                 w = (sw["wallet"] or "").lower()
                 if w in OWN_WALLETS:
                     continue
@@ -504,7 +513,11 @@ async def api_dev_sells(req: web.Request):
                 else:
                     row["bundle_sold_usd"] += float(sw["usdc"] or 0); row["bundle_sells"] += 1
                     row["bundle_last_sell"] = max(row["bundle_last_sell"] or 0, int(sw["ts"]))
-        row["dev_sold_usd"] = round(row["dev_sold_usd"], 2); row["bundle_sold_usd"] = round(row["bundle_sold_usd"], 2)
+        # net is what the guard and the badge must read: money actually taken out of the token
+        row["dev_net_usd"] = round(row["dev_sold_usd"] - row["dev_bought_usd"], 2)
+        row["bundle_net_usd"] = round(row["bundle_sold_usd"] - row["bundle_bought_usd"], 2)
+        for k in ("dev_sold_usd", "bundle_sold_usd", "dev_bought_usd", "bundle_bought_usd"):
+            row[k] = round(row[k], 2)
         out[t] = row
     return web.json_response({"rows": out, "now": int(time.time())}, headers={**CORS, "Cache-Control": "no-store"})
 
@@ -520,6 +533,19 @@ async def api_dev_audit(req):
     if req.query.get("key") != os.getenv("INGEST_KEY", ""):
         return web.json_response({"error": "forbidden"}, status=403)
     rows = await db.fetchall(text("SELECT source, COUNT(*) AS n, MAX(ts) AS last FROM token_dev GROUP BY source"))
+    sym = (req.query.get("sym") or "").upper()
+    if sym:
+        fam = await db.fetchall(text("""
+            SELECT st.token, st.launchpad, st.deploy_ts, st.updated, pt.pad AS pad_pad, pt.ts AS pad_ts,
+                   (SELECT COUNT(*) FROM swaps s WHERE s.token = st.token) AS n_swaps
+              FROM social_tokens st LEFT JOIN pad_tokens pt ON pt.token = st.token
+             WHERE UPPER(st.symbol) = :s ORDER BY st.updated DESC LIMIT 200
+        """).bindparams(s=sym))
+        out_fam = [dict(r) for r in fam]
+        return web.json_response({"symbol": sym, "n": len(out_fam), "rows": out_fam[:60],
+                                  "pads": {k: sum(1 for r in out_fam if (r.get("launchpad") or r.get("pad_pad")) == k)
+                                           for k in {(r.get("launchpad") or r.get("pad_pad")) for r in out_fam}},
+                                  "traded": sum(1 for r in out_fam if (r.get("n_swaps") or 0) > 0)}, headers=CORS)
     out = {"by_source": {r["source"]: {"n": int(r["n"]), "last": int(r["last"] or 0)} for r in rows}}
     if req.query.get("purge") == "first_buyer":
         since = int(req.query.get("since") or 0)
