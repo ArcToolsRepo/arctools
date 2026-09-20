@@ -1362,7 +1362,7 @@ _RECEIPT_TOPICS = (V3_SWAP_TOPIC, V2_SWAP_TOPIC, ARCPAD_TRADE_TOPIC, V4_SWAP_TOP
 # chain would silently starve the index, so node_rpc() keeps using the backup until the primary is caught up.
 # rpc_monitor refreshes _node_state every 20 s; the initial value assumes primary is fine.
 _PRIMARY_RPC = os.getenv("PRIMARY_RPC", "http://178.156.197.90:8545")
-_BACKUP_RPC = os.getenv("BACKUP_RPC", "http://89.68.166.52:8545")
+_BACKUP_RPC = os.getenv("BACKUP_RPC", "http://178.156.197.90:8545")
 _node_state: dict[str, object] = {"use": _PRIMARY_RPC, "primary_ok": True, "primary_lag": 0, "since": 0.0}
 
 

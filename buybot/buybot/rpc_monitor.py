@@ -28,7 +28,7 @@ from .config import CFG
 log = logging.getLogger("rpc_monitor")
 
 PRIMARY = os.getenv("PRIMARY_RPC", "http://178.156.197.90:8545")     # US box, next door to Railway
-BACKUP = os.getenv("BACKUP_RPC", "http://89.68.166.52:8545")        # original Warsaw box, now the fallback
+BACKUP = os.getenv("BACKUP_RPC", "http://178.156.197.90:8545")        # original Warsaw box, now the fallback
 ENDPOINTS: list[tuple[str, str]] = [("node", PRIMARY), ("node-backup", BACKUP)] + [
     (u.split("//")[1].split("/")[0].replace("rpc.", "").replace(".up.railway.app", " (relay)"), u)
     for u in (CFG.rpc_urls if hasattr(CFG, "rpc_urls") else [])

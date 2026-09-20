@@ -28,12 +28,13 @@ lines = [
     'Fifteen pages — Terminal, Swap, token pages, Portfolio, Launchpad, Pay and the rest.',
     'A visible v1/v2 switch that carries your filters across. Nothing redirects by itself.',
     'The live site is untouched and stays the default. v2 is opt-in, at /trade2.',
+    'And the index now sits on the chain head: swaps land in the tables as blocks close.',
 ]
-yy = 268
+yy = 262
 for t in lines:
     d.ellipse((58, yy + 9, 66, yy + 17), fill=GRN)
     d.text((80, yy), t, font=f(20, R), fill=(226, 233, 245))
-    yy += 40
+    yy += 37
 
 # screenshot card
 shot = Image.open('assets/62-trade2.png').convert('RGB')
@@ -59,7 +60,7 @@ d.text((sx + 223, sy + 22), 'v2', font=f(20), fill=(30, 18, 2), anchor='ma')
 d.text((sx, sy + 78), 'one switch, same page, same filters', font=f(17, R), fill=MUTED)
 
 # stat chips
-chips = [('15', 'pages rebuilt'), ('27', 'launchpads in the rail'), ('0', 'changes to v1')]
+chips = [('15', 'pages rebuilt'), ('27', 'launchpads in the rail'), ('0s', 'index lag')]
 cxx = 820
 for big, lab in chips:
     wb = d.textlength(big, font=f(30)); wl = d.textlength(lab, font=f(13, R)); cw2 = int(max(wb, wl) + 34)

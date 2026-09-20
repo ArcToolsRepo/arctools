@@ -25,7 +25,7 @@ from sqlalchemy import text
 from . import db
 
 log = logging.getLogger("logos")
-NODE = os.getenv("PRIMARY_RPC", "http://89.68.166.52:8545")
+NODE = os.getenv("PRIMARY_RPC", "http://178.156.197.90:8545")
 RELAY = os.getenv("RELAY_URL", "https://rpc-production-ba7a.up.railway.app")
 HDR = {"Content-Type": "application/json", "X-Relay-Key": os.getenv("RELAY_KEY", ""), "X-Priority": "high"}
 UA = {"User-Agent": "Mozilla/5.0 (compatible; ArcTools/1.0; +https://arctools.fun)"}

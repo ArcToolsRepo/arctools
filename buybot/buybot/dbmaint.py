@@ -123,6 +123,21 @@ async def api(req):
                 return web.json_response({"error": f"not prunable: {table}"}, status=400)
             return web.json_response(await prune(table, max(3, min(180, int(req.query.get("days", "21")))),
                                                  max(1, min(60, int(req.query.get("batches", "10"))))))
+        if action == "wallets":
+            # the numbers marketing keeps asking for: distinct wallets we saw trade, and how many the insider
+            # index ranks — from the data, not from a guess
+            now = int(time.time())
+            r = await db.fetchone(text("""
+                SELECT COUNT(DISTINCT wallet) FILTER (WHERE ts > :d1) AS w24,
+                       COUNT(DISTINCT wallet) FILTER (WHERE ts > :d7) AS w7,
+                       COUNT(*) FILTER (WHERE ts > :d1) AS s24,
+                       COUNT(DISTINCT token) FILTER (WHERE ts > :d1) AS t24
+                  FROM swaps
+            """).bindparams(d1=now - 86400, d7=now - 7 * 86400))
+            ins = await db.fetchone(text("SELECT COUNT(*) AS n FROM insider_scores")) if await _has_table("insider_scores") else {"n": None}
+            return web.json_response({"wallets_24h": int(r["w24"] or 0), "wallets_7d": int(r["w7"] or 0),
+                                      "swaps_24h": int(r["s24"] or 0), "tokens_traded_24h": int(r["t24"] or 0),
+                                      "insiders_ranked": (int(ins["n"]) if ins and ins.get("n") is not None else None)})
         if action == "truncate":
             table = req.query.get("table", "")
             if table not in PRUNABLE and table not in ("wallet_balance", "kol_following"):
@@ -159,6 +174,14 @@ async def truncate_empty(table: str) -> dict:
     await db.execute(text(f"TRUNCATE TABLE {table}"))                          # noqa: S608 - name is allow-listed
     after = await db.fetchone(text("SELECT pg_total_relation_size(:t) AS v").bindparams(t=table))
     return {"table": table, "freed_mb": round((int(before["v"]) - int(after["v"])) / 1e6, 1)}
+
+async def _has_table(name: str) -> bool:
+    try:
+        r = await db.fetchone(text("SELECT 1 FROM information_schema.tables WHERE table_name = :t").bindparams(t=name))
+        return bool(r)
+    except Exception:  # noqa
+        return False
+
 
 async def _has_life() -> bool:
     try:

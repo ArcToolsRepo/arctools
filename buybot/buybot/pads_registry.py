@@ -25,7 +25,7 @@ from . import db
 log = logging.getLogger("pads")
 CORS = {"Access-Control-Allow-Origin": "*"}
 RELAY = os.getenv("RELAY_URL", "https://rpc-production-ba7a.up.railway.app")
-NODE = os.getenv("PRIMARY_RPC", "http://89.68.166.52:8545")   # own reth node: no rate limit → symbols resolve on first sight
+NODE = os.getenv("PRIMARY_RPC", "http://178.156.197.90:8545")   # own reth node: no rate limit → symbols resolve on first sight
 SCAN = "https://api.arc-scan.org/v1"
 TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 V3_POS_NFT = "0x39654a85a4c05127f5fd6ed22caec077a0fb1377"
