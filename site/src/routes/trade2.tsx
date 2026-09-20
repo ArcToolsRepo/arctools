@@ -378,7 +378,36 @@ function Trade() {
     open();
     return () => { closed = true; es?.close(); };
   }, []);
-  const [tf, setTf] = useState(0);   // 0 = all-time (default): every token shows its full volume / txs / change
+  // one pushed connection replaces the trend / hot / volAll pollers. While it is alive those timers only run as a
+  // 2-minute safety net; if it drops, they go back to their old cadence. (14 timers -> ~26 requests a minute per
+  // tab, each a Cloudflare -> Railway trip and a full table re-render: that was the "lag".)
+  const pushAlive = useRef(false);
+  const [, setPushTick] = useState(0);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let es: EventSource | null = null; let closed = false; let backoff = 2000;
+    const open = () => {
+      if (closed) return;
+      es = new EventSource(`${API}/api/stream?feed=terminal&windows=1440,0`);
+      es.addEventListener("hello", () => { pushAlive.current = true; backoff = 2000; setPushTick((n) => n + 1); });
+      es.addEventListener("trending", (ev) => {
+        try {
+          const q = (ev as MessageEvent).lastEventId || "";
+          const j = JSON.parse((ev as MessageEvent).data) as { rows?: Trend[] };
+          if (!Array.isArray(j.rows) || !j.rows.length) return;
+          if (q === "minutes=0&limit=400") { setVolAll(j.rows); if (tfRef.current === 0) setTrend(j.rows); }
+          else if (q === "minutes=1440&limit=200&sort=trend") setHot(j.rows);
+          else if (q === "minutes=1440&limit=400" && tfRef.current === 1440) setTrend(j.rows);
+        } catch { /* a bad frame is not worth a broken table */ }
+      });
+      es.onerror = () => { pushAlive.current = false; setPushTick((n) => n + 1); es?.close(); es = null; if (!closed) setTimeout(open, backoff); backoff = Math.min(backoff * 2, 15_000); };
+    };
+    open();
+    return () => { closed = true; es?.close(); };
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  const [tf, setTf] = useState(0);
+  const tfRef = useRef(0);
+  useEffect(() => { tfRef.current = tf; }, [tf]);   // 0 = all-time (default): every token shows its full volume / txs / change
   const [favs, setFavs] = useState<Set<string>>(new Set());
   const [liq, setLiq] = useState<Map<string, number>>(new Map());
   const [logos, setLogos] = useState<Record<string, string>>({});
@@ -400,8 +429,9 @@ function Trade() {
     // never replace a good trending set with an empty/failed fetch (that is what made vol/txs/ATH blink to "—")
     const load = () => fetch(`${API}/api/trending?minutes=${tf}&limit=400`).then((r) => r.json()).then((j) => { if (alive && Array.isArray(j.rows) && j.rows.length) setTrend(j.rows); }).catch(() => null);
     void load();
-    const id = setInterval(load, 15_000);
-    return () => { alive = false; clearInterval(id); };
+    const id = setInterval(() => { if (!pushAlive.current || document.hidden) load(); }, 15_000);
+    const slow = setInterval(() => { if (pushAlive.current && !document.hidden) load(); }, 120_000);   // safety net
+    return () => { alive = false; clearInterval(id); clearInterval(slow); };
   }, [tf]);
   // Trending is a momentum ranking, not the volume list: many traders, buying, accelerating; wash-looking rows filtered
   // server-side. "All time" has no momentum, so the tab falls back to the 24 h window.
@@ -410,8 +440,9 @@ function Trade() {
     const mins = tf === 0 ? 1440 : tf;
     const load = () => fetch(`${API}/api/trending?minutes=${mins}&limit=200&sort=trend`).then((r) => r.json()).then((j) => { if (alive && Array.isArray(j.rows) && j.rows.length) setHot(j.rows); }).catch(() => null);
     void load();
-    const id = setInterval(load, 20_000);
-    return () => { alive = false; clearInterval(id); };
+    const id = setInterval(() => { if (!pushAlive.current || document.hidden) load(); }, 20_000);
+    const slow2 = setInterval(() => { if (pushAlive.current && !document.hidden) load(); }, 120_000);
+    return () => { alive = false; clearInterval(id); clearInterval(slow2); };
   }, [tf]);
   // on-chain USDC-side liquidity for the visible rows (own index API: V3/pad pool balances + V4 slot0/liquidity)
   const liqReq = useRef<Set<string>>(new Set());

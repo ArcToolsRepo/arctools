@@ -58,7 +58,51 @@ def publish(rows: list[dict]) -> None:
                     stats["dropped"] += 1
 
 
+async def api_terminal_feed(request: web.Request) -> web.StreamResponse:
+    """GET /api/stream?feed=terminal — the Terminal's live state, pushed.
+
+    The Terminal used to poll: 14 timers, ~26 requests a minute per open tab, each one a Cloudflare -> Railway
+    round trip and a full table re-render on arrival. Here the bot pushes the frames the table needs
+    (the trending windows and the chain head) whenever the warm cache refreshes them — read straight from
+    memory, so a thousand tabs cost the database nothing extra. One connection instead of five timers.
+    """
+    from . import watchlist as _wl
+    from .insider import _lag
+    from .chain_status import LAST as _chain
+    wins = [w for w in (request.query.get("windows") or "1440,0").split(",") if w.strip()][:4]
+    resp = web.StreamResponse(status=200, headers={
+        "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", "Connection": "keep-alive",
+        "X-Accel-Buffering": "no", "Access-Control-Allow-Origin": "*",
+    })
+    await resp.prepare(request)
+    stats["clients"] += 1
+    sent: dict[str, float] = {}
+    try:
+        await resp.write(b"retry: 3000\nevent: hello\ndata: " + json.dumps({"feed": "terminal", "ts": int(time.time())}).encode() + b"\n\n")
+        while True:
+            # push a window only when the cache holds a NEWER frame than the one this client already has
+            for w in wins:
+                for qs in (f"minutes={w}&limit=400", f"minutes={w}&limit=200&sort=trend"):
+                    hit = _wl._rc.get("trending:" + qs)
+                    if hit and hit[0] > sent.get(qs, 0.0):
+                        body = hit[1] if isinstance(hit[1], (bytes, bytearray)) else (hit[1].encode() if isinstance(hit[1], str) else None)
+                        if body:
+                            await resp.write(b"event: trending\nid: " + qs.encode() + b"\ndata: " + body.strip() + b"\n\n")
+                            sent[qs] = hit[0]
+            await resp.write(f"event: chain\ndata: {json.dumps({'block': _chain.get('last_block'), 'lag_s': round(float(_lag.get('blocks') or 0) * 0.63, 1), 'ts': int(time.time())})}\n\n".encode())
+            await asyncio.sleep(5)
+    except (asyncio.CancelledError, ConnectionResetError, RuntimeError):
+        pass
+    except Exception as e:  # noqa
+        log.debug("terminal feed closed: %s", e)
+    finally:
+        stats["clients"] -= 1
+    return resp
+
+
 async def api_stream(request: web.Request) -> web.StreamResponse:
+    if request.query.get("feed") == "terminal":
+        return await api_terminal_feed(request)
     token = (request.query.get("token") or "").lower()
     key = token if (token.startswith("0x") and len(token) == 42) else "*"
     resp = web.StreamResponse(status=200, headers={

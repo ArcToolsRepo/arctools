@@ -97,15 +97,20 @@ async def _save(st: dict) -> None:
         pass
 
 
+LAST: dict = {}     # the loop's live view, for the terminal feed (no KV read per push)
+
+
 async def loop():
     await asyncio.sleep(20)
     st = await _load()
+    LAST.update(st)
     # st: {down: bool, since: ts, last_block: n, last_block_ts: ts, last_post: ts, live_left: n, live_since: ts}
     st.setdefault("down", False); st.setdefault("live_left", 0)
     if not st.get("last_block_ts"):
         b, ts = await _scan_head()
         if b:
             st["last_block"], st["last_block_ts"] = b, ts
+            LAST.update(st)
     while True:
         try:
             now = time.time()
