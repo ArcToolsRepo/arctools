@@ -2618,7 +2618,23 @@ async def _api_token_stats_impl(request: web.Request) -> web.Response:
 
 async def start_api():
     import os
-    app = web.Application()
+    @web.middleware
+    async def _gzip_mw(request, handler):
+        """Compress JSON >1 KB when the client accepts it. Measured: trending was leaving Railway as 182 KB
+        of plain JSON per call (Cloudflare re-compresses for the browser, but the Railway->CF leg was raw).
+        Off the same-origin proxy, browsers hitting the bot directly received it uncompressed too."""
+        resp = await handler(request)
+        try:
+            if (isinstance(resp, web.Response) and resp.body is not None and len(resp.body) > 1024
+                    and "gzip" in request.headers.get("Accept-Encoding", "")
+                    and "Content-Encoding" not in resp.headers
+                    and str(resp.content_type or "").startswith(("application/json", "text/"))):
+                resp.enable_compression(web.ContentCoding.gzip)
+        except Exception:  # noqa - compression is never worth a failed response
+            pass
+        return resp
+
+    app = web.Application(middlewares=[_gzip_mw])
     from .botmetrics import api_heartbeat, api_ui_beacon
     app.router.add_post("/api/bot-heartbeat", api_heartbeat)
     app.router.add_post("/api/ui-beacon", api_ui_beacon)
