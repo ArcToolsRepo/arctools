@@ -179,7 +179,14 @@ async def _deployer(s: aiohttp.ClientSession, token: str) -> str | None:
             if r and r["wallet"]:
                 dev = r["wallet"].lower()
                 from .risk_score import remember_dev
-                await remember_dev(token, dev, "first_buyer")
+                # only when the oldest swap we hold really is the token's first trade: after a retention prune the
+                # earliest remaining row belongs to a random trader, not to the deployer
+                first_ts = await db.fetchone(text("SELECT MIN(ts) AS t FROM swaps WHERE token = :t").bindparams(t=token))
+                birth = await db.fetchone(text("SELECT deploy_ts FROM social_tokens WHERE token = :t").bindparams(t=token))
+                bts = int((birth or {}).get("deploy_ts") or 0)
+                fts = int((first_ts or {}).get("t") or 0)
+                if bts and fts and fts - bts <= 3600:
+                    await remember_dev(token, dev, "first_buyer")
         except Exception:  # noqa
             pass
     _dep_cache[token] = (time.time(), dev)
@@ -196,7 +203,16 @@ async def _bundle_wallets(token: str, dev: str | None) -> set[str]:
     # launch-block wallets never change after the first minutes → 10 min cache; this GROUP BY over every swap of the
     # token ran 13× in parallel under Terminal load
     rows = await db.fetchall(text("SELECT wallet, MIN(ts) AS t0 FROM swaps WHERE token = :t AND side = 'buy' GROUP BY wallet").bindparams(t=token))
-    out = _bundle_from_rows(rows, dev); _bundle_cache[token] = (time.time(), out)
+    # "launch block" is measured from the earliest buy we STILL HOLD. After a retention prune that is simply
+    # the oldest surviving trade, so ordinary traders were being labelled launch-block wallets — and the
+    # sniper's dump guard sold real positions when one of them took profit. Only claim a bundle when our
+    # history actually starts at the token's mint.
+    birth = await db.fetchone(text("SELECT deploy_ts FROM social_tokens WHERE token = :t").bindparams(t=token))
+    bts = int((birth or {}).get("deploy_ts") or 0)
+    earliest = min((int(r["t0"]) for r in rows), default=0)
+    trustworthy = bool(bts and earliest and earliest - bts <= 3600)
+    out = _bundle_from_rows(rows, dev) if trustworthy else set()
+    _bundle_cache[token] = (time.time(), out)
     if len(_bundle_cache) > 5000: _bundle_cache.clear()
     return out
 

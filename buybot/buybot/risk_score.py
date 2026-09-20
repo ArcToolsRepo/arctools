@@ -44,8 +44,19 @@ async def _backfill():
     """First buyer of every indexed token → token_dev (source=first_buyer) where nothing better is known."""
     await asyncio.sleep(120)
     try:
-        rows = await db.fetchall(text(
-            "SELECT DISTINCT ON (token) token, wallet FROM swaps WHERE side = 'buy' ORDER BY token, ts ASC, log_index ASC"))
+        # ONLY tokens whose first retained buy really is their first trade ever. `swaps` keeps a retention
+        # window, so for anything older the "first buyer" is just the earliest trader still stored — and the
+        # sniper's dump guard sells a real position when that stranger takes profit, reporting it as the dev.
+        # social_tokens.deploy_ts is the token's mint time from the explorer; within an hour of it, trust it.
+        rows = await db.fetchall(text("""
+            SELECT DISTINCT ON (s.token) s.token, s.wallet
+              FROM swaps s
+              JOIN social_tokens st ON st.token = s.token
+             WHERE s.side = 'buy'
+               AND st.deploy_ts IS NOT NULL
+               AND s.ts - st.deploy_ts <= 3600
+             ORDER BY s.token, s.ts ASC, s.log_index ASC
+        """))
         n = 0
         for r in rows:
             if not r["wallet"]:
@@ -442,6 +453,18 @@ async def api_rugs(req: web.Request):
     return web.json_response({"rugs": out[:100]}, headers={**CORS, "Cache-Control": "public, max-age=300"})
 
 
+
+# Our own infrastructure. ARCT was deployed from the treasury, so every treasury movement read as "the
+# deployer is dumping" and the sniper's guard sold real ARCT positions on it. Our own wallets are never a
+# rug signal — a guard exists to warn about a stranger walking away with the liquidity.
+OWN_WALLETS = {
+    "0xb35c471b31d636b96f95b84e7a27d69b63235c0d",   # treasury / fee sink
+    "0x43cdbf8edb8fe41dde4ba519f49499d1ed78e74a",   # ArcAggregator v3
+    "0x9f3eefd8b4158c09bf134fa6c032745a7d781be6",   # ArcClaim
+    "0x000000000000000000000000000000000000dead",   # burn
+}
+
+
 async def api_dev_sells(req: web.Request):
     """GET /api/dev-sells?tokens=a,b&since=<unix> — dev + launch-block sells per token since `since`.
     Pure indexed DB query (no arc-scan), meant for the sniper's dump-guard loop every few seconds."""
@@ -456,11 +479,12 @@ async def api_dev_sells(req: web.Request):
     from .liquidity import _bundle_wallets
     for t in toks:
         dev = devmap.get(t)
-        if not dev:   # first buyer fallback, remembered for next time
-            r = await db.fetchone(text("SELECT wallet FROM swaps WHERE token = :t ORDER BY ts ASC, log_index ASC LIMIT 1").bindparams(t=t))
-            dev = (r["wallet"] or "").lower() if r else None
-            if dev:
-                await remember_dev(t, dev, "first_buyer")
+        if not dev:
+            # NO first-buyer fallback here. `swaps` only holds a retention window, so the oldest row we still
+            # have is not the token's first buyer — for any token older than the window it is just whoever
+            # happened to trade inside it. Calling that wallet "the deployer" made the dump guard sell real
+            # positions because an ordinary trader took profit. An unknown deployer means the guard stays put.
+            dev = None
         try:
             early = await _bundle_wallets(t, dev)
         except Exception:  # noqa
@@ -472,6 +496,8 @@ async def api_dev_sells(req: web.Request):
                                       .bindparams(bindparam("ws", value=ws, expanding=True)).bindparams(t=t, s=since))
             for sw in sells:
                 w = (sw["wallet"] or "").lower()
+                if w in OWN_WALLETS:
+                    continue
                 if w == dev:
                     row["dev_sold_usd"] += float(sw["usdc"] or 0); row["dev_sells"] += 1
                     row["dev_last_sell"] = max(row["dev_last_sell"] or 0, int(sw["ts"]))
@@ -482,6 +508,24 @@ async def api_dev_sells(req: web.Request):
         out[t] = row
     return web.json_response({"rows": out, "now": int(time.time())}, headers={**CORS, "Cache-Control": "no-store"})
 
+
+
+async def api_dev_audit(req):
+    """GET /api/dev-audit?key=… — who we think deployed what, and how we decided.
+
+    Exists because a guessed deployer is not a harmless guess: the sniper's dump guard sells a real position
+    on it. ?purge=first_buyer drops the guessed rows so they get resolved properly next time.
+    """
+    import os
+    if req.query.get("key") != os.getenv("INGEST_KEY", ""):
+        return web.json_response({"error": "forbidden"}, status=403)
+    rows = await db.fetchall(text("SELECT source, COUNT(*) AS n, MAX(ts) AS last FROM token_dev GROUP BY source"))
+    out = {"by_source": {r["source"]: {"n": int(r["n"]), "last": int(r["last"] or 0)} for r in rows}}
+    if req.query.get("purge") == "first_buyer":
+        since = int(req.query.get("since") or 0)
+        res = await db.execute(text("DELETE FROM token_dev WHERE source = 'first_buyer' AND ts >= :s").bindparams(s=since))
+        out["purged"] = getattr(res, "rowcount", None)
+    return web.json_response(out, headers=CORS)
 
 async def api_dev_sells_feed(req: web.Request):
     """GET /api/dev-sells-feed?hours=24&limit=40 — chain-wide: recent sells by deployers of their own tokens (token_dev join)."""
@@ -497,6 +541,7 @@ async def api_dev_sells_feed(req: web.Request):
 
 def register(app: web.Application):
     app.router.add_get("/api/dev-sells-feed", api_dev_sells_feed)
+    app.router.add_get("/api/dev-audit", api_dev_audit)
     app.router.add_get("/api/dev-sells", api_dev_sells)
     app.router.add_get("/api/dev-history", api_dev_history)
     app.router.add_get("/api/wallet-labels", api_wallet_labels)
