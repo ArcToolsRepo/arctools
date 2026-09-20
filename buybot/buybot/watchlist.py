@@ -96,14 +96,16 @@ async def clone_tokens(max_age_h: int = 48, min_clones: int = 5) -> set[str]:
               GROUP BY sym, venue
                 HAVING COUNT(*) >= :m                  -- this venue minted the name at least :m times: a farm
             ),
-            oldest AS (SELECT sym, MIN(first_ts) AS oldest FROM per_token GROUP BY sym)
-            SELECT p.token, p.first_ts, o.oldest
+            busiest AS (
+                SELECT DISTINCT ON (sym) sym, token AS keep FROM per_token ORDER BY sym, n_swaps DESC, first_ts ASC
+            )
+            SELECT p.token, p.first_ts, 0 AS oldest, (p.token = b.keep) AS is_original
               FROM per_token p
               JOIN fam f ON f.sym = p.sym AND f.venue = p.venue
-              JOIN oldest o ON o.sym = p.sym
+              JOIN busiest b ON b.sym = p.sym
         """).bindparams(cut=cut, m=min_clones))
         for r in rows:
-            if int(r["first_ts"] or 0) > int(r["oldest"] or 0):      # the first one is the original
+            if not r["is_original"]:                                  # the one people trade keeps its name
                 out.add(str(r["token"]).lower())
     except Exception as e:  # noqa
         log.warning("clone scan: %s", str(e)[:160])

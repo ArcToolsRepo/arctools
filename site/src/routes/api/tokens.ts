@@ -18,8 +18,18 @@ export const Route = createFileRoute("/api/tokens")({
         // parse + the 15 k-row filter on each keystroke is most of what "the site lags" meant. Keep only what
         // the rows read; the token page fetches the full record on its own.
         const lite = u.searchParams.get("lite") === "1";
+        // Trimming fields barely moved the needle (5.0 -> 4.9 MB): the weight is the row count. 76 % of the
+        // 15 k rows never traded and are older than a week — dead launches the table only ever shows when
+        // someone searches for them by address, and the search box falls through to the chain lookup for
+        // an unknown CA anyway. Ship the rows that can appear in a list.
+        // a week kept 99 % of the rows (94 % of them are under a week old): a fresh launch that never traded and
+        // has no cap is dead after a day. 7 300 such rows go.
+        const dayAgo = Date.now() - 86_400_000;
+        const alive = (t: (typeof rows)[number]) =>
+          (t.volUsd ?? 0) > 0 || (t.mcapUsd ?? 0) > 0 || !t.createdAt || Date.parse(t.createdAt) > dayAgo || t.stock || t.og;
+        const src = lite ? rows.filter(alive) : rows;
         const out = lite
-          ? rows.map((t) => ({
+          ? src.map((t) => ({
               token: t.token, symbol: t.symbol, name: t.name, pad: t.pad, logo: t.logo, createdAt: t.createdAt,
               mcapUsd: t.mcapUsd, priceUsd: t.priceUsd, volUsd: t.volUsd, liqUsd: t.liqUsd ?? null, curve: t.curve ?? null,
               twitter: t.twitter ?? null, telegram: t.telegram ?? null, website: t.website ?? null,
