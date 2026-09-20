@@ -50,11 +50,19 @@ class Chain:
 
     def _mark_down(self, idx: int, err: Exception):
         msg = str(err).lower()
-        if any(s in msg for s in ("quota", "exceeded", "429", "too many", "rate limit", "-32600", "-32005")):
-            # short quarantine: 20 s for our relay (it has its own failover), 90 s for third-party RPCs
-            q = 20 if idx == 0 else 90
+        name = type(err).__name__.lower()
+        # Quarantine used to cover rate limits ONLY. A node that is DOWN (connection refused, timeout, 4xx/5xx)
+        # was never benched, so every read walked into it and every broadcast waited for it: the Warsaw node
+        # took 55 s to fail a connect despite a 10 s timeout, and the sniper filled 0 of 27 buys in an hour.
+        dead = any(k in msg for k in ("connect call failed", "cannot connect", "connection refused", "errno 113", "errno 111",
+                                       "timed out", "timeout", "405", "403", "502", "503", "read-only", "method not allowed")) \
+            or name in ("clientconnectorerror", "timeouterror", "clientresponseerror", "serverdisconnectederror")
+        limited = any(k in msg for k in ("quota", "exceeded", "429", "too many", "rate limit", "-32600", "-32005"))
+        if dead or limited:
+            q = 120 if dead else (20 if idx == 0 else 90)
+            if self._down.get(idx, 0) <= time.time():
+                log.warning("RPC %s w kwarantannie %ss: %s", self.urls[idx].split("/")[2], q, str(err)[:120])
             self._down[idx] = time.time() + q
-            log.warning("RPC %s w kwarantannie %ss: %s", self.urls[idx].split("/")[2], q, str(err)[:120])
 
     def _alive(self) -> list[int]:
         now = time.time()
@@ -164,17 +172,30 @@ class Chain:
         async def _send(w3):
             return (await w3.eth.send_raw_transaction(signed_raw)).hex()
 
-        tasks = [asyncio.create_task(_send(w)) for w in self.w3s]
-        last_err = None
-        for fut in asyncio.as_completed(tasks):
+        # live endpoints only, each on a hard 6 s deadline; a node that fails here is benched for the next buy
+        alive = self._alive()
+
+        async def _tagged(i: int):
             try:
-                h = await fut
+                return i, await asyncio.wait_for(_send(self.w3s[i]), timeout=6.0), None
+            except Exception as e:  # noqa
+                return i, None, e
+
+        tasks = [asyncio.create_task(_tagged(i)) for i in alive]
+        errs: list[str] = []
+        for fut in asyncio.as_completed(tasks):
+            i, h, e = await fut
+            if e is None:
                 for t in tasks:
                     t.cancel()
                 return h
-            except Exception as e:  # noqa
-                last_err = e
-        raise last_err or RuntimeError("broadcast failed")
+            errs.append(f"{self.urls[i].split('/')[2]}: {str(e)[:80]}")
+            msg = str(e).lower()
+            # the node ANSWERED — about the tx or the wallet, not about itself. "already known" / "nonce too low" =
+            # another node took it first; "insufficient funds" / reverts = the user's state. None of these bench a node.
+            if not any(k in msg for k in ("already known", "nonce too low", "replacement", "insufficient funds", "revert", "gas required")):
+                self._mark_down(i, e)
+        raise RuntimeError("broadcast failed on every live RPC: " + " | ".join(errs))
 
     async def send(self, acct, tx: dict) -> str:
         signed = acct.sign_transaction(tx)

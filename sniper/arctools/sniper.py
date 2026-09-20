@@ -93,7 +93,9 @@ async def execute_buy(tg_id: int, token: str, pad: Pad, amount_usdc: float,
         from . import metrics
         t0 = time.monotonic()
         r = await _one_inner(wid)
-        if not r.get("user_error"):   # an empty wallet is the user's state, not the bot's health
+        err = str(r.get("err") or "").lower()
+        user_side = r.get("user_error") or any(k in err for k in ("insufficient funds", "insufficient balance", "have 0 want"))
+        if not user_side:   # an empty wallet is the user's state, not the bot's health
             metrics.record_buy(bool(r.get("ok")), time.monotonic() - t0)
         return r
 
