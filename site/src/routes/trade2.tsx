@@ -6,7 +6,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { ArcNav } from "@/components/arc-nav";
 import { DsRail } from "@/components/ds-rail";
 import { usePrefs } from "@/lib/i18n";
-import { holderRisk, listAllTokens, tokenLogos, xAvatar, type PadToken } from "@/lib/arc-api";
+import { holderRisk, listAllTokens, listFirstPaint, tokenLogos, type PadToken, xAvatar } from "@/lib/arc-api";
 import { rememberRows } from "@/lib/lite-cache";
 import { ARC_AGGREGATOR, connectWallet, encodeAggregatorSwap, ethCall, getStoredWallet, onWalletChange, p32, sendTx, waitReceipt } from "@/lib/arc-wallet";
 import { hasWallet, hotAddress, hotCall, hotSend, hotWait } from "@/lib/arc-hotwallet";
@@ -31,9 +31,24 @@ export const Route = createFileRoute("/trade2")({
     // never hold the HTML for a cold compute: whatever is ready within 1.5 s ships, the client fills the rest.
     // (a 20 s+ SSR here is what produced the "This page didn't load" screen when the Worker hit its limits)
     const within = <T,>(p: Promise<T>, ms: number, fb: T) => Promise.race([p.catch(() => fb), new Promise<T>((res) => setTimeout(() => res(fb), ms))]);
-    const rowsP = listAllTokens();
+    const rowsP = listFirstPaint();   // ~120 KB, not the 3 MB full list — the client fetches that after hydration
     const trendP = fetch(`${API}/api/trending?minutes=0&limit=400`, { signal: AbortSignal.timeout(8000) }).then((r) => r.json()).then((j) => (j.rows ?? []) as Trend[]);
-    const [rowsAll, trendAll] = await Promise.all([within(rowsP, 1500, [] as PadToken[]), within(trendP, 1500, [] as Trend[])]);
+    // the default tab is Trending and it reads `hot` (sort=trend, 24 h) — without this the first paint showed the
+    // all-time list and the table re-sorted itself 0.5 s later. Same for the risk column: it arrived as "…" and
+    // filled in row by row. Both are edge-cached now, so shipping them in the HTML costs the SSR ~nothing.
+    const hotP = fetch(`${API}/api/trending?minutes=1440&limit=200&sort=trend`, { signal: AbortSignal.timeout(8000) }).then((r) => r.json()).then((j) => (j.rows ?? []) as Trend[]);
+    const HOLD = 800;
+    const riskFrom = (list: Trend[]) => {
+      const page = list.slice(0, 50).map((t) => t.token.toLowerCase());
+      return page.length
+        ? fetch(`${API}/api/holder-risk?tokens=${page.join(",")}`, { signal: AbortSignal.timeout(4000) }).then((r) => r.json()).then((j) => (j.risk ?? {}) as Record<string, unknown>).catch(() => ({} as Record<string, unknown>))
+        : Promise.resolve({} as Record<string, unknown>);
+    };
+    const riskP = hotP.then(riskFrom).catch(() => ({} as Record<string, unknown>));
+    const [rowsAll, trendAll, hotAll, risk0] = await Promise.all([
+      within(rowsP, HOLD, [] as PadToken[]), within(trendP, HOLD, [] as Trend[]), within(hotP, HOLD, [] as Trend[]),
+      within(riskP, HOLD, {} as Record<string, unknown>),
+    ]);
     if (typeof window === "undefined") { try { const { keepAlive } = await import("@/lib/memo-kv"); keepAlive(rowsP.catch(() => null)); keepAlive(trendP.catch(() => null)); } catch { /* no runtime */ } }
     // ship only what the first paint needs (Trending top-120 + 80 newest for the New tabs): the full 7k-row list
     // (4 MB of HTML!) arrives from /api/tokens?full=1 right after hydration. Search / other tabs use that list.
@@ -44,7 +59,16 @@ export const Route = createFileRoute("/trade2")({
     for (const t of newest) keep.add(t.token.toLowerCase());
     keep.add("0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52");
     const rows = rowsAll.filter((t) => keep.has(t.token.toLowerCase()));
-    return { rows, trend, partial: rows.length < rowsAll.length };
+    for (const t of hotAll.slice(0, 60)) keep.add(t.token.toLowerCase());
+    // only the fields the first paint reads — the full records arrive with /api/tokens?lite=1 after hydration
+    const slim = (t: PadToken): PadToken => ({
+      token: t.token, symbol: t.symbol, name: t.name, pad: t.pad, logo: t.logo, createdAt: t.createdAt,
+      mcapUsd: t.mcapUsd, priceUsd: t.priceUsd, volUsd: t.volUsd, liqUsd: t.liqUsd, curve: t.curve,
+      twitter: t.twitter, telegram: t.telegram, website: t.website, stock: t.stock, og: t.og, quoteSymbol: t.quoteSymbol,
+    } as PadToken);
+    const slimT = (t: Trend): Trend => ({ token: t.token, symbol: t.symbol, txs: t.txs, vol: t.vol, buys: t.buys, sells: t.sells, traders: t.traders,
+      p1: t.p1, chg: t.chg, first_ts: t.first_ts, mcap: t.mcap, ath_mcap: t.ath_mcap, clone: (t as { clone?: boolean }).clone } as unknown as Trend);
+    return { rows: rowsAll.filter((t) => keep.has(t.token.toLowerCase())).map(slim), trend: trend.map(slimT), hot: hotAll.slice(0, 60).map(slimT), risk0, partial: true };
   },
   staleTime: 10_000,
   head: () => ({
@@ -305,7 +329,7 @@ function Trade() {
   const [rows, setRows] = useState<PadToken[]>(initial?.rows ?? []);
   const [movers, setMovers] = useState<Mover[]>([]);
   const [trend, setTrend] = useState<Trend[]>(initial?.trend ?? []);
-  const [hot, setHot] = useState<Trend[]>([]);
+  const [hot, setHot] = useState<Trend[]>((initial as { hot?: Trend[] } | undefined)?.hot ?? []);
   // ---- LIVE: every swap on Arc (≥ $1) arrives over SSE in 300 ms frames → the row's vol / txs / buys-sells / price / MC
   //      move the moment the block lands; toasts get the same feed via a window event. Polling stays as fallback.
   const [liveFeed, setLiveFeed] = useState(false);
@@ -358,9 +382,9 @@ function Trade() {
   const [favs, setFavs] = useState<Set<string>>(new Set());
   const [liq, setLiq] = useState<Map<string, number>>(new Map());
   const [logos, setLogos] = useState<Record<string, string>>({});
-  const [risk, setRisk] = useState<Record<string, Risk>>({});
+  const [risk, setRisk] = useState<Record<string, Risk>>(((initial as { risk0?: Record<string, Risk> } | undefined)?.risk0) ?? {});
   const riskMiss = useRef<Set<string>>(new Set());   // tokens the risk index has no data for (render "—", not "…")
-  const riskRef = useRef<Record<string, Risk>>({});   // latest risk map for the pollers (avoids stale closures)
+  const riskRef = useRef<Record<string, Risk>>(((initial as { risk0?: Record<string, Risk> } | undefined)?.risk0) ?? {});   // latest risk map for the pollers (avoids stale closures)
   const [, setRiskTick] = useState(0);
   useEffect(() => { const id = setInterval(() => { riskMiss.current.clear(); }, 300_000); return () => clearInterval(id); }, []);
   const [sortKey, setSortKey] = useState<"age" | "mcap" | "vol" | "txs" | "chg" | "smart">("vol");

@@ -2219,3 +2219,18 @@ export async function listFullTokens(): Promise<PadToken[]> {
 }
 export const listAllTokens = createServerFn({ method: "POST" })
   .handler((): Promise<PadToken[]> => memo("list:__all", 15_000, listAllTokensImpl, (v) => v.length > 50));
+
+/** The rows the Terminal's FIRST PAINT can show: the 300 newest launches plus every token with a cap or volume
+ *  in the top 400 by volume. ~120 KB instead of the 3 MB full list — a cold isolate spent ~0.25 s just reading
+ *  and parsing that JSON out of KV before it could render a single row. The full list still streams to the
+ *  client after hydration (/api/tokens?lite=1); search and the source chips read that one. */
+export const listFirstPaint = createServerFn({ method: "POST" })
+  .handler((): Promise<PadToken[]> => memo("list:__first", 15_000, async () => {
+    const all = await memo("list:__all", 15_000, listAllTokensImpl, (v) => v.length > 50);
+    const byTs = (t: PadToken) => (t.createdAt ? Date.parse(t.createdAt) : 0);
+    const newest = [...all].sort((a, b) => byTs(b) - byTs(a)).slice(0, 300);
+    const byVol = [...all].filter((t) => (t.volUsd ?? 0) > 0).sort((a, b) => (b.volUsd ?? 0) - (a.volUsd ?? 0)).slice(0, 400);
+    const seen = new Set<string>(); const out: PadToken[] = [];
+    for (const t of [...newest, ...byVol]) { const k = t.token.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push(t); } }
+    return out;
+  }, (v) => v.length > 20));
