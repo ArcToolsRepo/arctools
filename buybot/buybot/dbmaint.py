@@ -123,6 +123,11 @@ async def api(req):
                 return web.json_response({"error": f"not prunable: {table}"}, status=400)
             return web.json_response(await prune(table, max(3, min(180, int(req.query.get("days", "21")))),
                                                  max(1, min(60, int(req.query.get("batches", "10"))))))
+        if action == "truncate":
+            table = req.query.get("table", "")
+            if table not in PRUNABLE and table not in ("wallet_balance", "kol_following"):
+                return web.json_response({"error": "table not allowed"}, status=400)
+            return web.json_response(await truncate_empty(table))
         if action == "vacuum":
             table = req.query.get("table", "swaps")
             if table not in PRUNABLE and table not in ("v4_pools", "social_tokens", "token_symbols", "risk_cache", "wallet_balance"):
@@ -132,6 +137,28 @@ async def api(req):
         return web.json_response({"error": repr(e)[:400]}, status=500)
     return web.json_response({"error": "unknown action"}, status=400)
 
+
+
+async def truncate_empty(table: str) -> dict:
+    """Give the disk back for a table whose live rows are already gone.
+
+    VACUUM FULL rewrites the table, so it needs room for a second copy — exactly what a full volume cannot
+    give (it answered DiskFullError). TRUNCATE drops the file instead and needs no headroom at all, so it is
+    the only move left once the disk is full. Guarded: it refuses to run if the table still holds live rows.
+    """
+    live = await db.fetchone(text("""
+        SELECT COALESCE(n_live_tup, 0) AS n FROM pg_stat_user_tables WHERE relname = :t
+    """).bindparams(t=table))
+    n = int((live or {}).get("n") or 0)
+    if n > 0:
+        real = await db.fetchone(text(f"SELECT COUNT(*) AS n FROM {table}"))   # noqa: S608 - name is allow-listed
+        n = int(real["n"])
+    if n > 0:
+        return {"table": table, "refused": "table still holds rows", "rows": n}
+    before = await db.fetchone(text("SELECT pg_total_relation_size(:t) AS v").bindparams(t=table))
+    await db.execute(text(f"TRUNCATE TABLE {table}"))                          # noqa: S608 - name is allow-listed
+    after = await db.fetchone(text("SELECT pg_total_relation_size(:t) AS v").bindparams(t=table))
+    return {"table": table, "freed_mb": round((int(before["v"]) - int(after["v"])) / 1e6, 1)}
 
 async def _has_life() -> bool:
     try:
@@ -158,7 +185,7 @@ async def guard() -> dict:
     if pct < 78:
         return out
     await build_life()                       # never prune history that has not been summarised yet
-    for days in (30, 21, 14):
+    for days in (30, 21, 14, 10, 7):
         out[f"prune_{days}d"] = await prune("swaps", days, batches=20)
         r = await db.fetchone(text("SELECT pg_database_size(current_database()) AS v"))
         if int(r["v"]) / 1e6 / max(1, VOLUME_MB) * 100 < 70:
