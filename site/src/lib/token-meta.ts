@@ -46,6 +46,11 @@ export function peekMeta(tokens: string[]): Record<string, TokenMeta> {
 /** Fetch whatever is missing (batched, deduplicated) and resolve with everything known afterwards. */
 export async function loadMeta(tokens: string[]): Promise<Record<string, TokenMeta>> {
   const want = [...new Set(tokens.map((t) => t.toLowerCase()).filter((t) => /^0x[0-9a-f]{40}$/.test(t)))];
+  // SERVER: never. This cache is module-level, which protects a browser tab — but the Worker is dozens of
+  // isolates, each with an empty Map, and every SSR of the ticker (on EVERY page) asked the bot for the same
+  // eleven tokens: 60 identical requests a second, no User-Agent, and the index fell 75 s behind. The ticker
+  // renders without logos on the server; the browser fills them in after hydration through the real cache.
+  if (typeof window === "undefined") return peekMeta(want);
   const miss = want.filter((t) => !fresh(cache.get(t)));
   const waits: Promise<void>[] = [];
   const ask: string[] = [];

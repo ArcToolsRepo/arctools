@@ -817,7 +817,7 @@ export const tokenPage = createServerFn({ method: "POST" })
       const venueUrl = (!lp && venue !== "pad" && !longUrl && listVenue) ? listVenue : venueUrl0;
 
       // launchpad lists + descriptions collected by the buybot (Minara, RadarDex, Tolly …) — logo / socials fallback
-      const botMeta = await fetch(`https://bot-production-4200.up.railway.app/api/token-meta?tokens=${lc}`, { signal: AbortSignal.timeout(4000) })
+      const botMeta = await fetch(`https://bot-production-4200.up.railway.app/api/token-meta?tokens=${lc}`, { headers: { "user-agent": "arctools-site-ssr/1.0" }, signal: AbortSignal.timeout(4000) })
         .then((r) => r.json()).then((j: { meta?: Record<string, { logo: string | null; twitter: string | null; telegram: string | null; website: string | null }> }) => j.meta?.[lc] ?? null).catch(() => null);
       return {
         createdAt: typeof meta.deployTs === "number" ? new Date(Number(meta.deployTs) * 1000).toISOString() : null,
@@ -1848,9 +1848,11 @@ export const tokenLogos = createServerFn({ method: "POST" })
     try {
       const missingMeta = want.filter((t) => !out[t]);
       for (let i = 0; i < missingMeta.length; i += 40) {   // 40 addresses keeps the request line inside aiohttp's 8 KB limit
-        const chunk = missingMeta.slice(i, i + 40);
-        const j = (await fetch(`https://bot-production-4200.up.railway.app/api/token-meta?tokens=${chunk.join(",")}`, { signal: AbortSignal.timeout(8000) })
-          .then((r) => r.json())) as { meta?: Record<string, { logo?: string | null }> };
+        const chunk = missingMeta.slice(i, i + 40).sort();
+        const j = await memo(`logometa:${chunk.map((t) => t.slice(2, 10)).join("")}`, 300_000, async () =>
+          (await fetch(`https://bot-production-4200.up.railway.app/api/token-meta?tokens=${chunk.join(",")}`, { headers: { "user-agent": "arctools-site-ssr/1.0" }, signal: AbortSignal.timeout(8000) })
+            .then((r) => r.json())) as { meta?: Record<string, { logo?: string | null }> },
+          (v) => !!v && typeof v === "object");
         for (const [t, m] of Object.entries(j.meta ?? {})) {
           const u = ipfsToHttp(String(m?.logo ?? ""));
           if (u) out[t.toLowerCase()] = u;

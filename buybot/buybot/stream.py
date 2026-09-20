@@ -76,7 +76,11 @@ async def api_terminal_feed(request: web.Request) -> web.StreamResponse:
     })
     await resp.prepare(request)
     stats["clients"] += 1
+    t0 = time.time() - 12.0          # a frame refreshed in the last ~12 s may be newer than the client's HTML
     sent: dict[str, float] = {}
+    for w in wins:
+        for qs in (f"minutes={w}&limit=400", f"minutes={w}&limit=200&sort=trend"):
+            sent[qs] = t0
     try:
         await resp.write(b"retry: 3000\nevent: hello\ndata: " + json.dumps({"feed": "terminal", "ts": int(time.time())}).encode() + b"\n\n")
         while True:
