@@ -1355,3 +1355,9 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
   padding: 12px;
 }
 @media (width <= 900px) { .arc-dsp__start { grid-template-columns: minmax(0, 1fr); } }
+
+
+/* Terminal table cells. These were React inline styles: 45 style="" per row, 182 KB of the 330 KB row HTML,
+   repeated for every one of 50 rows on every render and diffed again on hydration. One class each. */
+.arc-td { border-top: 1px solid var(--arc-line); font-size: 12.5px; padding: 8px 6px 8px 0; vertical-align: middle; white-space: nowrap; }
+.arc-th { color: var(--arc-muted); font-size: 10px; font-weight: 400; padding: 0 8px 8px 0; text-align: left; text-transform: uppercase; white-space: nowrap; }
