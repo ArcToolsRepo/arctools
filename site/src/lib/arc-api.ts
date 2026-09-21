@@ -1467,7 +1467,11 @@ async function withLogos(list: PadToken[]): Promise<PadToken[]> {
 
 let _headBlock = 0;
 export function noteHeadBlock(b: number) { _headBlock = Math.max(_headBlock, b); }
-function headBlockGuess(): number { return _headBlock || 20_340_000 + Math.floor((Date.now() / 1000 - 1_789_000_000) / 0.63); }
+function headBlockGuess(): number {
+  // fallback only: anchored at block 22,031,651 @ 2026-09-21T15:30Z. The old anchor drifted 95k blocks (16.7 h) behind
+  // the chain, so every pool created in the last 16 h computed head − block < 0 → age "now": 580 "new" tokens at once.
+  return _headBlock || 22_031_651 + Math.floor((Date.now() / 1000 - 1_790_007_000) / 0.58);
+}
 const INSIDER_API = "https://bot-production-4200.up.railway.app";
 const V4_HOOK_PADS: Record<string, string> = {
   "0xa368005ad249fbebcd5baa7396c9e3b3e44e6044": "Arguspad",
@@ -1973,6 +1977,8 @@ async function healFromMemory(rows: PadToken[]): Promise<void> {
  *  Each source is itself memoized, so a refresh only recomputes what actually expired. */
 export const ALL_PADS = ["RadarDex", "ArcPad", "Warp", "Tolly", "UniswapV3", "Archemist", "UniswapV4", "Arguspad"] as const;
 export async function listAllTokensImpl(): Promise<PadToken[]> {
+  // the real chain head for block→time estimates below (one call; the guess formula is only the fallback)
+  try { const hb = Number(toNum((await rpc("eth_blockNumber", [])) as string)); if (hb > 0) noteHeadBlock(hb); } catch { /* fallback formula */ }
   const { padList } = await import("@/lib/arcpad");
   const [pad, ...rest] = await Promise.all([
     padList().then((ps) => ps.map((x) => ({ createdAt: x.createdAt ? new Date(x.createdAt * 1000).toISOString() : null, logo: x.image, mcapUsd: x.pricePer1M > 0 ? x.pricePer1M * 1000 : null, name: x.name, pad: "ArcToolsPad", pool: x.pool ?? null, priceUsd: x.pricePer1M > 0 ? x.pricePer1M / 1e6 : null, symbol: x.symbol, telegram: x.telegram, token: x.token, twitter: x.twitter, venueUrl: `/token/${x.token}`, volUsd: x.volumeUsdc, website: x.website,

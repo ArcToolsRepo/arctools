@@ -13,8 +13,8 @@ const More = lazy(() => import("./screens/More"));
 const Watch = lazy(() => import("./screens/Watch"));
 const Sub = lazy(() => import("./screens/Sub"));
 
-export const APP_VERSION_CODE = 10;
-export const APP_VERSION = "1.9";
+export const APP_VERSION_CODE = 11;
+export const APP_VERSION = "2.0";
 
 const TABS = [
   ["trending", "Trending", Icon.fire, "/"], ["watch", "Watch", Icon.star, "/watch"], ["swap", "Swap", Icon.swap, "/swap"],

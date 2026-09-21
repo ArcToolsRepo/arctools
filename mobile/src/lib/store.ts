@@ -84,7 +84,11 @@ export function applyTrendFrame(q: string, rows: Trend[]) {
 // ---- logos from the bot's meta (edge-cached) for rows the lite list left blank ----
 const logos = new Map<string, string | null>();
 const logoInflight = new Set<string>();
-export const getLogo = (ca: string) => tokens.get(ca.toLowerCase())?.logo ?? logos.get(ca.toLowerCase()) ?? null;
+/** logo URL usable from the app's own origin (https://localhost): the site hands out relative paths for images it
+ *  serves itself (/api/logo/…, /api/pad-logo/…) — 330 of them, every ArcToolsPad launch included — which resolved
+ *  against the WebView origin and 404'd into letter placeholders. */
+const absLogo = (u: string | null | undefined) => (u && u.startsWith("/") ? "https://arctools.fun" + u : u ?? null);
+export const getLogo = (ca: string) => absLogo(tokens.get(ca.toLowerCase())?.logo ?? logos.get(ca.toLowerCase()) ?? null);
 export async function loadLogos(cas: string[]) {
   const need = cas.map((c) => c.toLowerCase()).filter((c) => !tokens.get(c)?.logo && !logos.has(c) && !logoInflight.has(c)).slice(0, 40);
   if (!need.length) return;

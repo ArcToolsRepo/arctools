@@ -50,7 +50,7 @@ export function Logo({ ca, size = 44, src }: { ca: string; size?: number; src?: 
   const [err, setErr] = useState(false);
   return (
     <div className="logo" style={{ width: size, height: size, fontSize: size * 0.32 }}>
-      {(src || getLogo(ca)) && !err ? <img alt="" src={(src || getLogo(ca))!} onError={() => setErr(true)} loading="lazy" /> : sym.slice(0, 2)}
+      {(() => { const raw = src || getLogo(ca); const url = raw && raw.startsWith("/") ? "https://arctools.fun" + raw : raw; return url && !err ? <img alt="" src={url} onError={() => setErr(true)} loading="lazy" /> : sym.slice(0, 2); })()}
     </div>
   );
 }
