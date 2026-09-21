@@ -277,10 +277,16 @@ export const routeSwap = createServerFn({ method: "POST" })
     }
     if (venues.length === 0) return { legs: [], out: "0", single: [], split: false, error: "no venue" };
     const quotes = await Promise.all(venues.map((v) => quoteVenue(v, token, data.side, amount)));
+    // A V4 pool with a hook can take its own fee, block, or reroute inside the swap — quoteV4 models plain AMM maths
+    // and sees none of it. ARGUS: the hooked pool (128x less liquidity) quoted 0.4925, the plain pool 0.4852; the
+    // hook skimmed on execution and the sell reverted on slippage. Rank hooked pools at 95 % of their quote: when one
+    // still wins it wins by a real margin. The leg keeps its true quote for minOut.
+    const HOOKED = (v: Venue) => v.kind === "v4" && !/^0x0+$/.test((v.key.hooks ?? "0x0").toLowerCase());
+    const rankOut = (v: Venue, out: bigint) => (HOOKED(v) ? (out * 95n) / 100n : out);
     let ranked = venues
       .map((v, i) => ({ v, out: quotes[i] }))
       .filter((x): x is { v: Venue; out: bigint } => x.out !== null && x.out > 0n)
-      .sort((a, b) => (b.out > a.out ? 1 : b.out < a.out ? -1 : 0));
+      .sort((a, b) => { const ra = rankOut(a.v, a.out), rb = rankOut(b.v, b.out); return rb > ra ? 1 : rb < ra ? -1 : 0; });
     // A V4 quote that beats every non-V4 venue by more than 3x is not a bargain, it is a lie: quoteV4 prices off
     // sqrtPrice and does not see that the pool's liquidity sits in ticks the swap never reaches (TOLLY: 213 USDC
     // quoted on V4, 3.8 real on V3, execution returned 0). Nobody leaves a real 3x arbitrage open on a live market.
