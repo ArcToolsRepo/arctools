@@ -13,3 +13,6 @@ mobile/android/keystore.properties
 mobile/keys/
 *.jks
 *.keystore
+sniper/.openrouter_key
+.openrouter_key
+*.key
