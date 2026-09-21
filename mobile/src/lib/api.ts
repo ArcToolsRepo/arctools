@@ -57,6 +57,8 @@ export const api = {
     j<{ legs: unknown[]; out: string; single?: { label: string; out: string }[] }>(`${SITE}/api/swaproute?token=${token}&side=${side}&amount=${amount}`, 20_000),
   holdings: (wallet: string) => j<{ holdings: Holding[]; usdc: number; totals?: { tokens: number; equity: number; count: number } }>(`${BOT_DIRECT}/api/holdings?wallet=${wallet}`, 20_000),
   walletTrades: (wallet: string, limit = 50) => j<{ trades: Trade[] & { token: string; symbol?: string }[] }>(`${BOT_DIRECT}/api/wallet-trades?wallet=${wallet}&limit=${limit}`).then((r) => r.trades ?? []),
+  /** tokens several ranked insiders are buying right now — the Terminal's "Insider picks" tab */
+  insiderPicks: () => j<{ rows?: { token: string }[]; tokens?: { token: string }[] }>(`${BOT_API}/api/clusters?minutes=1440&n=2`).then((r) => (r.rows ?? r.tokens ?? []).map((x) => String(x.token).toLowerCase())),
   insiders: (limit = 100) => j<{ rows: Record<string, unknown>[] }>(`${BOT_API}/api/insiders?limit=${limit}`).then((r) => r.rows ?? []),
   alpha: () => j<{ rows: Record<string, unknown>[] }>(`${BOT_API}/api/alpha`).then((r) => r.rows ?? []),
   feed: (limit = 40) => j<{ rows: Record<string, unknown>[] }>(`${BOT_API}/api/feed?limit=${limit}`).then((r) => r.rows ?? []),

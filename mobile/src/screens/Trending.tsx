@@ -9,8 +9,8 @@ import { quickBuy } from "../lib/trade";
 import { BRAND, Header, Icon, Skeleton, TokenRow } from "../components/ui";
 import { BuySheet } from "../components/BuySheet";
 
-type Tab = "trending" | "new" | "top" | "gainers" | "watch";
-const TABS: [Tab, string][] = [["trending", "Trending"], ["new", "New"], ["top", "Volume"], ["gainers", "Gainers"], ["watch", "★"]];
+type Tab = "trending" | "all" | "new" | "new15" | "top" | "gainers" | "alpha" | "insiders" | "holdings" | "watch";
+const TABS: [Tab, string][] = [["trending", "Trending"], ["new", "New pairs"], ["new15", "New 15m"], ["all", "All"], ["top", "Top volume"], ["gainers", "Gainers"], ["alpha", "Alpha"], ["insiders", "Insider picks"], ["holdings", "Holdings"], ["watch", "★"]];
 
 export default function Trending() {
   const [tab, setTab] = useState<Tab>("trending");
@@ -22,6 +22,12 @@ export default function Trending() {
   const snapshot = useStore(useCallback(() => ({ o: orders(), n: allTokens().length, w: getWatch().size }), []));
   const prefs = useStore(getPrefs);
   const listRef = useRef<HTMLDivElement>(null);
+  const [alphaList, setAlpha] = useState<string[]>([]); const [insiderList, setInsiders] = useState<string[]>([]); const [holdingList, setHoldings] = useState<string[]>([]);
+  useEffect(() => {
+    if (tab === "alpha" && !alphaList.length) api.alpha().then((rows) => setAlpha(rows.map((r) => String(r.token).toLowerCase()))).catch(() => undefined);
+    if (tab === "insiders" && !insiderList.length) api.insiderPicks().then(setInsiders).catch(() => undefined);
+    if (tab === "holdings") { const a = HW.hotAddress(); if (a) api.holdings(a).then((r) => setHoldings((r.holdings ?? []).filter((h) => h.amount > 0).sort((x, y) => (y.valueUsdc ?? 0) - (x.valueUsdc ?? 0)).map((h) => h.token.toLowerCase()))).catch(() => undefined); }
+  }, [tab, alphaList.length, insiderList.length]);
 
   useEffect(() => { void loadTrending(); void loadList(); api.padcounts().then(setPads).catch(() => undefined); }, []);
   // push feed: trending frames arrive as the bot refreshes them; the poller is only the safety net
@@ -59,17 +65,24 @@ export default function Trending() {
       return [...cands].map((ca) => [ca, score(ca)] as const).filter(([, sc]) => sc < 9)
         .sort((a, b) => a[1] - b[1] || ((getHot(b[0]) ?? getTrend(b[0]))?.vol ?? 0) - ((getHot(a[0]) ?? getTrend(a[0]))?.vol ?? 0)).slice(0, 60).map(([ca]) => ca);
     }
+    const byAge = (a: string, b: string) => Date.parse(getToken(b)?.createdAt ?? "0") - Date.parse(getToken(a)?.createdAt ?? "0");
+    const now = Date.now();
     switch (tab) {
       case "trending": base = hot.length ? hot : trend; break;
-      case "new": base = [...all].sort((a, b) => Date.parse(getToken(b)?.createdAt ?? "0") - Date.parse(getToken(a)?.createdAt ?? "0")); break;
+      case "all": base = [...all].sort((a, b) => (getTrend(b)?.vol ?? getToken(b)?.volUsd ?? 0) - (getTrend(a)?.vol ?? getToken(a)?.volUsd ?? 0)); break;
+      case "new": base = [...all].sort(byAge); break;
+      case "new15": base = all.filter((ca) => { const c = getToken(ca)?.createdAt; return c && now - Date.parse(c) < 15 * 60_000; }).sort(byAge); break;
       case "top": base = [...trend].sort((a, b) => (getTrend(b)?.vol ?? 0) - (getTrend(a)?.vol ?? 0)); break;
       case "gainers": base = trend.filter((ca) => (getTrend(ca)?.chg ?? 0) > 0).sort((a, b) => (getTrend(b)?.chg ?? 0) - (getTrend(a)?.chg ?? 0)); break;
+      case "alpha": base = alphaList; break;
+      case "insiders": base = insiderList; break;
+      case "holdings": base = holdingList; break;
       case "watch": base = [...getWatch()]; break;
     }
     if (pad !== "all") base = base.filter((ca) => (getToken(ca)?.pad ?? "").toLowerCase() === pad.toLowerCase());
-    if (hide && tab !== "watch") base = base.filter((ca) => !clone(ca));
-    return base.slice(0, 150);
-  }, [snapshot, tab, pad, q]);
+    if (hide && tab !== "watch" && tab !== "holdings") base = base.filter((ca) => !clone(ca));
+    return base.slice(0, tab === "all" || tab === "new" ? 400 : 150);
+  }, [snapshot, tab, pad, q, alphaList, insiderList, holdingList]);
 
   useEffect(() => { void loadRisk(rows.slice(0, 40)); void loadLogos(rows.slice(0, 40)); }, [rows]);
 
@@ -105,7 +118,7 @@ export default function Trending() {
       </>}
       <div ref={listRef} onTouchStart={onTS} onTouchMove={onTM}>
         {pulling && <div className="empty" style={{ padding: 10 }}>refreshing…</div>}
-        {loading ? <Skeleton /> : rows.length === 0 ? <div className="empty">{tab === "watch" ? "Nothing on your watchlist yet. Tap ★ on a token." : q ? "No match. Paste a contract address to open any token." : "Nothing here right now."}</div>
+        {loading ? <Skeleton /> : rows.length === 0 ? <div className="empty">{tab === "watch" ? "Nothing on your watchlist yet. Tap ★ on a token." : tab === "holdings" ? (HW.hasWallet() ? "You hold no tokens yet." : "Create a wallet to see your holdings here.") : tab === "new15" ? "No launch in the last 15 minutes." : q ? "No match. Paste a contract address to open any token." : "Loading…"}</div>
           : rows.map((ca) => <TokenRow key={ca} ca={ca} onBuy={onBuy} onQuick={onQuick} />)}
       </div>
       <BuySheet ca={buyFor} onClose={() => setBuyFor(null)} />
