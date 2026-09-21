@@ -1,0 +1,137 @@
+import { useEffect, useRef, useState } from "react";
+import { createChart, ColorType, CandlestickSeries, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
+import { api, streamUrl, type Risk, type Sim, type Stats, type Trade } from "../lib/api";
+import { usd, num, pct, price, ago, short } from "../lib/fmt";
+import { go } from "../lib/router";
+import { getToken, getHot, getTrend, isWatched, loadRisk, getRisk, toggleWatch, toast, useStore } from "../lib/store";
+import { Header, Icon, Logo } from "../components/ui";
+import { BuySheet } from "../components/BuySheet";
+
+type TabK = "trades" | "holders" | "traders" | "dev" | "info";
+const TF = [["1m", "1m"], ["5m", "5m"], ["15m", "15m"], ["1h", "1h"], ["4h", "4h"]] as const;
+
+export default function Token({ ca }: { ca: string }) {
+  const t = getToken(ca); const tr = getHot(ca) ?? getTrend(ca);
+  const watched = useStore(() => isWatched(ca));
+  const rk = useStore(() => getRisk(ca));
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [sim, setSim] = useState<Sim | null>(null);
+  const [tab, setTab] = useState<TabK>("trades");
+  const [tf, setTf] = useState<(typeof TF)[number][0]>("5m");
+  const [meta, setMeta] = useState<Record<string, unknown> | null>(null);
+  const [holders, setHolders] = useState<unknown[] | null>(null);
+  const [traders, setTraders] = useState<Record<string, unknown> | null>(null);
+  const [sheet, setSheet] = useState<"buy" | "sell" | null>(null);
+  const chartBox = useRef<HTMLDivElement>(null); const chart = useRef<IChartApi | null>(null); const series = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const sym = t?.symbol || tr?.symbol || (meta?.symbol as string) || short(ca);
+
+  useEffect(() => {
+    void loadRisk([ca]);
+    api.stats(ca).then(setStats).catch(() => undefined);
+    api.trades(ca, 80).then(setTrades).catch(() => undefined);
+    api.sim(ca).then(setSim).catch(() => undefined);
+    api.tokenPage(ca).then(setMeta).catch(() => undefined);
+  }, [ca]);
+  useEffect(() => { if (tab === "holders" && holders == null) api.holders(ca).then(setHolders).catch(() => setHolders([])); if (tab === "traders" && traders == null) api.topTraders(ca).then(setTraders).catch(() => setTraders({})); }, [tab, ca, holders, traders]);
+
+  // chart
+  useEffect(() => {
+    if (!chartBox.current) return;
+    const c = createChart(chartBox.current, {
+      layout: { background: { type: ColorType.Solid, color: "#0a0c10" }, textColor: "#8b93a7", fontSize: 10 },
+      grid: { vertLines: { color: "rgba(255,255,255,0.04)" }, horzLines: { color: "rgba(255,255,255,0.04)" } },
+      rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+      crosshair: { mode: 0 }, handleScroll: true, handleScale: true, height: 240, width: chartBox.current.clientWidth,
+    });
+    const s = c.addSeries(CandlestickSeries, { upColor: "#22c55e", downColor: "#ef4444", borderVisible: false, wickUpColor: "#22c55e", wickDownColor: "#ef4444", priceFormat: { type: "price", precision: 8, minMove: 0.00000001 } });
+    chart.current = c; series.current = s;
+    const ro = new ResizeObserver(() => c.applyOptions({ width: chartBox.current?.clientWidth ?? 360 })); ro.observe(chartBox.current);
+    return () => { ro.disconnect(); c.remove(); chart.current = null; series.current = null; };
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    api.ohlc(ca, tf, 300).then((cs) => { if (!alive || !series.current) return; series.current.setData(cs.map((k) => ({ time: k.t as UTCTimestamp, open: k.o / 1e6, high: k.h / 1e6, low: k.l / 1e6, close: k.c / 1e6 }))); chart.current?.timeScale().fitContent(); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [ca, tf]);
+  // live trades
+  useEffect(() => {
+    let es: EventSource | null = null; let closed = false; let backoff = 1000; let lastBeat = Date.now();
+    const onTrade = (x: Trade) => { if (!(x.price1m > 0) || !(x.usdc > 0)) return; setTrades((p) => p.some((q) => q.tx === x.tx && q.ts === x.ts) ? p : [x, ...p].slice(0, 120)); setStats((s) => s ? { ...s, price1m: x.price1m } : s); };
+    const open = () => {
+      if (closed) return; es = new EventSource(streamUrl(ca)); const beat = () => { lastBeat = Date.now(); };
+      es.addEventListener("hello", beat); es.addEventListener("hb", beat);
+      es.addEventListener("trade", (e) => { beat(); try { onTrade(JSON.parse((e as MessageEvent).data)); } catch { /* */ } });
+      es.addEventListener("trades", (e) => { beat(); try { for (const x of JSON.parse((e as MessageEvent).data)) onTrade(x); } catch { /* */ } });
+      es.onerror = () => { es?.close(); es = null; if (!closed) setTimeout(open, backoff); backoff = Math.min(backoff * 2, 15_000); };
+    };
+    open();
+    const pulse = setInterval(() => { if (Date.now() - lastBeat > 40_000) { es?.close(); es = null; if (!closed) open(); } }, 5000);
+    const poll = setInterval(() => { api.trades(ca, 80).then(setTrades).catch(() => undefined); api.stats(ca).then(setStats).catch(() => undefined); }, 30_000);
+    return () => { closed = true; es?.close(); clearInterval(pulse); clearInterval(poll); };
+  }, [ca]);
+
+  const px = stats?.price1m ?? tr?.p1 ?? null; const mcap = stats?.mcap ?? tr?.mcap ?? t?.mcapUsd ?? null;
+  const buys = stats?.buys24 ?? tr?.buys ?? 0; const sells = stats?.sells24 ?? tr?.sells ?? 0; const bp = buys + sells ? Math.round(100 * buys / (buys + sells)) : 50;
+  const devNet = rk?.dev_net_usd ?? ((rk?.dev_sold_usd ?? 0) - (rk?.dev_bought_usd ?? 0));
+  const links = { x: (t?.twitter ?? meta?.twitter) as string | undefined, tg: (t?.telegram ?? meta?.telegram) as string | undefined, web: (t?.website ?? meta?.website) as string | undefined };
+
+  return (
+    <div className="has-tradebar">
+      <Header title={sym} back right={<>
+        <button className="icon-btn" onClick={() => { toggleWatch(ca); toast(watched ? "Removed from watchlist" : "Added to watchlist", "ok"); }} style={{ color: watched ? "var(--amber)" : undefined }}><Icon.star className="" /></button>
+        <button className="icon-btn" onClick={() => { navigator.clipboard?.writeText(ca); toast("Address copied", "ok"); }}><Icon.copy className="" /></button>
+      </>} />
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "4px 14px 10px" }}>
+        <Logo ca={ca} size={48} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}><b style={{ fontSize: 22 }} className="num">{price(px)}</b><span className={`num ${(tr?.chg ?? 0) >= 0 ? "up" : "down"}`} style={{ fontWeight: 700 }}>{pct(tr?.chg)}</span></div>
+          <div className="muted" style={{ fontSize: 12, display: "flex", gap: 8 }}>{t?.name && <span>{t.name}</span>}{t?.pad && <span>· {t.pad}</span>}<span className="mono">· {short(ca)}</span></div>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {links.x && <a className="icon-btn" href={`https://x.com/${String(links.x).replace(/^@/, "")}`} target="_blank" rel="noreferrer" style={{ fontWeight: 800 }}>𝕏</a>}
+          {links.tg && <a className="icon-btn" href={`https://t.me/${String(links.tg).replace(/^@/, "")}`} target="_blank" rel="noreferrer"><Icon.send className="" /></a>}
+          {links.web && <a className="icon-btn" href={String(links.web).startsWith("http") ? String(links.web) : `https://${links.web}`} target="_blank" rel="noreferrer"><Icon.external className="" /></a>}
+        </div>
+      </div>
+
+      <div className="tiles"><div className="tile"><small>MCAP</small><b className="amber">{usd(mcap)}</b></div><div className="tile"><small>LIQ</small><b>{usd(stats?.liq ?? t?.liqUsd ?? (meta?.liqUsd as number | undefined))}</b></div><div className="tile"><small>VOL 24H</small><b>{usd(stats?.vol24 ?? tr?.vol)}</b></div><div className="tile"><small>TRADERS</small><b>{num(stats?.traders24 ?? tr?.traders)}</b></div></div>
+
+      <div className="seg" style={{ paddingTop: 0 }}>{TF.map(([k, l]) => <button key={k} className={`chip ${tf === k ? "on" : ""}`} onClick={() => setTf(k)}>{l}</button>)}</div>
+      <div ref={chartBox} style={{ height: 240, margin: "0 6px" }} />
+
+      <div className="card" style={{ marginTop: 10, padding: "10px 14px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 6 }}><span className="up num">{buys} buys</span><span className="down num">{sells} sells</span></div>
+        <div style={{ height: 6, borderRadius: 3, background: "var(--down)", overflow: "hidden" }}><div style={{ width: `${bp}%`, height: "100%", background: "var(--up)" }} /></div>
+      </div>
+
+      {/* SAFETY — where DexScreener sells an ad, we put this */}
+      <div className="card" style={{ padding: "10px 14px" }}>
+        <div className="label" style={{ margin: "0 0 6px" }}>Safety</div>
+        <div className="kv" style={{ borderTop: 0 }}><span>Sell simulation</span><b className={sim?.verdict === "ok" ? "up" : sim?.verdict === "thin" ? "amber" : sim ? "down" : "muted"}>{!sim ? <span className="muted">checking…</span> : sim.verdict === "ok" ? "exit OK" : sim.verdict === "thin" ? `thin pool −${sim.loss_pct?.toFixed(0) ?? "?"}%` : sim.verdict === "trap" ? "⚠ CANNOT EXIT" : sim.verdict === "error" ? "—" : "no exit route"}</b></div>
+        <div className="kv"><span>Deployer holds</span><b className={rk?.dev_pct != null && rk.dev_pct >= 15 ? "down" : rk?.dev_pct != null && rk.dev_pct >= 5 ? "amber" : "up"}>{rk?.dev_pct != null ? `${rk.dev_pct.toFixed(1)}%` : "—"}</b></div>
+        <div className="kv"><span>Dev net 24h</span><b className={devNet > 50 ? "down" : devNet < -50 ? "up" : "muted"}>{rk && (rk.dev_sold_usd || rk.dev_bought_usd) ? `${devNet > 0 ? "−" : "+"}${usd(Math.abs(devNet))} (sold ${usd(rk.dev_sold_usd)}, bought ${usd(rk.dev_bought_usd)})` : "nothing"}</b></div>
+        <div className="kv"><span>Launch-block wallets</span><b className={rk?.bundle_pct != null && rk.bundle_pct >= 25 ? "down" : "muted"}>{rk?.bundle_pct != null ? `${rk.bundle_pct.toFixed(0)}% (${rk.bundlers ?? 0} wallets)` : "—"}</b></div>
+        <div className="kv"><span>Top-10 hold</span><b className={rk?.top10_pct != null && rk.top10_pct >= 50 ? "down" : "muted"}>{rk?.top10_pct != null ? `${rk.top10_pct.toFixed(0)}%` : "—"}</b></div>
+        {rk?.dev_rugs ? <div className="kv"><span>Deployer history</span><b className="down">{rk.dev_rugs} dumped of {rk.dev_launches ?? "?"} launches</b></div> : null}
+      </div>
+
+      <div className="seg">{(["trades", "holders", "traders", "dev", "info"] as TabK[]).map((k) => <button key={k} className={`chip ${tab === k ? "on" : ""}`} onClick={() => setTab(k)}>{k === "traders" ? "top traders" : k === "dev" ? "dev tokens" : k}</button>)}</div>
+      {tab === "trades" && (trades.length === 0 ? <div className="empty">No trades yet</div> : trades.slice(0, 60).map((x) => (
+        <div key={x.tx + x.ts} className="trade-row"><span className="muted num">{ago(x.ts)}</span><b className={x.side === "buy" ? "up" : "down"}>{x.side.toUpperCase()}</b><span className="num">{usd(x.usdc, 2)}</span><span className="num muted">{num(x.tokens)}</span><button className="mono muted" style={{ fontSize: 12 }} onClick={() => go(`/profile/${x.wallet}`)}>{short(x.wallet, 3)}</button></div>
+      )))}
+      {tab === "holders" && (holders == null ? <div className="empty">Loading…</div> : holders.length === 0 ? <div className="empty">No holder data</div> : (holders as { address?: string; holder?: string; balance?: { formatted?: string } | string; percentage?: number; share?: number }[]).slice(0, 50).map((h, i) => (
+        <div key={i} className="trade-row" style={{ gridTemplateColumns: "28px 1fr auto auto" }}><span className="muted num">{i + 1}</span><button className="mono" style={{ textAlign: "left", fontSize: 12.5 }} onClick={() => go(`/profile/${h.address ?? h.holder}`)}>{short(String(h.address ?? h.holder ?? ""), 5)}</button><span className="num">{typeof h.balance === "object" ? num(Number(h.balance?.formatted)) : num(Number(h.balance))}</span><b className="num">{h.percentage != null ? `${Number(h.percentage).toFixed(1)}%` : h.share != null ? `${(Number(h.share) * 100).toFixed(1)}%` : ""}</b></div>
+      )))}
+      {tab === "traders" && <pre className="muted" style={{ fontSize: 11, padding: 14, whiteSpace: "pre-wrap" }}>{traders ? JSON.stringify(traders, null, 1).slice(0, 2000) : "Loading…"}</pre>}
+      {tab === "dev" && <div className="empty">{rk?.dev_launches ? `Deployer launched ${rk.dev_launches} tokens, ${rk.dev_rugs ?? 0} dumped.` : "No deployer history."}</div>}
+      {tab === "info" && <div className="card"><div className="kv" style={{ borderTop: 0 }}><span>Contract</span><b className="mono" style={{ fontSize: 12 }}>{short(ca, 8)}</b></div><div className="kv"><span>Launchpad</span><b>{t?.pad ?? "—"}</b></div><div className="kv"><span>Created</span><b>{t?.createdAt ? ago(Date.parse(t.createdAt) / 1000) + " ago" : "—"}</b></div><div className="kv"><span>Supply</span><b className="num">{num(stats?.supply ?? tr?.supply)}</b></div><div className="kv"><span>ATH mcap</span><b>{usd(tr?.ath_mcap)}</b></div><a className="kv" href={`https://arc-scan.org/token/${ca}`} target="_blank" rel="noreferrer"><span>Explorer</span><b style={{ color: "var(--cobalt)" }}>arc-scan ↗</b></a></div>}
+
+      <div className="tradebar">
+        <button className="btn primary" onClick={() => setSheet("buy")}>Buy</button>
+        <button className="btn danger" onClick={() => setSheet("sell")}>Sell</button>
+      </div>
+      <BuySheet ca={sheet ? ca : null} side={sheet ?? "buy"} onClose={() => setSheet(null)} />
+    </div>
+  );
+}
