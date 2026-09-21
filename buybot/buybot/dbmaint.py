@@ -123,6 +123,34 @@ async def api(req):
                 return web.json_response({"error": f"not prunable: {table}"}, status=400)
             return web.json_response(await prune(table, max(3, min(180, int(req.query.get("days", "21")))),
                                                  max(1, min(60, int(req.query.get("batches", "10"))))))
+        if action == "sim-recheck-pad":
+            # every trap/thin/unrouted verdict on a token that lives on OUR launchpad (ArcPad v2/v3 curve) gets
+            # re-probed now with the reserve-aware router. The old probe scaled its sell up to the full balance and
+            # tripped v3.1's real-reserve rule on every fresh curve — our own launches wore CANNOT EXIT for days.
+            from . import simulate as _sim
+            import aiohttp as _ah
+            PADS = ("0x2726AeC64D8a9BC41B9940dDA5D21c889458B348", "0xE9354872cD3B6dB33B2c3a7d2E3D0F1A4E4dF1a5")
+            rows = await db.fetchall(text("SELECT token FROM token_sim WHERE verdict IN ('trap','thin','unrouted') ORDER BY ts DESC LIMIT :lim").bindparams(lim=int(req.query.get('limit') or 400)))
+            sel = "0x06d8d7db"  # curve(address)
+            on_pad: list[str] = []
+            async with _ah.ClientSession() as sess:
+                for r in rows:
+                    t = r["token"]
+                    for pad in PADS:
+                        body = {"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [{"to": pad, "data": sel + t[2:].rjust(64, "0")}, "latest"]}
+                        try:
+                            async with sess.post(_sim.NODE, json=body, timeout=_ah.ClientTimeout(total=8)) as rr:
+                                res = (await rr.json()).get("result") or "0x"
+                        except Exception:
+                            res = "0x"
+                        if len(res) >= 130 and int(res[66:130], 16) > 0:
+                            on_pad.append(t); break
+            changed = []
+            for t in on_pad:
+                r = await _sim.probe(t)
+                await _sim.save(r)
+                changed.append({"token": t, "verdict": r.get("verdict"), "detail": (r.get("detail") or "")[:60]})
+            return web.json_response({"ok": True, "flagged": len(rows), "on_pad": len(on_pad), "results": changed})
         if action == "resupply":
             # supply now excludes 0xdead/0x0 balances: drop stored supplies for tokens that traded recently so the
             # repair loop (and the next trending frame) refetches them with the new rule. ?hours=24 (default)

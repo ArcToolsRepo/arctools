@@ -1,9 +1,10 @@
+import { UpdateBanner } from "../components/UpdateBanner";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { tap } from "../lib/native";
 import { api, streamUrl, type Trend } from "../lib/api";
 import { isAddr } from "../lib/fmt";
 import { go } from "../lib/router";
-import { allTokens, applyTrendFrame, getPrefs, getToken, getTrend, getHot, getWatch, loadList, loadLogos, loadRisk, loadTrending, orders, setPrefs, useStore } from "../lib/store";
+import { allTokens, applyTrendFrame, getPrefs, getToken, getTrend, getHot, getWatch, loadList, loadLogos, loadRisk, loadTrending, orders, setPrefs, toast, useStore } from "../lib/store";
 import * as HW from "../lib/arc-hotwallet";
 import { quickBuy } from "../lib/trade";
 import { BRAND, Header, Icon, Skeleton, TokenRow } from "../components/ui";
@@ -29,7 +30,7 @@ export default function Trending() {
     if (tab === "holdings") { const a = HW.hotAddress(); if (a) api.holdings(a).then((r) => setHoldings((r.holdings ?? []).filter((h) => h.amount > 0).sort((x, y) => (y.valueUsdc ?? 0) - (x.valueUsdc ?? 0)).map((h) => h.token.toLowerCase()))).catch(() => undefined); }
   }, [tab, alphaList.length, insiderList.length]);
 
-  useEffect(() => { void loadTrending(); void loadList(); api.padcounts().then(setPads).catch(() => undefined); }, []);
+  useEffect(() => { void loadTrending(); void loadList(); api.padcounts().then((r) => setPads([...r].sort((x, y) => (x.pad === "ArcToolsPad" ? -1 : y.pad === "ArcToolsPad" ? 1 : 0)))).catch(() => undefined); }, []);
   // push feed: trending frames arrive as the bot refreshes them; the poller is only the safety net
   useEffect(() => {
     let es: EventSource | null = null; let closed = false; let backoff = 2000; let lastBeat = Date.now(); let lastFrame = 0;
@@ -108,6 +109,7 @@ export default function Trending() {
   return (
     <>
       <Header title={BRAND} right={<>
+      <UpdateBanner />
         <div className="amts" title="quick-buy amount">{prefs.presets.map((p) => <button key={p} className={prefs.quickBuy === p ? "on" : ""} onClick={() => setPrefs({ quickBuy: p })}>{p}</button>)}</div>
         <span className="pill" style={{ color: live ? "var(--up)" : "var(--dim)" }}>●</span>
         <button className="icon-btn" onClick={() => { setSearching((s) => !s); setQ(""); }}><Icon.search className="" /></button>
@@ -115,9 +117,13 @@ export default function Trending() {
       {searching && <div style={{ padding: "0 14px 8px" }}><div className="field"><Icon.search className="" /><input type="search" placeholder="name, symbol or 0x address" value={q} onChange={(e) => setQ(e.target.value)} autoCapitalize="none" autoCorrect="off" enterKeyHint="search" ref={(el) => { if (el && searching && !q) setTimeout(() => el.focus(), 50); }} /><button className="pill" onClick={() => { setSearching(false); setQ(""); }}>✕</button></div></div>}
       {!q && <>
         <div className="seg">{TABS.map(([k, l]) => <button key={k} className={`chip ${tab === k ? "on" : ""}`} onClick={() => setTab(k)}>{l}{k === "watch" && snapshot.w ? ` ${snapshot.w}` : ""}</button>)}</div>
-        <div className="seg" style={{ paddingTop: 0 }}>
-          <button className={`chip ${pad === "all" ? "on" : ""}`} onClick={() => setPad("all")}>All pads</button>
-          {pads.slice(0, 24).map((p) => <button key={p.pad} className={`chip ${pad === p.pad ? "on" : ""}`} onClick={() => setPad(pad === p.pad ? "all" : p.pad)}>{p.logo && <img alt="" src={p.logo} />}{p.label ?? p.pad}</button>)}
+        <div className="padrow">
+          <small className="padrow__lbl">Launchpads</small>
+          <div className="seg" style={{ padding: "0 14px 8px" }}>
+          <button className={`chip ${pad === "all" ? "on" : ""}`} onClick={() => setPad("all")}>All</button>
+          {pads.length === 0 && <button className="chip" onClick={() => api.padcounts().then(setPads).catch(() => toast("Launchpads did not load — tap to retry", "err"))}>Load launchpads…</button>}
+          {pads.slice(0, 24).map((p) => <button key={p.pad} className={`chip ${pad === p.pad ? "on" : ""}`} onClick={() => setPad(pad === p.pad ? "all" : p.pad)}>{p.logo && <img alt="" src={p.logo} />}{p.label ?? p.pad}<span className="chip__n">{p.n >= 1000 ? `${(p.n / 1000).toFixed(1)}k` : p.n}</span></button>)}
+          </div>
         </div>
       </>}
       <div ref={listRef} onTouchStart={onTS} onTouchMove={onTM}>

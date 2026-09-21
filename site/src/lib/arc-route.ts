@@ -253,12 +253,15 @@ async function quoteVenue(v: Venue, token: string, side: "buy" | "sell", amount:
 
 /** Fresh curve state for a v3 pad token: (Q, T, real = Q − virtualQuote). Never memoised — a sell cap computed on a
  *  5-minute-old reserve is wrong the moment anyone trades. */
-export async function padCurveState(token: string): Promise<{ Q: bigint; T: bigint; real: bigint } | null> {
-  const [c3, l3] = await Promise.all([call(PAD_V3, SEL.curve + p32(token)), call(PAD_V3, SEL.launch + p32(token))]);
+export async function padCurveState(token: string): Promise<{ Q: bigint; T: bigint; real: bigint; taxBps: bigint } | null> {
+  const [c3, l3, m3] = await Promise.all([call(PAD_V3, SEL.curve + p32(token)), call(PAD_V3, SEL.launch + p32(token)), call(PAD_V3, "0xe021deff" + p32(token))]);
   if (!c3 || c3.length < 130 || !l3 || l3.length < 2 + 64 * 5) return null;
   const Q = BigInt("0x" + c3.slice(2, 66)), T = BigInt("0x" + c3.slice(66, 130));
   const virt = BigInt("0x" + l3.slice(2 + 64 * 4, 2 + 64 * 5));
-  return { Q, T, real: Q > virt ? Q - virt : 0n };
+  // meta(token): token, creator, mktWallet, marketingBps, rewardsBps, burnBps, … — marketing + rewards are taken from
+  // the USDC that enters the curve on a buy (burn is taken in tokens)
+  const w = (i: number) => (m3 && m3.length >= 2 + 64 * (i + 1) ? BigInt("0x" + m3.slice(2 + 64 * i, 2 + 64 * (i + 1))) : 0n);
+  return { Q, T, real: Q > virt ? Q - virt : 0n, taxBps: w(3) + w(4) };
 }
 
 /** ArcPad v3.1 reverts a sell with "liquidity" when the curve payout would exceed the REAL reserve (Q − virtual):
@@ -311,7 +314,8 @@ export const routeSwap = createServerFn({ method: "POST" })
       const st = await padCurveState(token);
       if (st) {
         // after the probe's buy: Q grows by the net USDC, T shrinks by the tokens bought (= the amount now being sold)
-        const add = (afterBuy * 99n) / 100n; const T = afterBuy > 0n && st.T > amount ? st.T - amount : st.T;
+        // net USDC that reached the curve: minus the 1 % platform fee, minus the creator's marketing/rewards taxes
+        const add = (((afterBuy * 99n) / 100n) * (10_000n - st.taxBps)) / 10_000n; const T = afterBuy > 0n && st.T > amount ? st.T - amount : st.T;
         const cur = { Q: st.Q + add, T, real: st.real + add };
         venues = venues.map((v) => (v.kind === "pad" && v.target === PAD_V3 ? { ...v, curve: cur } : v));
       }

@@ -1,3 +1,4 @@
+import { checkUpdate } from "./lib/update";
 import React, { lazy, Suspense, useEffect } from "react";
 import { go, tabOf, useRoute } from "./lib/router";
 import { loadList, loadTrending } from "./lib/store";
@@ -12,8 +13,8 @@ const More = lazy(() => import("./screens/More"));
 const Watch = lazy(() => import("./screens/Watch"));
 const Sub = lazy(() => import("./screens/Sub"));
 
-export const APP_VERSION_CODE = 8;
-export const APP_VERSION = "1.7";
+export const APP_VERSION_CODE = 9;
+export const APP_VERSION = "1.8";
 
 const TABS = [
   ["trending", "Trending", Icon.fire, "/"], ["watch", "Watch", Icon.star, "/watch"], ["swap", "Swap", Icon.swap, "/swap"],
@@ -26,16 +27,8 @@ export default function App() {
   // status bar + hardware back (no-ops in a browser)
   useEffect(() => { void initNative(() => { if (location.hash && location.hash !== "#/") { history.back(); return true; } return false; }); }, []);
   useEffect(() => { window.scrollTo(0, 0); }, [r]);
-  // no store = nobody updates the app for you: check the site's manifest once per launch and offer the download
-  useEffect(() => {
-    fetch("https://arctools.fun/assets/app/manifest.json", { cache: "no-store" }).then((x) => x.json()).then((m: { versionCode?: number; version?: string; file?: string }) => {
-      if ((m.versionCode ?? 0) > APP_VERSION_CODE) {
-        const el = document.createElement("div"); el.className = "toasts"; el.style.pointerEvents = "auto";
-        el.innerHTML = `<div class="toast ok">ArcTools ${m.version} is out. <a href="https://arctools.fun/assets/app/${m.file}" style="color:var(--up);font-weight:700">Download</a></div>`;
-        document.body.appendChild(el); setTimeout(() => el.remove(), 12_000);
-      }
-    }).catch(() => undefined);
-  }, []);
+  // updates: src/lib/update.ts + <UpdateBanner/> (Trending, Settings) — in-app download + installer, no browser
+  useEffect(() => { void checkUpdate(); const id = setInterval(() => void checkUpdate(), 60 * 60_000); return () => clearInterval(id); }, []);
 
   let screen: React.ReactElement;
   switch (r.name) {
