@@ -485,6 +485,14 @@ function TokenPage() {
     } catch { /* ignore */ }
   }, [ca, dec, quoteTok, hot]);
   useEffect(() => { void refreshBalances(wallet); }, [hot, refreshBalances, wallet]);
+  // balances change without this tab knowing (Telegram sniper auto-snipe on the same key, another tab, a transfer in):
+  // a user saw "HOLDING 0" on a token the bot had just bought for him. Refresh every 20 s and whenever the tab regains focus.
+  useEffect(() => {
+    const id = setInterval(() => { if (document.visibilityState === "visible") void refreshBalances(wallet); }, 20_000);
+    const onVis = () => { if (document.visibilityState === "visible") void refreshBalances(wallet); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
+  }, [refreshBalances, wallet]);
   useEffect(() => {
     let saved: string | null = null;
     try { saved = localStorage.getItem("arctools_wallet"); } catch { /* ignore */ }

@@ -360,7 +360,9 @@ export async function nativeBalance(addr: string): Promise<number> {
 
 export async function tokenBalance(token: string, addr: string): Promise<bigint> {
   const r = await ethCall(token, FN.balanceOf + p32(addr));
-  return r && r !== "0x" ? BigInt(r) : 0n;
+  // an empty answer is an RPC failure, not a zero balance — callers must not render "0" for it
+  if (!r || r === "0x") throw new Error("balanceOf: no answer");
+  return BigInt(r);
 }
 
 export const fmt = (n: number, d = 2) =>

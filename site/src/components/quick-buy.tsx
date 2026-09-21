@@ -21,7 +21,7 @@ export function QuickBuy({ token, symbol, compact = false }: { token: string; sy
   const [amt, setAmt] = useState(5);
   useEffect(() => {
     setReady(isUnlocked()); setAmt(quickAmount());
-    return onHotChange(() => setReady(isUnlocked()));
+    const off = onHotChange(() => setReady(isUnlocked())); return () => { off(); };
   }, []);
   const run = async (e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
