@@ -18,7 +18,7 @@ const FIREHOSE = "https://bot-production-4200.up.railway.app/api/stream";   // e
 const hexStr = (r: string | null | undefined) => (r && r !== "0x" ? BigInt(r) : 0n);
 
 // ====================================================================== LAUNCH
-export function Launch() {
+export function LaunchLegacy() {
   const [, tick] = useState(0); useEffect(() => { const off = HW.onHotChange(() => tick((n) => n + 1)); return () => { off(); }; }, []);
   const [mode, setMode] = useState<"curve" | "instant">("curve");
   const [f, setF] = useState({ name: "", symbol: "", website: "", twitter: "", telegram: "", target: "5000", seed: "50", marketing: "0", rewards: "0", burn: "0" });

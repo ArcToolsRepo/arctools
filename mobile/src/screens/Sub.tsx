@@ -9,7 +9,8 @@ import { go, type Route } from "../lib/router";
 import { getPrefs, setPrefs, toast, useStore, getWatch, loadRisk, getRisk } from "../lib/store";
 import { Header, Icon, Logo } from "../components/ui";
 import Archy from "./Archy";
-import { Launch, Pay as PayNative, Referrals as RefNative, Bridge as BridgeNative, Trades, Traders } from "./Native";
+import { Launch } from "./Launch";
+import { Pay as PayNative, Referrals as RefNative, Bridge as BridgeNative, Trades, Traders } from "./Native";
 import { openUrl, buzzOk } from "../lib/native";
 import { Unlock } from "./Wallet";
 
@@ -199,7 +200,7 @@ function Settings() {
         <div className="kv" style={{ borderTop: 0 }}><span>Hide clone farms</span><button className={`pill ${prefs.hideClones ? "green" : ""}`} onClick={() => setPrefs({ hideClones: !prefs.hideClones })}>{prefs.hideClones ? "on" : "off"}</button></div>
       </div>
       <div className="label">About</div>
-      <div className="card muted" style={{ fontSize: 12.5 }}>ArcOne v1.6 · powered by ArcTools · arctools.fun · Fees fund ARCT buybacks that burn in the same transaction. Your key never leaves this phone. Internal review only — no third-party audit.</div>
+      <div className="card muted" style={{ fontSize: 12.5 }}>ArcOne v1.7 · powered by ArcTools · arctools.fun · Fees fund ARCT buybacks that burn in the same transaction. Your key never leaves this phone. Internal review only — no third-party audit.</div>
     </>
   );
 }

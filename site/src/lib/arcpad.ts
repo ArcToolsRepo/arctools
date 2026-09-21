@@ -73,12 +73,18 @@ const VIRTUAL = 3000;
 // tokeny testowe z deployu v3.1 (INST0/INST1) — istnieja on-chain, ale nie pokazujemy ich w listach
 const HIDDEN_TOKENS = new Set(["0x15ec9b3df7d76f82029ea88034164b2ee74d5794", "0x49a8aca95c27550fc9f1e1b00ab4dcaa9fb095b5"]);
 
+let described = false;
 async function ensureTable() {
   const db = bindings().DB;
   if (!db) return null;
   await db.exec(
     "CREATE TABLE IF NOT EXISTS pad_meta (token TEXT PRIMARY KEY, name TEXT, symbol TEXT, website TEXT, twitter TEXT, telegram TEXT, image TEXT, creator TEXT, created_at INTEGER)",
   );
+  if (!described) {
+    // description arrived later (ArcOne launch form); ALTER fails once the column exists, which is fine
+    try { await db.exec("ALTER TABLE pad_meta ADD COLUMN description TEXT"); } catch { /* already there */ }
+    described = true;
+  }
   return db;
 }
 
@@ -296,6 +302,7 @@ export const padMetaSet = createServerFn({ method: "POST" })
       telegram?: string;
       image?: string;
       creator?: string;
+      description?: string;
     }) => input,
   )
   .handler(async ({ data }) => {
@@ -330,9 +337,10 @@ export const padMetaSet = createServerFn({ method: "POST" })
       if (!db) return { ok: false, reason: "storage offline" };
       await db
         .prepare(
-          "INSERT INTO pad_meta (token,name,symbol,website,twitter,telegram,image,creator,created_at) VALUES (?,?,?,?,?,?,?,?,?) " +
+          "INSERT INTO pad_meta (token,name,symbol,website,twitter,telegram,image,creator,created_at,description) VALUES (?,?,?,?,?,?,?,?,?,?) " +
             "ON CONFLICT(token) DO UPDATE SET website=excluded.website, twitter=excluded.twitter, telegram=excluded.telegram, " +
-            "image=CASE WHEN excluded.image != '' THEN excluded.image ELSE pad_meta.image END",
+            "image=CASE WHEN excluded.image != '' THEN excluded.image ELSE pad_meta.image END, " +
+            "description=CASE WHEN excluded.description != '' THEN excluded.description ELSE pad_meta.description END",
         )
         .bind(
           token,
@@ -345,6 +353,7 @@ export const padMetaSet = createServerFn({ method: "POST" })
           img,
           clean(data.creator).toLowerCase(),
           Math.floor(Date.now() / 1000),
+          (data.description ?? "").slice(0, 280),
         )
         .run();
       return { ok: true };

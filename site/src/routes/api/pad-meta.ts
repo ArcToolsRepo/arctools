@@ -10,7 +10,7 @@ export const Route = createFileRoute("/api/pad-meta")({
       POST: async ({ request }) => {
         let body: Record<string, string>;
         try { body = (await request.json()) as Record<string, string>; } catch { return Response.json({ ok: false, reason: "bad json" }, { status: 400 }); }
-        const r = await padMetaSet({ data: { token: body.token ?? "", name: body.name ?? "", symbol: body.symbol ?? "", website: body.website, twitter: body.twitter, telegram: body.telegram, image: body.image, creator: body.creator } });
+        const r = await padMetaSet({ data: { token: body.token ?? "", name: body.name ?? "", symbol: body.symbol ?? "", website: body.website, twitter: body.twitter, telegram: body.telegram, image: body.image, creator: body.creator, description: body.description } });
         return Response.json(r, { headers: { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" } });
       },
     },
