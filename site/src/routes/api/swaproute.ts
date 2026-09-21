@@ -11,8 +11,9 @@ export const Route = createFileRoute("/api/swaproute")({
         const token = (u.searchParams.get("token") ?? "").toLowerCase();
         const side = u.searchParams.get("side") === "sell" ? "sell" : "buy";
         const amount = u.searchParams.get("amount") ?? "1000000000000000000";
+        const afterBuy = u.searchParams.get("afterBuy") ?? undefined;
         if (!/^0x[0-9a-f]{40}$/.test(token)) return Response.json({ error: "token" }, { status: 400 });
-        const r = await routeSwap({ data: { token, side, amount } });
+        const r = await routeSwap({ data: { token, side, amount, afterBuy } });
         return Response.json(r, { headers: { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" } });
       },
     },

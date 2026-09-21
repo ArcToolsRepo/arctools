@@ -555,7 +555,10 @@ function Trade() {
     const t = byToken.get(k); const tr = trendMap.get(k); const c = clusterMap.get(k);
     // the explorer's mint time wins over our own first sighting, which only dates the token from the day we saw it
     const born = birthdays.get(k);
-    const createdTs = born ?? (t?.createdAt ? new Date(t.createdAt).getTime() / 1000 : tr?.first_ts ?? null);
+    // a token cannot be younger than its first swap we indexed: the explorer's mint lookup is paginated and sometimes
+    // returns a later transfer as "oldest" (an ARGUS clone read 5.0 d deployed vs 5.5 d first traded). Oldest date wins.
+    const seenTs = t?.createdAt ? new Date(t.createdAt).getTime() / 1000 : tr?.first_ts ?? null;
+    const createdTs = born != null && seenTs != null ? Math.min(born, seenTs) : born ?? seenTs;
     return {
       token: k, symbol: tr?.symbol ?? t?.symbol ?? short(k), name: t?.name ?? tr?.symbol ?? "", logo: t?.logo ?? logos[k] ?? xAvatar(t?.twitter) ?? null, pad: t?.pad ?? "", og: !!t?.og, stock: !!t?.stock, quoteSymbol: t?.quoteSymbol ?? null, dexes: t?.dexes ?? [],
       age: createdTs, ca: k, mcap: finN(t?.stock ? (t?.mcapUsd ?? tr?.mcap) : (tr?.mcap ?? t?.mcapUsd)), chg: Number.isFinite(Number(tr?.chg)) ? tr?.chg ?? null : null, athMcap: finN(tr?.ath_mcap),

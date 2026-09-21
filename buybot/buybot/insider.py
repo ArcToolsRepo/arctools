@@ -919,8 +919,15 @@ SUPPLY_RPCS = [RELAY_RPC, "https://rpc.arc-scan.org"]   # sharc.fun is a parking
 
 async def _total_supply_fetch(token: str) -> float | None:
     """totalSupply + decimals in one batch call; relay → sharc → arc-scan until one answers."""
+    # Effective supply = totalSupply − balance(0xdead) − balance(0x0). Many launchpads "burn" by transferring to
+    # 0xdead, which leaves totalSupply untouched: FAMILY showed a $1.57M cap on a $50K token because 95.8 % of it
+    # sat at 0xdead. DexScreener and CMC both subtract dead balances; so do we now.
+    dead = "0x70a08231" + "dead".rjust(64, "0")
+    zero = "0x70a08231" + "0" * 64
     body = [{"id": 1, "jsonrpc": "2.0", "method": "eth_call", "params": [{"data": "0x18160ddd", "to": token}, "latest"]},
-            {"id": 2, "jsonrpc": "2.0", "method": "eth_call", "params": [{"data": "0x313ce567", "to": token}, "latest"]}]
+            {"id": 2, "jsonrpc": "2.0", "method": "eth_call", "params": [{"data": "0x313ce567", "to": token}, "latest"]},
+            {"id": 3, "jsonrpc": "2.0", "method": "eth_call", "params": [{"data": dead, "to": token}, "latest"]},
+            {"id": 4, "jsonrpc": "2.0", "method": "eth_call", "params": [{"data": zero, "to": token}, "latest"]}]
     for url in SUPPLY_RPCS:
         try:
             async with _aiohttp.ClientSession() as s:
@@ -934,7 +941,13 @@ async def _total_supply_fetch(token: str) -> float | None:
                 continue
             dec_raw = res.get(2)
             dec = int(dec_raw, 16) if dec_raw and dec_raw != "0x" and int(dec_raw, 16) <= 36 else 18
-            sup = int(raw, 16) / 10 ** dec
+            total = int(raw, 16)
+            burned = 0
+            for k in (3, 4):
+                v = res.get(k)
+                if v and v != "0x" and len(v) <= 66:
+                    burned += int(v, 16)
+            sup = max(total - burned, 0) / 10 ** dec
             if sup <= 0:
                 continue
             _supply_cache[token] = (sup, time.time())
@@ -2611,6 +2624,7 @@ async def _api_token_stats_impl(request: web.Request) -> web.Response:
 
     def chg(p):
         return ((last - p) / p * 100) if (last and p and p > 0) else None
+    sup = await _total_supply(token)
 
     return web.json_response({
         "token": token,
@@ -2620,6 +2634,8 @@ async def _api_token_stats_impl(request: web.Request) -> web.Response:
         "sells24": int(row["sells24"] or 0), "traders24": int(row["traders24"] or 0),
         "txns_all": int(row["txns_all"] or 0), "vol_all": float(row["vol_all"] or 0),
         "first_ts": int(row["first_ts"] or 0),
+        # effective supply (totalSupply − 0xdead − 0x0) and the cap from it — the token page used a hard-coded 1e9
+        "supply": sup, "mcap": (last / 1e6 * sup) if (last and sup) else None,
     }, headers=API_CORS)
 
 

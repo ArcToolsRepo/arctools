@@ -123,6 +123,15 @@ async def api(req):
                 return web.json_response({"error": f"not prunable: {table}"}, status=400)
             return web.json_response(await prune(table, max(3, min(180, int(req.query.get("days", "21")))),
                                                  max(1, min(60, int(req.query.get("batches", "10"))))))
+        if action == "resupply":
+            # supply now excludes 0xdead/0x0 balances: drop stored supplies for tokens that traded recently so the
+            # repair loop (and the next trending frame) refetches them with the new rule. ?hours=24 (default)
+            hours = int(req.query.get("hours") or 24)
+            r = await db.execute(text("DELETE FROM token_supply WHERE token IN (SELECT DISTINCT token FROM swaps WHERE ts > :s)").bindparams(s=int(time.time()) - hours * 3600))
+            from . import insider as _ins
+            _ins._supply_cache.clear()
+            n = getattr(r, "rowcount", None)
+            return web.json_response({"ok": True, "cleared": n, "hours": hours})
         if action == "export-pools":
             # every token we know with every pool we have seen for it: V3 (insider_pools), V4 (v4_pools), plus the
             # pad/venue routing from social_tokens/token_symbols. One CSV; the owner slices it himself.

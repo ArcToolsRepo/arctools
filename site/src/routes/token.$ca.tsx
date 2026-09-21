@@ -715,13 +715,16 @@ function TokenPage() {
   };
   const lastP1m = (!ownThin ? stats?.price1m : null) ?? vs?.price1m ?? info?.price1m ?? stats?.price1m ?? null;
   const price = priceFromP1m(lastP1m);
-  const mcap = info && lastP1m !== null ? (lastP1m / 1e6) * info.supply : (vs?.mcap ?? info?.mcapUsd ?? null);
+  // supply: the index's effective supply (totalSupply − 0xdead − 0x0) beats the 1e9 placeholder in `info` — FAMILY had
+  // 95.8 % of its supply at 0xdead and showed a $1.57M cap on a $50K token
+  const effSupply = (vs as { supply?: number } | null)?.supply || (stats as { supply?: number } | null)?.supply || info?.supply || null;
+  const mcap = info && lastP1m !== null && effSupply ? (lastP1m / 1e6) * effSupply : (vs?.mcap ?? info?.mcapUsd ?? null);
   const liquidity = info?.liquidityUsdc && info.liquidityUsdc > 0 ? info.liquidityUsdc : (vs?.liquidityUsdc ?? info?.liquidityUsdc ?? null);
   // arc-scan zwraca max 50 wierszy (rozmiar strony), screener ma prawdziwy licznik — bierzemy najwiekszy
   const holderCount = Math.max(holders?.count ?? 0, vs?.holders ?? 0, info?.holders ?? 0) || null;
   // MCap mode needs a supply; a brand-new token may not have one yet → derive it from mcap/price, else fall back to price
   // mode instead of drawing a flat-zero (blank) chart
-  const supplyForChart = info?.supply || (info?.mcapUsd && info?.price1m ? info.mcapUsd / (info.price1m / 1e6) : null);
+  const supplyForChart = effSupply || (info?.mcapUsd && info?.price1m ? info.mcapUsd / (info.price1m / 1e6) : null);
   const scale = useMemo(() => (mode === "mcap" && supplyForChart ? supplyForChart / 1e6 : 1e-6), [mode, supplyForChart]);
   const effMode: "price" | "mcap" = mode === "mcap" && supplyForChart ? "mcap" : "price";
   const buys = eff.buys24;

@@ -33,18 +33,23 @@ contract ArcSim {
         if (bought == 0) return (1, 0, 0, 0);
 
         // a token can also lie in the other direction: report a balance it will not let you move
-        sellable = bought;
 
         Leg[] memory legs = new Leg[](sellLegs.length);
         uint256 total;
         for (uint256 i; i < sellLegs.length; i++) total += sellLegs[i].amount;
+        // The router may deliberately plan to sell LESS than the whole position: an ArcPad v3.1 curve reverts a
+        // sell whose payout exceeds its real USDC reserve, so the router caps the amount to what the curve can pay.
+        // Scaling that plan back up to `bought` re-created the revert and flagged our own launchpad's tokens as
+        // honeypots. Sell what the router planned (capped at the balance); the remainder counts as unsold.
+        uint256 target = total < bought ? total : bought;
         uint256 assigned;
         for (uint256 i; i < sellLegs.length; i++) {
             legs[i] = sellLegs[i];
             // keep the planned split ratio, give the remainder to the last leg so nothing is left behind
-            legs[i].amount = i == sellLegs.length - 1 ? bought - assigned : (bought * sellLegs[i].amount) / total;
+            legs[i].amount = i == sellLegs.length - 1 ? target - assigned : (target * sellLegs[i].amount) / total;
             assigned += legs[i].amount;
         }
+        sellable = target;
 
         (bool okA, ) = token.call(abi.encodeWithSignature("approve(address,uint256)", agg, type(uint256).max));
         okA;                                   // a token that refuses to approve fails the sell below anyway

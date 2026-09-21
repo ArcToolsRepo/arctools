@@ -53,7 +53,7 @@ export type RouteResult = {
   unquoted?: boolean;
 };
 
-type Venue = { kind: "v3"; fee: number; label: string } | { kind: "v3path"; mid: string; midSymbol: string; fee1: number; fee2: number; label: string } | { kind: "padquote"; target: string; quote: string; fee1: number; label: string } | { kind: "v4"; key: V4Key; label: string } | { kind: "pad"; target: string; label: string } | { kind: "curve"; target: string; label: string };
+type Venue = { kind: "v3"; fee: number; label: string } | { kind: "v3path"; mid: string; midSymbol: string; fee1: number; fee2: number; label: string } | { kind: "padquote"; target: string; quote: string; fee1: number; label: string } | { kind: "v4"; key: V4Key; label: string } | { kind: "pad"; target: string; label: string; curve?: { Q: bigint; T: bigint; real: bigint } } | { kind: "curve"; target: string; label: string };
 
 async function call(to: string, data: string): Promise<string | null> {
   // a relay hiccup (502 / timeout) must not make a venue vanish from the route → one quick retry on transport errors
@@ -127,7 +127,10 @@ async function discoverVenues(token: string): Promise<Venue[]> {
     // launch(token): quoteToken, quoteTier, mode, targetQuote, virtualQuote, graduated, pool, lpTokenId
     const q = l3 && l3.length >= 66 ? "0x" + l3.slice(26, 66) : ZERO;
     const graduated = !!l3 && l3.length >= 2 + 64 * 6 && BigInt("0x" + l3.slice(2 + 64 * 5, 2 + 64 * 6)) !== 0n;
-    if (!graduated && (q.toLowerCase() === ZERO || q.toLowerCase() === USDC)) out.push({ kind: "pad", target: PAD_V3, label: "ArcToolsPad v3 curve" });
+    if (!graduated && (q.toLowerCase() === ZERO || q.toLowerCase() === USDC)) {
+      // curve(token) = (quoteReserve, tokenReserve, …); launch(token) word 4 = virtualQuote. Real USDC in the curve = Q − virtual.
+      out.push({ kind: "pad", target: PAD_V3, label: "ArcToolsPad v3 curve" });   // curve state is read fresh per quote (venues are memoised 5 min)
+    }
     else if (!graduated && V3PATH_AGGREGATOR) {
       // ERC-20 quote (wrapped stock): USDC -> quote on V3, then the curve — one tx through ArcAggregator v3
       const fee1 = await stockTier(q);
@@ -241,11 +244,36 @@ async function quoteVenue(v: Venue, token: string, side: "buy" | "sell", amount:
     return r ? BigInt("0x" + r.slice(2, 66)) : null;
   }
   // pad: quoteBuy(token, usdcIn) / quoteSell(token, tokens) — both 1e18
-  const r = await call(v.target, (side === "buy" ? SEL.quoteBuy : SEL.quoteSell) + p32(token) + pnum(amount));
+  let amt = amount;
+  if (side === "sell" && v.kind === "pad" && v.curve) amt = padSellCap(v.curve, amount);
+  if (amt <= 0n) return null;
+  const r = await call(v.target, (side === "buy" ? SEL.quoteBuy : SEL.quoteSell) + p32(token) + pnum(amt));
   return r ? BigInt("0x" + r.slice(2, 66)) : null;
 }
 
-function toLeg(v: Venue, amount: bigint, out: bigint): Leg {
+/** Fresh curve state for a v3 pad token: (Q, T, real = Q − virtualQuote). Never memoised — a sell cap computed on a
+ *  5-minute-old reserve is wrong the moment anyone trades. */
+export async function padCurveState(token: string): Promise<{ Q: bigint; T: bigint; real: bigint } | null> {
+  const [c3, l3] = await Promise.all([call(PAD_V3, SEL.curve + p32(token)), call(PAD_V3, SEL.launch + p32(token))]);
+  if (!c3 || c3.length < 130 || !l3 || l3.length < 2 + 64 * 5) return null;
+  const Q = BigInt("0x" + c3.slice(2, 66)), T = BigInt("0x" + c3.slice(66, 130));
+  const virt = BigInt("0x" + l3.slice(2 + 64 * 4, 2 + 64 * 5));
+  return { Q, T, real: Q > virt ? Q - virt : 0n };
+}
+
+/** ArcPad v3.1 reverts a sell with "liquidity" when the curve payout would exceed the REAL reserve (Q − virtual):
+ *  the 1 % buy fee leaves the curve, so the first buyer selling 100 % always trips it — the token looked like a
+ *  honeypot and our own sim flagged it CANNOT EXIT. Payout for x tokens is gross(x) = Q − Q·T/(T+x) ≤ real
+ *  ⇔ x ≤ T·real/(Q − real). Sell that much (minus a hair for rounding); the rest stays in the wallet. */
+export function padSellCap(c: { Q: bigint; T: bigint; real: bigint }, want: bigint): bigint {
+  if (c.real <= 0n || c.Q <= c.real) return 0n;
+  const xMax = (c.T * c.real) / (c.Q - c.real);
+  const safe = (xMax * 9_990n) / 10_000n;
+  return want < safe ? want : safe;
+}
+
+function toLeg(v: Venue, amount: bigint, out: bigint, side: "buy" | "sell" = "buy"): Leg {
+  if (side === "sell" && v.kind === "pad" && v.curve) { const a = padSellCap(v.curve, amount); if (a > 0n) amount = a; }
   if (v.kind === "v3") return { venue: 1, target: ZERO, fee: v.fee, key: null, amount: amount.toString(), label: v.label, out: out.toString() };
   if (v.kind === "padquote") return { venue: 6, target: v.target, fee: v.fee1, key: { id: "", currency0: v.quote, currency1: ZERO, fee: 0, tick_spacing: 0, hooks: ZERO, usdc_dec: 18 }, amount: amount.toString(), label: v.label, out: out.toString() };
   if (v.kind === "v3path") return { venue: 5, target: v.mid, fee: v.fee1, key: { id: "", currency0: ZERO, currency1: ZERO, fee: v.fee2, tick_spacing: 0, hooks: ZERO, usdc_dec: 18 }, amount: amount.toString(), label: v.label, out: out.toString() };
@@ -255,7 +283,7 @@ function toLeg(v: Venue, amount: bigint, out: bigint): Leg {
 }
 
 export const routeSwap = createServerFn({ method: "POST" })
-  .inputValidator((input: { token: string; side: "buy" | "sell"; amount: string }) => input)
+  .inputValidator((input: { token: string; side: "buy" | "sell"; amount: string; afterBuy?: string }) => input)
   .handler(async ({ data }): Promise<RouteResult> => {
     const token = data.token.toLowerCase();
     const amount = BigInt(data.amount);
@@ -276,6 +304,18 @@ export const routeSwap = createServerFn({ method: "POST" })
       } catch { /* no list either */ }
     }
     if (venues.length === 0) return { legs: [], out: "0", single: [], split: false, error: "no venue" };
+    // simulation support: the honeypot probe buys and sells in ONE call, so the curve it sells into already holds
+    // the buy's USDC. afterBuy = the USDC the probe spends; the pad's real reserve grows by 99 % of it (1 % fee leaves).
+    const afterBuy = data.afterBuy ? BigInt(data.afterBuy) : 0n;
+    if (data.side === "sell" && venues.some((v) => v.kind === "pad" && v.target === PAD_V3)) {
+      const st = await padCurveState(token);
+      if (st) {
+        // after the probe's buy: Q grows by the net USDC, T shrinks by the tokens bought (= the amount now being sold)
+        const add = (afterBuy * 99n) / 100n; const T = afterBuy > 0n && st.T > amount ? st.T - amount : st.T;
+        const cur = { Q: st.Q + add, T, real: st.real + add };
+        venues = venues.map((v) => (v.kind === "pad" && v.target === PAD_V3 ? { ...v, curve: cur } : v));
+      }
+    }
     const quotes = await Promise.all(venues.map((v) => quoteVenue(v, token, data.side, amount)));
     // A V4 pool with a hook can take its own fee, block, or reroute inside the swap — quoteV4 models plain AMM maths
     // and sees none of it. ARGUS: the hooked pool (128x less liquidity) quoted 0.4925, the plain pool 0.4852; the
@@ -293,14 +333,17 @@ export const routeSwap = createServerFn({ method: "POST" })
     const bestOther = ranked.filter((x) => x.v.kind !== "v4").reduce((m, x) => (x.out > m ? x.out : m), 0n);
     if (bestOther > 0n) ranked = ranked.filter((x) => x.v.kind !== "v4" || x.out <= bestOther * 3n);
     if (ranked.length === 0) {
+      // a v3 pad curve nobody has bought into holds no real USDC: there is nothing to sell yet, and that is not a routing failure
+      const emptyPad = venues.find((v) => v.kind === "pad" && v.curve && v.curve.real <= 0n);
+      if (data.side === "sell" && emptyPad && venues.every((v) => v.kind === "pad" || v.kind === "padquote")) return { legs: [], out: "0", single: [], split: false, error: "curve holds no USDC yet (no buys) — nothing to sell into" };
       // every quote failed (RPC busy) but the venue exists: hand back an UNQUOTED single-venue route so the buyer can still
       // go in at market with minOut = 0 (house rule: speed over protection) — the UI labels it "no quote".
       const pick = venues.find((v) => v.kind === "v3" && v.fee === 10000) ?? venues.find((v) => v.kind === "v3") ?? venues.find((v) => v.kind === "pad" || v.kind === "curve" || v.kind === "v4") ?? null;
-      if (pick && quotes.some((q) => q === null)) return { legs: [toLeg(pick, amount, 0n)], out: "0", single: [], split: false, unquoted: true };
+      if (pick && quotes.some((q) => q === null)) return { legs: [toLeg(pick, amount, 0n, data.side)], out: "0", single: [], split: false, unquoted: true };
       return { legs: [], out: "0", single: [], split: false, error: "no liquidity" };
     }
     const single = ranked.map((x) => ({ label: x.v.label, out: x.out.toString() }));
-    let best: { legs: Leg[]; out: bigint; split: boolean } = { legs: [toLeg(ranked[0].v, amount, ranked[0].out)], out: ranked[0].out, split: false };
+    let best: { legs: Leg[]; out: bigint; split: boolean } = { legs: [toLeg(ranked[0].v, amount, ranked[0].out, data.side)], out: ranked[0].out, split: false };
     // 2-venue split: only worth it when the runner-up is within 40% of the best (else the split cannot win)
     if (ranked.length >= 2 && ranked[1].out * 10n >= ranked[0].out * 6n) {
       const [a, b] = [ranked[0].v, ranked[1].v];
@@ -308,7 +351,7 @@ export const routeSwap = createServerFn({ method: "POST" })
         const amtA = (amount * pctA) / 100n;
         const amtB = amount - amtA;
         const [qa, qb] = await Promise.all([quoteVenue(a, token, data.side, amtA), quoteVenue(b, token, data.side, amtB)]);
-        if (qa && qb && qa + qb > best.out) best = { legs: [toLeg(a, amtA, qa), toLeg(b, amtB, qb)], out: qa + qb, split: true };
+        if (qa && qb && qa + qb > best.out) best = { legs: [toLeg(a, amtA, qa, data.side), toLeg(b, amtB, qb, data.side)], out: qa + qb, split: true };
       }
     }
     return { legs: best.legs, out: best.out.toString(), single, split: best.split };

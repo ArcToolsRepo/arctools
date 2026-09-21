@@ -78,9 +78,9 @@ async def init_tables() -> None:
     await db.execute(text("CREATE INDEX IF NOT EXISTS token_sim_verdict ON token_sim (verdict, ts DESC)"))
 
 
-async def _route(session: aiohttp.ClientSession, token: str, side: str, amount: int) -> dict:
+async def _route(session: aiohttp.ClientSession, token: str, side: str, amount: int, after_buy: int = 0) -> dict:
     try:
-        async with session.get(f"{SITE}/api/swaproute?token={token}&side={side}&amount={amount}",
+        async with session.get(f"{SITE}/api/swaproute?token={token}&side={side}&amount={amount}" + (f"&afterBuy={after_buy}" if after_buy else ""),
                                headers={"User-Agent": "ArcTools-sim/1.0"},
                                timeout=aiohttp.ClientTimeout(total=30)) as r:
             return await r.json() if r.status == 200 else {}
@@ -110,7 +110,13 @@ async def probe(token: str) -> dict:
         if not buy_legs:
             return {"detail": (buy.get("error") or "no venue")[:60], "keep_bps": 0, "stage": -1, "token": token, "verdict": "no_route"}
         expect = int(buy.get("out") or 0)
-        sell = await _route(s, token, "sell", expect) if expect else {}
+        # ArcPad curves quoted in a wrapped stock (venue 6 = padquote): the probe's USDC becomes stock on V3 first, so
+        # the curve's real reserve after the buy is in stock units the router cannot see from here. v3.1 reverts a
+        # sell above that reserve ("liquidity"); a first-buyer round trip always trips it. Not a trap — not probeable.
+        if any(v == 6 for (v, *_r) in buy_legs):
+            return {"detail": "stock-quoted curve: round trip not probeable (v3.1 reserve rule)", "keep_bps": 0, "stage": -1, "token": token, "verdict": "no_route"}
+        # the probe sells into the curve it just bought from: tell the router about the buy (ArcPad real-reserve cap)
+        sell = await _route(s, token, "sell", expect, after_buy=SPEND) if expect else {}
         sell_legs = _legs(sell) or [(v, t, f, k, expect) for (v, t, f, k, _) in buy_legs]
         quoted_back = int(sell.get("out") or 0)          # what the router says this exact sale is worth
 
