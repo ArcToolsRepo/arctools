@@ -7,3 +7,9 @@ dist/
 .tanstack/
 arcpad_deploy*.json
 .venv/
+
+# signing secrets — never in git
+mobile/android/keystore.properties
+mobile/keys/
+*.jks
+*.keystore
