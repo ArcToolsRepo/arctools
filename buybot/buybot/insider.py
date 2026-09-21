@@ -747,12 +747,19 @@ async def _api_v4pool_impl(request: web.Request) -> web.Response:
     rows = await db.fetchall(text(
         "SELECT id, currency0, currency1, fee, tick_spacing, hooks, is0, block, usdc_dec FROM v4_pools "
         "WHERE token = :t AND fee IS NOT NULL ORDER BY block DESC NULLS LAST").bindparams(t=token))
+    # liquidity PER POOL from the chain (one multicall). `swaps` has no pool column, and the old code stamped the
+    # token's V4 swap count on every pool — TOLLY showed 77 pools "with 391 swaps", 76 of them empty spam pools.
+    # The router then quoted all 77 and an empty pool's quoteV4 beat the real V3 price 55x; the swap returned
+    # nothing. Empty pools are reported with liq=0 so the router can skip them.
+    from .liquidity import v4_pool_liquidity
+    liq = await v4_pool_liquidity([str(r["id"]) for r in rows])
     pools = []
     for r in rows:
         d = dict(r)
-        sw = await db.fetchone(text("SELECT COUNT(*) AS n, MAX(ts) AS last FROM swaps WHERE token = :t AND venue = 'v4'").bindparams(t=token))
-        d["swaps"] = int(sw["n"] or 0) if sw else 0
+        d["liq"] = liq.get(str(d["id"]).lower(), 0)
+        d["swaps"] = 1 if d["liq"] > 0 else 0          # kept for older clients that read `swaps` as "usable"
         pools.append(d)
+    pools.sort(key=lambda d: -d["liq"])
     return web.json_response({"token": token, "pools": pools}, headers=API_CORS)
 
 

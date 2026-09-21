@@ -96,7 +96,7 @@ export default function Token({ ca }: { ca: string }) {
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "4px 14px 10px", flexWrap: "wrap" }}>
         <Logo ca={ca} size={48} />
         <div style={{ flex: "1 1 180px", minWidth: 0 }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}><b style={{ fontSize: 22 }} className="num">{price(px)}</b><span className={`num ${(tr?.chg ?? 0) >= 0 ? "up" : "down"}`} style={{ fontWeight: 700 }}>{pct(tr?.chg)}</span></div>
+          <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}><b style={{ fontSize: 22 }} className="num">{price(px)}</b><span className={`num ${((stats?.change?.["24h"] ?? tr?.chg) ?? 0) >= 0 ? "up" : "down"}`} style={{ fontWeight: 700 }}>{pct(stats?.change?.["24h"] ?? tr?.chg)}</span></div>
           <div className="muted" style={{ fontSize: 12, display: "flex", gap: 8 }}>{t?.name && <span>{t.name}</span>}{t?.pad && <span>· {t.pad}</span>}<span className="mono">· {short(ca)}</span></div>
         </div>
         <div style={{ display: "flex", gap: 6, flex: "0 0 auto" }}>
@@ -108,6 +108,9 @@ export default function Token({ ca }: { ca: string }) {
 
       <div className="tiles"><div className="tile"><small>MCAP</small><b className="amber">{usd(mcap)}</b></div><div className="tile"><small>LIQ</small><b>{usd(liq ?? stats?.liq ?? t?.liqUsd)}</b></div><div className="tile"><small>VOL 24H</small><b>{usd(stats?.vol24 ?? tr?.vol)}</b></div><div className="tile"><small>TRADERS</small><b>{num(stats?.traders24 ?? tr?.traders)}</b></div></div>
 
+      {stats?.change && (
+        <div className="tiles" style={{ marginTop: -6 }}>{(["5m", "1h", "6h", "24h"] as const).map((k) => { const v = stats.change?.[k]; return <div key={k} className="tile"><small>{k.toUpperCase()}</small><b className={v == null ? "muted" : v >= 0 ? "up" : "down"}>{pct(v)}</b></div>; })}</div>
+      )}
       <div className="seg" style={{ paddingTop: 0 }}>{TF.map(([k, l]) => <button key={k} className={`chip ${tf === k ? "on" : ""}`} onClick={() => setTf(k)}>{l}</button>)}</div>
       <div ref={chartBox} style={{ height: 240, margin: "0 6px" }} />
 

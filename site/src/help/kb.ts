@@ -99,7 +99,7 @@ export const KB: Article[] = [
   {
     id: "fees", title: "All fees", url: "/",
     keywords: ["fee", "fees", "opłaty", "комиссия", "comisión", "费用", "cost", "how much", "percent"],
-    body: `Site swaps (Quick Buy / token page Market): 1.5% via ArcAggregator. Limit / TP / SL orders: 1% on fill. Sniper bot: 1% per trade. Bridge: 2%. ArcToolsPad: 30 USDC per instant launch, 1% per trade (10% of it to ARCT stakers), 5% of launch supply to stakers. Referrers get 25% of the platform fee from their invitees. All fees are enforced on-chain; treasury 0xb35c471b31D636B96f95b84E7A27D69B63235C0D.`,
+    body: `Every fee is enforced on-chain and lands in the treasury 0xb35c471b31D636B96f95b84E7A27D69B63235C0D, where a keeper buys ARCT and burns it in the same transaction (see 'ARCT buyback'). Swap tab (/swap) and the Android app: 0.5% per swap. Quick Buy on the Terminal and the token page Market button: 1.5%. Limit / TP / SL orders: 1% on fill. Sniper bot (@ArcSniper_bot): 1% per trade. Bridge (CCTP): 2%. ArcToolsPad: 30 USDC per instant launch, curve launches are free; 1% per pad trade (10% of it to ARCT stakers) and 5% of every launch's supply to stakers. Pay links (ArcClaim): 2% on collection. Referrers earn 25% of the platform fee their invitees pay.`,
   },
   {
     id: "languages", title: "Languages and theme", url: "/",
@@ -122,9 +122,49 @@ export const KB: Article[] = [
     body: `Every ERC-20 on Arc can be found by pasting its contract address in the Terminal search — it opens the token page even if we have no trades indexed. "No trades indexed yet" means our swap index has not seen its pool yet (new pool types are picked up within minutes; tokens paired with a quote token other than USDC, e.g. Arguspad's ARGUS pairs, are converted through the quote's price). Price/MC come from the last indexed swap × total supply. If a token still shows nothing after 15 min, report the address in @arctoolsportal.`,
   },
   {
+    id: "buyback", title: "ARCT buyback and burn", url: "/rewards",
+    keywords: ["buyback", "burn", "burned", "treasury", "keeper", "deflation", "spalanie", "выкуп", "recompra", "回购"],
+    body: `Fees collected by ArcTools do not sit anywhere: a keeper (part of @ArcToolsBuyBot) periodically spends the treasury's USDC on ARCT through ArcAggregator and sends the tokens straight to the burn address 0x…dEaD in the same transaction — it never holds ARCT. Every run is a public tx; /rewards shows the burn counter (tokens burned, % of supply) and the buyback history (runs, USDC spent). The first buyback burned 35,354 ARCT for 10.70 USDC. Fees that feed it: 0.5% swaps, 1.5% quick buys, 1% sniper, 1% pad trades, 2% bridge, 2% pay links.`,
+  },
+  {
+    id: "pay-links", title: "Pay links (send USDC with a link)", url: "/pay",
+    keywords: ["pay link", "pay links", "arcclaim", "claim", "send usdc link", "gift", "link", "wyślij link", "ссылка", "enlace de pago", "支付链接"],
+    body: `/pay (site) or Pay links (app): lock USDC in the ArcClaim contract 0x9f3eEfD8b4158C09BF134fa6C032745a7D781BE6 and share one link — the receiver needs no wallet in advance; they claim to any address from the site, the app or @ArcSniper_bot (/start claim_…). Fee 2% on collection. Links expire after 7 days and refund themselves to the sender; nothing is pooled — every link is its own on-chain record. The claim key lives only in the link, so treat the link like cash.`,
+  },
+  {
+    id: "sell-simulation", title: "Sell simulation (honeypot check)", url: "/trade",
+    keywords: ["sell simulation", "honeypot", "cannot exit", "trap", "thin pool", "no exit", "can i sell", "rug", "safety", "symulacja", "ханипот", "trampa"],
+    body: `Before you buy, ArcTools simulates a full round trip on-chain (buy, then sell the tokens back) using a probe contract injected via eth_call state override — nothing is deployed and nothing is spent. Verdicts: 'exit OK' — the sell returns what the router quoted; 'thin pool' (amber) — the sell works but price impact eats a large share; 'CANNOT EXIT / trap' (red) — the sell returns far less than the quote, the classic honeypot signature; 'no exit route' — our router cannot sell it at all. A verdict is a disagreement with the quote, not the size of a loss. If real sells are landing on chain while our router fails, the token is marked 'unrouted' rather than trap. The Terminal paints trap rows red and the Buy sheet asks you to confirm before buying one. Results are cached for a few hours per token.`,
+  },
+  {
+    id: "clones", title: "Clone farms (hidden spam tokens)", url: "/trade",
+    keywords: ["clone", "clones", "spam", "duplicate", "same name", "farm", "hidden", "klony", "клоны", "clones"],
+    body: `Some wallets mint the same token name dozens of times (JEANPHIL: 80 contracts in a few hours) and pump each copy with fake volume so they own every list. ArcTools detects a farm from the trades themselves: one venue, one name, many contracts with near-identical swap counts. Those copies are tagged and hidden from the default Terminal view; the busiest contract of a family (the real one) is never hidden. Search or a launchpad chip still shows everything. You can turn the filter off in the app's Settings.`,
+  },
+  {
+    id: "dev-net", title: "Dev / bundle risk columns", url: "/trade",
+    keywords: ["dev", "deployer", "dev sold", "dev net", "bundle", "launch block", "dev holds", "dev %", "deweloper", "разработчик", "desarrollador"],
+    body: `DEV/BUNDLE on the Terminal and the SAFETY block on a token page. 'Deployer holds' — the deployer wallet's share of supply. 'Dev net 24h' — what the deployer took OUT in the last 24 hours: sells minus buys. A dev who sold 73 USDC and bought 120 back is +47, not a dumper — the badge shows the net figure, with sold/bought underneath. 'Launch-block wallets' — supply held by wallets that bought within 2 seconds of the first trade, and their net selling. The sniper's dump guard uses the same net numbers and never counts ArcTools' own wallets (treasury, aggregator) as a dev.`,
+  },
+  {
+    id: "android-app", title: "ArcTools Android app", url: "/app",
+    keywords: ["app", "android", "apk", "mobile", "phone", "download", "install", "iphone", "ios", "aplikacja", "приложение", "aplicación", "应用"],
+    body: `arctools.fun/app: a signed APK you download straight from the site (no Play Store review), Android 7+. Same engine as the site: Trending with launchpad chips and one-tap quick buys (the ⚡ buys the amount chosen in the header; hold it to pick), token pages with candles and the SAFETY block, Swap, a wallet whose key is generated on the phone and encrypted with your passcode (PBKDF2 + AES-GCM, never sent anywhere), Live trades, Top traders, Insiders, Alerts, native Launch (ArcToolsPad), Pay links (create and claim), Referrals, Bridge tracking, ARCT staking, History, Profile. Save the private key when the app shows it — the recovery code only resets a forgotten passcode on the same phone. The app checks for a newer build on launch. iPhone: Apple allows no installs outside the App Store; open /trade2 in Safari and 'Add to Home Screen'.`,
+  },
+  {
+    id: "v2-preview", title: "Terminal v2 preview (/trade2)", url: "/trade2",
+    keywords: ["v2", "trade2", "preview", "new design", "rail", "dexscreener style", "switch", "nowy wygląd", "новый дизайн", "nuevo diseño"],
+    body: `Every page also exists in a second layout at the *2 addresses (/trade2, /swap2, /token2/…): one terminal frame with a launchpad rail on the left, chart and trades in the middle, stats and the trade panel on the right. Clicking a launchpad in the rail filters the Terminal to that source. A visible 'v1 / v2' switch on both sides carries your page, filters and anchor across; nothing redirects on its own and the classic layout stays the default.`,
+  },
+  {
+    id: "insiders-copy", title: "Insiders and copy-trading", url: "/insiders",
+    keywords: ["insider", "insiders", "top traders", "leaderboard", "copy trade", "copy-trade", "follow wallet", "smart money", "kopiuj", "копитрейд"],
+    body: `/insiders (site), Insiders / Top traders (app): wallets ranked by realised + unrealised PnL on Arc over 7 or 30 days, with win rate, volume and best trade. Tap a wallet for its trades and public profile (/u/handle or /insider/0x…). Copy-trade from @ArcSniper_bot with the deep link /start copy_<wallet> — the bot mirrors that wallet's buys with your settings. The Terminal's 'Insider picks' tab lists tokens that several ranked insiders are buying right now.`,
+  },
+  {
     id: "archy", title: "Archy Agent (this assistant)", url: "/",
     keywords: ["archy", "who are you", "kim jesteś", "кто ты", "quién eres", "你是谁", "assistant", "agent", "help chat", "ai"],
-    body: `Archy is the ArcTools assistant — the chat you are using now. Open it from "Archy Agent" at the bottom of the left menu (or the round button bottom-left on mobile). Archy answers only about ArcTools and the Arc chain, from ArcTools' own documentation plus live data (token stats, chain status, system status). It does not give financial advice or price predictions, and it can be wrong — verify on-chain. Limit: 20 questions per hour. Humans: Telegram @arctoolsportal.`,
+    body: `Archy is the ArcTools assistant — the chat you are using now. Open it from "Archy Agent" at the bottom of the left menu, the round button bottom-left on mobile, or the Archy tile in the Android app. Archy answers only about ArcTools and the Arc chain, from ArcTools' own documentation plus live data (token stats, chain status, system status). It does not give financial advice or price predictions, and it can be wrong — verify on-chain. Limit: 20 questions per hour. Humans: Telegram @arctoolsportal.`,
   },
   {
     id: "desktop", title: "Desktop app", url: "/",

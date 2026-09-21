@@ -640,3 +640,22 @@ async def api_wallet_feed(req: web.Request):
     ).bindparams(bindparam("ws", value=ws, expanding=True)).bindparams(since=since))
     return web.json_response({"rows": [dict(r) for r in rows], "now": int(time.time())},
                              headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-store"})
+
+
+async def v4_pool_liquidity(pool_ids: list[str]) -> dict[str, int]:
+    """Raw `liquidity` (Pool.State slot +3) for each V4 pool id, one multicall. 0 = an initialised but empty pool.
+
+    Why: anyone can initialise a V4 pool for any token. TOLLY had 77; 76 held nothing, yet quoteV4 still
+    priced them off sqrtPrice and one of those fake quotes won the route (213 USDC vs 3.8 real). Liquidity is
+    the one number an empty pool cannot fake."""
+    if not pool_ids:
+        return {}
+    calls = [(V4_PM, bytes.fromhex("1e2eaeaf") + (int.from_bytes(_pool_slot(pid), "big") + 3).to_bytes(32, "big")) for pid in pool_ids]
+    out: dict[str, int] = {}
+    try:
+        res = await _mc(calls)
+        for pid, (ok, data) in zip(pool_ids, res):
+            out[pid.lower()] = int.from_bytes(data[-16:], "big") if ok and len(data) >= 32 else 0   # uint128 in the low bytes
+    except Exception as e:  # noqa
+        log.debug("v4 liquidity: %s", e)
+    return out

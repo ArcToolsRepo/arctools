@@ -110,7 +110,13 @@ async function discoverVenues(token: string): Promise<Venue[]> {
   for (const [r, fee] of [[p1, 10000], [p2, 3000], [p3, 500]] as [string | null, number][]) {
     if (r && !/^0x0+$/.test(r)) out.push({ kind: "v3", fee, label: `Uniswap V3 ${fee / 10000}%` });
   }
-  for (const p of (v4?.pools ?? []).filter((p) => p.fee !== null && p.fee !== undefined)) {
+  // Only V4 pools that have actually traded. Anyone can initialise a pool for any token; TOLLY had 77, 76 of them
+  // empty. An empty pool still answers quoteV4 with a price off its sqrtPrice — and that fake quote won the
+  // route (213 USDC vs the real 3.8 on V3), then the swap delivered nothing. If no pool has traded yet (a fresh
+  // launch), keep the newest few so a brand-new token is still routable.
+  const v4all = (v4?.pools ?? []).filter((p) => p.fee !== null && p.fee !== undefined);
+  const traded = v4all.filter((p) => (p.swaps ?? 0) > 0);
+  for (const p of (traded.length ? traded : v4all.slice(0, 3))) {
     out.push({ kind: "v4", key: { ...p, usdc_dec: p.usdc_dec ?? 18 }, label: `Uniswap V4 · ${V4_NAMES[(p.hooks ?? "").toLowerCase()] ?? "pool"}` });
   }
   // ArcToolsPad curves: curve(token) -> (usdcReserve, tokenReserve, ...) active when tokenReserve > 0 and not graduated
@@ -271,10 +277,15 @@ export const routeSwap = createServerFn({ method: "POST" })
     }
     if (venues.length === 0) return { legs: [], out: "0", single: [], split: false, error: "no venue" };
     const quotes = await Promise.all(venues.map((v) => quoteVenue(v, token, data.side, amount)));
-    const ranked = venues
+    let ranked = venues
       .map((v, i) => ({ v, out: quotes[i] }))
       .filter((x): x is { v: Venue; out: bigint } => x.out !== null && x.out > 0n)
       .sort((a, b) => (b.out > a.out ? 1 : b.out < a.out ? -1 : 0));
+    // A V4 quote that beats every non-V4 venue by more than 3x is not a bargain, it is a lie: quoteV4 prices off
+    // sqrtPrice and does not see that the pool's liquidity sits in ticks the swap never reaches (TOLLY: 213 USDC
+    // quoted on V4, 3.8 real on V3, execution returned 0). Nobody leaves a real 3x arbitrage open on a live market.
+    const bestOther = ranked.filter((x) => x.v.kind !== "v4").reduce((m, x) => (x.out > m ? x.out : m), 0n);
+    if (bestOther > 0n) ranked = ranked.filter((x) => x.v.kind !== "v4" || x.out <= bestOther * 3n);
     if (ranked.length === 0) {
       // every quote failed (RPC busy) but the venue exists: hand back an UNQUOTED single-venue route so the buyer can still
       // go in at market with minOut = 0 (house rule: speed over protection) — the UI labels it "no quote".

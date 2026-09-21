@@ -5,7 +5,7 @@ export type Route =
   | { name: "trending" } | { name: "watch" } | { name: "swap"; token?: string } | { name: "wallet" } | { name: "more" }
   | { name: "token"; ca: string } | { name: "insiders" } | { name: "launchpad" } | { name: "pay" } | { name: "referrals" }
   | { name: "bridge" } | { name: "rewards" } | { name: "alerts" } | { name: "profile"; wallet?: string } | { name: "settings" }
-  | { name: "send" } | { name: "receive" } | { name: "history" } | { name: "search" } | { name: "trades" } | { name: "traders" };
+  | { name: "send" } | { name: "receive" } | { name: "history" } | { name: "search" } | { name: "trades" } | { name: "traders" } | { name: "archy" };
 
 export function parse(hash: string): Route {
   const h = (hash || "#/").replace(/^#/, "");
@@ -21,7 +21,7 @@ export function parse(hash: string): Route {
     case "token": return seg[1] ? { name: "token", ca: seg[1].toLowerCase() } : { name: "trending" };
     case "profile": return { name: "profile", wallet: seg[1] };
     case "insiders": case "launchpad": case "pay": case "referrals": case "bridge": case "rewards": case "alerts":
-    case "settings": case "send": case "receive": case "history": case "search": case "trades": case "traders":
+    case "settings": case "send": case "receive": case "history": case "search": case "trades": case "traders": case "archy":
       return { name: seg[0] } as Route;
     default: return { name: "trending" };
   }

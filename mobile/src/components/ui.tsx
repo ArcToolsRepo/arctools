@@ -124,13 +124,15 @@ export function Toasts() {
   );
 }
 
+export const BRAND = "ArcOne";
+
 export function Header({ title, back, right }: { title: string; back?: boolean; right?: ReactNode }) {
   return (
     <div className="top">
       <div className="top-row">
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {back && <button className="icon-btn" onClick={() => history.back()}><Icon.back className="" /></button>}
-          <h1>{title}</h1>
+          {title === BRAND ? <div className="brand"><h1>{BRAND}</h1><span>powered by ArcTools</span></div> : <h1>{title}</h1>}
         </div>
         <div style={{ display: "flex", gap: 8 }}>{right}</div>
       </div>

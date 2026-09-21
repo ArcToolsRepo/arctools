@@ -6,7 +6,7 @@ import { go } from "../lib/router";
 import { allTokens, applyTrendFrame, getPrefs, getToken, getTrend, getHot, getWatch, loadList, loadLogos, loadRisk, loadTrending, orders, setPrefs, useStore } from "../lib/store";
 import * as HW from "../lib/arc-hotwallet";
 import { quickBuy } from "../lib/trade";
-import { Header, Icon, Skeleton, TokenRow } from "../components/ui";
+import { BRAND, Header, Icon, Skeleton, TokenRow } from "../components/ui";
 import { BuySheet } from "../components/BuySheet";
 
 type Tab = "trending" | "new" | "top" | "gainers" | "watch";
@@ -90,7 +90,7 @@ export default function Trending() {
 
   return (
     <>
-      <Header title="ArcTools" right={<>
+      <Header title={BRAND} right={<>
         <div className="amts" title="quick-buy amount">{prefs.presets.map((p) => <button key={p} className={prefs.quickBuy === p ? "on" : ""} onClick={() => setPrefs({ quickBuy: p })}>{p}</button>)}</div>
         <span className="pill" style={{ color: live ? "var(--up)" : "var(--dim)" }}>●</span>
         <button className="icon-btn" onClick={() => { setSearching((s) => !s); setQ(""); }}><Icon.search className="" /></button>

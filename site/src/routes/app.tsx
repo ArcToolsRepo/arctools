@@ -22,13 +22,13 @@ function AppPage() {
       <ArcNav active="/app" />
       <section className="arc-section" style={{ maxWidth: 760, paddingTop: 112, paddingBottom: 80 }}>
         <p className="arc-eyebrow">ANDROID · DIRECT DOWNLOAD</p>
-        <h1 className="arc-h2" style={{ fontSize: 36, margin: "6px 0 10px" }}>ArcTools in your pocket.</h1>
+        <h1 className="arc-h2" style={{ fontSize: 36, margin: "6px 0 10px" }}>ArcOne: ArcTools in your pocket.</h1>
         <p className="arc-body" style={{ maxWidth: 720 }}>Every Arc launchpad in one list, one-tap buys, the token page with chart and safety checks, and a wallet whose key never leaves your phone. The same engine as the site — as an app.</p>
 
         <div style={{ background: "var(--arc-paper)", border: "1px solid var(--arc-line)", borderRadius: 14, padding: 18, margin: "22px 0" }}>
           {m ? (
             <>
-              <a className="arc-cta" href={`/assets/app/${m.file}`} download style={{ display: "inline-block", fontSize: 17, padding: "12px 22px" }}>Download ArcTools {m.version} (.apk · {(m.size / 1024 / 1024).toFixed(1)} MB)</a>
+              <a className="arc-cta" href={`/assets/app/${m.file}`} download style={{ display: "inline-block", fontSize: 17, padding: "12px 22px" }}>Download ArcOne {m.version} (.apk · {(m.size / 1024 / 1024).toFixed(1)} MB)</a>
               <div className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11.5, marginTop: 12, wordBreak: "break-all" }}>SHA-256 {m.sha256}<br />built {m.built} · Android {m.minAndroid}+ · versionCode {m.versionCode}</div>
             </>
           ) : <span style={{ color: "var(--arc-muted)" }}>Loading the latest build…</span>}

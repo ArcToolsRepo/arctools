@@ -52,7 +52,7 @@ function Onboard() {
         <>
           <div className="card" style={{ margin: "0 0 12px", textAlign: "center", padding: 28 }}>
             <div className="icon-btn" style={{ width: 64, height: 64, borderRadius: 20, margin: "0 auto 12px", background: "rgba(34,197,94,0.15)", color: "var(--up)" }}><Icon.wallet className="" /></div>
-            <b style={{ fontSize: 20 }}>Your Arc wallet</b>
+            <b style={{ fontSize: 20 }}>Your Arc wallet</b><div className="muted" style={{ fontSize: 11, letterSpacing: "0.04em" }}>ArcOne · powered by ArcTools</div>
             <p className="muted" style={{ margin: "8px 0 0", fontSize: 14 }}>Trade every launchpad with one tap. The key is generated here and never leaves this phone.</p>
           </div>
           <button className="btn primary" onClick={() => setMode("create")}>Create a new wallet</button>

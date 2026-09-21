@@ -123,6 +123,10 @@ async def api(req):
                 return web.json_response({"error": f"not prunable: {table}"}, status=400)
             return web.json_response(await prune(table, max(3, min(180, int(req.query.get("days", "21")))),
                                                  max(1, min(60, int(req.query.get("batches", "10"))))))
+        if action == "token-age":
+            t = (req.query.get("token") or "").lower()
+            r = await db.fetchone(text("SELECT MIN(ts) AS mn, MAX(ts) AS mx, COUNT(*) AS n, COUNT(*) FILTER (WHERE price1m > 0 AND usdc >= 0.5) AS priced, MIN(ts) FILTER (WHERE price1m > 0 AND usdc >= 0.5) AS mn_priced FROM swaps WHERE token = :t").bindparams(t=t))
+            return web.json_response({k: (int(v) if v is not None else None) for k, v in dict(r).items()} | {"now": int(time.time())})
         if action == "buys-top":
             rows = await db.fetchall(text("SELECT token, symbol, usdc, ts, tx FROM buys WHERE ts > :t ORDER BY usdc DESC LIMIT 12").bindparams(t=int(time.time()) - 86400))
             return web.json_response({"rows": [dict(r) for r in rows]})

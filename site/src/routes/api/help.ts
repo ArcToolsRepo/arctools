@@ -118,7 +118,16 @@ export const Route = createFileRoute("/api/help")({
         }
         return Response.json(out, { headers: { "Cache-Control": "no-store" } });
       },
-      POST: async ({ request }) => {
+      OPTIONS: () => new Response(null, { status: 204, headers: CORS_H }),
+      POST: async ({ request }) => withCors(await postHelp(request)),
+      },
+      },
+      });
+
+const CORS_H = { "access-control-allow-origin": "*", "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "content-type", "access-control-max-age": "86400" };
+function withCors(r: Response): Response { const h = new Headers(r.headers); for (const [k, v] of Object.entries(CORS_H)) h.set(k, v); return new Response(r.body, { status: r.status, headers: h }); }
+
+async function postHelp(request: Request): Promise<Response> {
         const env = bindings() as { OPENROUTER_API_KEY?: string; KV?: { get(k: string): Promise<string | null>; put(k: string, v: string, o?: { expirationTtl?: number }): Promise<void> } };
         if (!env.OPENROUTER_API_KEY) return Response.json({ error: "help agent not configured" }, { status: 503 });
         let body: { messages?: Msg[] };
@@ -174,7 +183,4 @@ export const Route = createFileRoute("/api/help")({
         }
         return Response.json({ reply: reply || "I do not have that in my materials — ask in Telegram @arctoolsportal.", sources: articles.filter((a) => a.url && reply.includes(a.url.split(" ")[0].replace(/<.*/, ""))).slice(0, 3).map((a) => ({ title: a.title, url: a.url })), model },
           { headers: { "Cache-Control": "no-store" } });
-      },
-    },
-  },
-});
+}

@@ -13,7 +13,7 @@ export type PadToken = {
   twitter?: string | null; telegram?: string | null; website?: string | null; stock?: boolean; og?: boolean; quoteSymbol?: string;
 };
 export type Trade = { tx: string; ts: number; wallet: string; side: "buy" | "sell"; usdc: number; tokens: number; price1m: number; venue?: string };
-export type Stats = { price1m: number; vol24: number; buys24: number; sells24: number; traders24?: number; supply?: number | null; mcap?: number | null; liq?: number | null };
+export type Stats = { price1m: number; vol24: number; buys24: number; sells24: number; traders24?: number; supply?: number | null; mcap?: number | null; liq?: number | null; change?: { "5m"?: number | null; "1h"?: number | null; "6h"?: number | null; "24h"?: number | null } };
 export type Risk = {
   dev_pct?: number | null; bundle_pct?: number | null; top10_pct?: number | null; holders?: number | null;
   dev_sold_usd?: number; dev_bought_usd?: number; dev_net_usd?: number; dev_sells?: number; dev_last_sell?: number | null;
