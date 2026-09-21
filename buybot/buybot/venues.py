@@ -125,13 +125,18 @@ def v4_venue_name(hooks: str | None) -> str:
     return V4_HOOKS.get((hooks or "").lower(), "UniswapV4")
 
 
-def decode_v4_swap(token_is_0: bool, lg, usdc_dec: int = 18) -> dict | None:
-    """V4 Swap(id, sender, amount0, amount1, ...) — amounts from the swapper's view: negative = paid."""
+def decode_v4_swap(usdc_is_0: bool, lg, usdc_dec: int = 18) -> dict | None:
+    """V4 Swap(id, sender, amount0, amount1, ...) — amounts from the swapper's view: negative = paid.
+
+    `usdc_is_0` follows v4_pools.is0, which the indexer defines as "the QUOTE (USDC) is currency0". The old
+    parameter was named token_is_0 and fed the same flag — so every pool where USDC sorts first had its sides
+    swapped: the group alert printed the token amount as USDC (SAFEMOON: 7,014,729,601,756,749,824 USDC) and
+    0.00 tokens, while the index (which reads the flag correctly) had the trade right."""
     try:
         body = (lg["data"].hex() if hasattr(lg["data"], "hex") else str(lg["data"])).replace("0x", "")
         a0 = int.from_bytes(bytes.fromhex(body[0:64]), "big", signed=True)
         a1 = int.from_bytes(bytes.fromhex(body[64:128]), "big", signed=True)
-        usdc_amt, tok_amt = (a1, a0) if token_is_0 else (a0, a1)
+        usdc_amt, tok_amt = (a0, a1) if usdc_is_0 else (a1, a0)
         if usdc_amt < 0 and tok_amt > 0:
             return {"usdc": -usdc_amt / (10 ** usdc_dec), "tokens": tok_amt / 1e18}
         return None
