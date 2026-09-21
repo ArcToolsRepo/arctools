@@ -4,7 +4,7 @@ import * as HW from "../src/lib/arc-hotwallet";
 import { buy, sell, tokenBalanceRaw } from "../src/lib/trade";
 
 const KEY = process.env.E2E_KEY!;
-const TOKEN = "0xece5ca8bf9220718e5727754026757512212cb3c"; // ARGUS
+const TOKEN = "0x22610ae8dd2a913a87d1c2e1a519459d3901c6d1"; // GRE (ArcToolsPad v3 curve, USDC)
 const TREASURY = "0xb35c471b31d636b96f95b84e7a27d69b63235c0d";
 const RPC = "http://178.156.197.90:8545";
 const rpc = async (method: string, params: unknown[]) => (await (await fetch(RPC, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })).json()).result;

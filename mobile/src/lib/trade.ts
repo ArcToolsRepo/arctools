@@ -44,7 +44,10 @@ export async function buy(token: string, usdc: number, onStep?: (s: string) => v
   const spend = q.legs.reduce((s, l) => s + BigInt(l.amount), 0n);
   const value = spend + (spend * BigInt(FEE_BPS)) / 10_000n;           // fee rides on top, in native USDC
   onStep?.(`Buying via ${q.label}…`);
-  const hash = await HW.hotSend({ to: ARC_AGGREGATOR, data: encodeAggregatorSwap("buy", token, q.legs, 0n, from, FEE_BPS), value, gasLimit: 900_000n });
+  // a buy that completes an ArcPad curve graduates it in the same call (Uniswap pool + LP mint ≈ 5.5 M gas);
+  // 900k made that last buy fail out-of-gas. Unused gas costs nothing, so curve legs get 7 M.
+  const viaCurve = q.legs.some((l) => l.venue === 3 || l.venue === 4 || l.venue === 6);
+  const hash = await HW.hotSend({ to: ARC_AGGREGATOR, data: encodeAggregatorSwap("buy", token, q.legs, 0n, from, FEE_BPS), value, gasLimit: viaCurve ? 7_000_000n : 900_000n });
   return hash;
 }
 

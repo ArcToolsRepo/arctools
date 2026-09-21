@@ -13,10 +13,10 @@ export function UpdateCard() {
   return (
     <div className="card" style={{ display: "grid", gap: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div><b>App updates</b><div className="muted" style={{ fontSize: 12 }}>Installed: ArcOne {APP_VERSION} · updates install in-app, no browser</div></div>
+        <div style={{ minWidth: 0 }}><b>App updates</b><div className="muted" style={{ fontSize: 12 }}>Installed: ArcOne {APP_VERSION}</div></div>
         {!m && <button className="btn sm" disabled={checking} onClick={check}>{checking ? "Checking…" : "Check now"}</button>}
       </div>
-      {m ? <UpdateBanner compact /> : <div className="muted" style={{ fontSize: 12 }}>{checkedAt ? "You are on the latest version." : "Checked at launch and every hour."}</div>}
+      {m ? <UpdateBanner compact /> : <div className="muted" style={{ fontSize: 12 }}>{checkedAt ? "You are on the latest version." : "Checked at launch and every hour."} Updates download and install in-app — no browser.</div>}
     </div>
   );
 }

@@ -111,9 +111,11 @@ async def execute_buy(tg_id: int, token: str, pad: Pad, amount_usdc: float,
                 from .pads import usdc_units
                 await ensure_allowance(acct, CFG.wrapped_usdc, approve_spender,
                                        usdc_units(net_amount), gas_mode)
-            # snipe = szybkosc: staly gas limit, zero roundtripu na estymacje
+            # snipe = szybkosc: staly gas limit, zero roundtripu na estymacje. 7M, nie 800k: kupno, ktore domyka
+            # target krzywej ArcPad, wykonuje w tym samym callu graduacje (createPool + mint LP ~5.5M gazu) i z
+            # 800k padalo out-of-gas. Niezuzyty gas nic nie kosztuje; blok Arc ma 30M.
             tx = await CHAIN.build_tx(acct, to, data, value_wei=value, gas_mode=gas_mode,
-                                      gas_limit=800_000)
+                                      gas_limit=7_000_000)
             h = await CHAIN.send(acct, tx)
             if on_sent:
                 asyncio.create_task(on_sent(h))
