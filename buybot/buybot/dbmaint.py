@@ -123,6 +123,27 @@ async def api(req):
                 return web.json_response({"error": f"not prunable: {table}"}, status=400)
             return web.json_response(await prune(table, max(3, min(180, int(req.query.get("days", "21")))),
                                                  max(1, min(60, int(req.query.get("batches", "10"))))))
+        if action == "buys-top":
+            rows = await db.fetchall(text("SELECT token, symbol, usdc, ts, tx FROM buys WHERE ts > :t ORDER BY usdc DESC LIMIT 12").bindparams(t=int(time.time()) - 86400))
+            return web.json_response({"rows": [dict(r) for r in rows]})
+        if action == "fix-buys":
+            # The V4 alert decoder had its sides swapped until today, so `buys.usdc` held TOKEN amounts for every
+            # USDC-first pool (BARC: 3,593,502 "USDC" for a 210 USDC buy). The indexer decodes the same swaps
+            # correctly, so it is the reference: for each buy in the window, take the indexer's usdc for the same
+            # tx; a buy the indexer never saw is dropped. Then force the board to repost + re-pin.
+            t0 = int(time.time()) - 86400
+            fixed = await db.execute(text("""
+                UPDATE buys b SET usdc = s.u
+                  FROM (SELECT tx, SUM(usdc) AS u FROM swaps WHERE ts > :t AND side = 'buy' GROUP BY tx) s
+                 WHERE b.tx = s.tx AND b.ts > :t AND (b.usdc > s.u * 3 OR b.usdc * 3 < s.u)
+            """).bindparams(t=t0))
+            gone = await db.execute(text("""
+                DELETE FROM buys b WHERE b.ts > :t AND NOT EXISTS (SELECT 1 FROM swaps s WHERE s.tx = b.tx)
+            """).bindparams(t=t0))
+            await db.kv_set("trend_pin_ts", "0")
+            top = await db.fetchall(text("SELECT symbol, usdc FROM buys WHERE ts > :t ORDER BY usdc DESC LIMIT 5").bindparams(t=t0))
+            return web.json_response({"corrected": getattr(fixed, "rowcount", None), "deleted_unknown": getattr(gone, "rowcount", None),
+                                      "top_now": [{"symbol": r["symbol"], "usdc": round(float(r["usdc"]), 2)} for r in top], "board": "repost forced"})
         if action == "wallets":
             # the numbers marketing keeps asking for: distinct wallets we saw trade, and how many the insider
             # index ranks — from the data, not from a guess

@@ -43,7 +43,7 @@ async function proxy(request: Request, splat: string): Promise<Response> {
   if (cache && cacheKey) {
     const hit = await cache.match(cacheKey);
     if (hit) {
-      const h = new Headers(hit.headers); h.set("x-arc-edge", "hit");
+      const h = new Headers(hit.headers); h.set("x-arc-edge", "hit"); h.set("access-control-allow-origin", "*");
       return new Response(hit.body, { status: hit.status, headers: h });
     }
   }
@@ -67,6 +67,7 @@ async function proxy(request: Request, splat: string): Promise<Response> {
     const out = new Headers();
     out.set("content-type", last.headers.get("content-type") ?? "application/json");
     out.set("x-arc-proxy", "1");
+    out.set("access-control-allow-origin", "*");
     if (ttl && last.status === 200 && cache && cacheKey) {
       // stale-while-revalidate: the browser may keep it briefly, the edge keeps it for ttl seconds
       out.set("cache-control", `public, max-age=${Math.min(ttl, 5)}, s-maxage=${ttl}, stale-while-revalidate=${ttl * 3}`);
@@ -82,7 +83,7 @@ async function proxy(request: Request, splat: string): Promise<Response> {
   }
   const detail = last ? `upstream ${last.status}` : `upstream unreachable: ${err}`;
   return new Response(JSON.stringify({ error: "upstream unavailable", detail, retry_after_s: 5 }), {
-    status: 503, headers: { "content-type": "application/json", "cache-control": "no-store", "retry-after": "5", "x-arc-proxy": "1" },
+    status: 503, headers: { "content-type": "application/json", "cache-control": "no-store", "retry-after": "5", "x-arc-proxy": "1", "access-control-allow-origin": "*" },
   });
 }
 
@@ -91,6 +92,7 @@ export const Route = createFileRoute("/bot/$")({
     handlers: {
       GET: ({ request, params }) => proxy(request, (params as { _splat?: string })._splat ?? ""),
       POST: ({ request, params }) => proxy(request, (params as { _splat?: string })._splat ?? ""),
+      OPTIONS: () => new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST, OPTIONS", "access-control-allow-headers": "content-type, x-heartbeat-auth, x-ref-auth, x-priority", "access-control-max-age": "86400" } }),
     },
   },
 });

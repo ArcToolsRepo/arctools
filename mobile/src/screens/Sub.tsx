@@ -7,6 +7,7 @@ import { usd, num, pct, ago, short, isAddr } from "../lib/fmt";
 import { go, type Route } from "../lib/router";
 import { getPrefs, setPrefs, toast, useStore, getWatch, loadRisk, getRisk } from "../lib/store";
 import { Header, Icon, Logo } from "../components/ui";
+import { openUrl } from "../lib/native";
 
 export default function Sub({ route }: { route: Route }) {
   switch (route.name) {
@@ -58,10 +59,10 @@ function Alerts() {
       ); })}
       <div className="label">Arc feed · X voices and headlines</div>
       {feed == null ? <div className="empty">Loading…</div> : feed.slice(0, 30).map((f, i) => (
-        <a key={i} className="card" href={String(f.url ?? "#")} target="_blank" rel="noreferrer" style={{ display: "block", padding: 12 }}>
+        <button key={i} className="card" onClick={() => f.url && openUrl(String(f.url))} style={{ display: "block", padding: 12, width: "calc(100% - 28px)", textAlign: "left" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5 }} className="muted">{f.avatar ? <img alt="" src={String(f.avatar)} style={{ width: 20, height: 20, borderRadius: 10 }} /> : null}<b style={{ color: "var(--ink)" }}>{String(f.name ?? f.handle ?? f.source ?? "")}</b>{f.symbol ? <span className="pill green">${String(f.symbol)}</span> : null}<span style={{ marginLeft: "auto" }}>{ago(Number(f.ts))}</span></div>
           <div style={{ fontSize: 13.5, marginTop: 6 }}>{String(f.body ?? f.title ?? "").slice(0, 220)}</div>
-        </a>
+        </button>
       ))}
     </>
   );
@@ -73,7 +74,7 @@ function Launchpad() {
     <>
       <Header title="ArcToolsPad" back />
       <div className="card"><b style={{ fontSize: 16 }}>Launch a token on Arc</b><p className="muted" style={{ margin: "6px 0 0", fontSize: 13.5 }}>30 USDC, instant. The launch flow needs an image upload and a few fields — it opens in the built-in browser with your app wallet's address prefilled.</p></div>
-      <div style={{ padding: "0 14px" }}><a className="btn primary" href={`https://arctools.fun/launchpad2?from=${HW.hotAddress() ?? ""}`} target="_blank" rel="noreferrer">Open launchpad</a></div>
+      <div style={{ padding: "0 14px" }}><button className="btn primary" onClick={() => openUrl(`https://arctools.fun/launchpad2?from=${HW.hotAddress() ?? ""}`)}>Open launchpad</button></div>
       <div className="label">Recent launches</div>
       <div className="empty" style={{ padding: 20 }}>Trending → chip "ArcToolsPad" shows every token launched here.</div>
     </>
@@ -89,7 +90,7 @@ function Pay() {
     <>
       <Header title="Pay links" back />
       <div className="card"><b style={{ fontSize: 16 }}>Send USDC with a link</b><p className="muted" style={{ margin: "6px 0 0", fontSize: 13.5 }}>Lock USDC in ArcClaim, share one link; the receiver claims to any wallet. 2% collection fee. Unclaimed links can be reclaimed.</p></div>
-      <div style={{ padding: "0 14px" }}><a className="btn primary" href="https://arctools.fun/pay2" target="_blank" rel="noreferrer">Create a pay link</a></div>
+      <div style={{ padding: "0 14px" }}><button className="btn primary" onClick={() => openUrl("https://arctools.fun/pay2")}>Create a pay link</button></div>
       <div className="label">Your links</div>
       {!addr ? <div className="empty">Create a wallet first.</div> : links == null ? <div className="empty">Loading…</div> : links.length === 0 ? <div className="empty">No links yet.</div> : links.map((l, i) => (
         <div key={i} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", fontSize: 13.5 }}><span className="num">{usd(Number(l.amount ?? l.usdc ?? 0), 2)}</span><span className={String(l.state ?? l.status) === "claimed" ? "up" : "muted"}>{String(l.state ?? l.status ?? "")}</span><span className="muted">{ago(Number(l.ts ?? l.created))}</span></div>
@@ -114,7 +115,7 @@ function Referrals() {
           <div className="grid2"><button className="btn ghost sm" onClick={() => { navigator.clipboard?.writeText(link); toast("Link copied", "ok"); }}>Copy link</button><button className="btn ghost sm" onClick={() => (navigator as { share?: (d: { url: string; text: string }) => Promise<void> }).share?.({ url: link, text: "Trade every Arc launchpad in one tap — ArcTools" })}>Share</button></div>
         </div>
       )}
-      <div style={{ padding: "0 14px" }}><a className="btn ghost" href="https://arctools.fun/referrals2" target="_blank" rel="noreferrer">Earnings & claim ↗</a></div>
+      <div style={{ padding: "0 14px" }}><button className="btn ghost" onClick={() => openUrl("https://arctools.fun/referrals2")}>Earnings & claim ↗</button></div>
     </>
   );
 }
@@ -127,7 +128,7 @@ function Bridge() {
       <div className="card"><b style={{ fontSize: 16 }}>USDC from another chain → Arc</b><p className="muted" style={{ margin: "6px 0 0", fontSize: 13.5 }}>Circle CCTP. Ethereum, Base, Arbitrum, Polygon, Avalanche, Optimism. 2% fee → ARCT buyback. You need the source-chain wallet (MetaMask etc.), so this opens in the browser; paste your app address as the destination:</p>
         <button className="field" style={{ marginTop: 10, width: "100%" }} onClick={() => { navigator.clipboard?.writeText(HW.hotAddress() ?? ""); toast("Address copied", "ok"); }}><span className="mono" style={{ fontSize: 12.5, flex: 1, textAlign: "left" }}>{HW.hotAddress() ?? "create a wallet first"}</span><Icon.copy className="" /></button>
       </div>
-      <div style={{ padding: "0 14px" }}><a className="btn primary" href="https://arctools.fun/bridge2" target="_blank" rel="noreferrer">Open bridge</a></div>
+      <div style={{ padding: "0 14px" }}><button className="btn primary" onClick={() => openUrl("https://arctools.fun/bridge2")}>Open bridge</button></div>
     </>
   );
 }
@@ -145,7 +146,7 @@ function Rewards() {
         <div className="tile"><small>Buybacks</small><b>{bb ? `${bb.runs} runs · ${usd(Number(bb.usdc_spent), 0)}` : "…"}</b></div>
       </div>
       <div className="card"><b>How it works</b><p className="muted" style={{ margin: "6px 0 0", fontSize: 13.5 }}>Every fee — 0.5% swap, 1% sniper, 1% pad trade, 2% bridge, 2% pay-link — lands in the treasury. A keeper buys ARCT and sends it to the burn address in the same transaction, on schedule. Nothing is held; everything is verifiable on chain.</p></div>
-      <div className="grid2" style={{ padding: "0 14px" }}><button className="btn primary" onClick={() => go(`/token/${ARCT}`)}>Trade ARCT</button><a className="btn ghost" href="https://arctools.fun/rewards2" target="_blank" rel="noreferrer">Staking ↗</a></div>
+      <div className="grid2" style={{ padding: "0 14px" }}><button className="btn primary" onClick={() => go(`/token/${ARCT}`)}>Trade ARCT</button><button className="btn ghost" onClick={() => openUrl("https://arctools.fun/rewards2")}>Staking ↗</button></div>
     </>
   );
 }
@@ -183,7 +184,7 @@ function Profile({ wallet }: { wallet?: string }) {
         <>
           <div className="tiles"><div className="tile"><small>PnL</small><b className={(s.pnl_total ?? 0) >= 0 ? "up" : "down"}>{s.pnl_total != null ? `${s.pnl_total >= 0 ? "+" : "−"}${usd(Math.abs(s.pnl_total))}` : "—"}</b></div><div className="tile"><small>Volume</small><b>{usd(s.volume)}</b></div><div className="tile"><small>Trades</small><b>{num(s.trades)}</b></div><div className="tile"><small>Win</small><b>{s.winrate != null ? `${Math.round(s.winrate * 100)}%` : "—"}</b></div></div>
           {pr.bio ? <div className="card muted" style={{ fontSize: 13.5 }}>{String(pr.bio)}</div> : null}
-          {w !== (HW.hotAddress() ?? "").toLowerCase() && <div style={{ padding: "0 14px 10px" }}><a className="btn primary" href={`https://t.me/ArcSniper_bot?start=copy_${w.replace(/^0x/, "")}`} target="_blank" rel="noreferrer">Copy-trade in @ArcSniper_bot</a></div>}
+          {w !== (HW.hotAddress() ?? "").toLowerCase() && <div style={{ padding: "0 14px 10px" }}><button className="btn primary" onClick={() => openUrl(`https://t.me/ArcSniper_bot?start=copy_${w.replace(/^0x/, "")}`)}>Copy-trade in @ArcSniper_bot</button></div>}
           <div className="label">Recent trades</div>
           {rows.map((x) => <div key={x.tx + x.ts} className="trade-row" style={{ gridTemplateColumns: "44px 1fr auto" }} onClick={() => go(`/token/${x.token}`)}><span className="muted num">{ago(x.ts)}</span><div><b className={x.side === "buy" ? "up" : "down"}>{x.side.toUpperCase()}</b> <b>{x.symbol ?? short(x.token)}</b></div><b className="num">{usd(x.usdc, 2)}</b></div>)}
         </>
@@ -211,7 +212,7 @@ function Settings() {
         <div className="kv" style={{ borderTop: 0 }}><span>Hide clone farms</span><button className={`pill ${prefs.hideClones ? "green" : ""}`} onClick={() => setPrefs({ hideClones: !prefs.hideClones })}>{prefs.hideClones ? "on" : "off"}</button></div>
       </div>
       <div className="label">About</div>
-      <div className="card muted" style={{ fontSize: 12.5 }}>ArcTools for Android v1.1 · arctools.fun · Fees fund ARCT buybacks that burn in the same transaction. Your key never leaves this phone. Internal review only — no third-party audit.</div>
+      <div className="card muted" style={{ fontSize: 12.5 }}>ArcTools for Android v1.2 · arctools.fun · Fees fund ARCT buybacks that burn in the same transaction. Your key never leaves this phone. Internal review only — no third-party audit.</div>
     </>
   );
 }

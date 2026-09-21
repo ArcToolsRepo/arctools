@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, type ReactNode } from "react";
 import { getToasts, useStore, getToken, getTrend, getHot, getRisk, isWatched, getLogo, getPrefs } from "../lib/store";
 import { usd, pct, ago, short } from "../lib/fmt";
 import { go } from "../lib/router";
+import { openUrl } from "../lib/native";
 
 // ---- icons: thin-stroke, 22px, currentColor ----
 const I = (d: string) => (p: { className?: string; style?: React.CSSProperties }) => (
@@ -41,13 +42,13 @@ export const Icon = {
   chart: I("M4 20V10m6 10V4m6 16v-7m6 7V8"),
 };
 
-export function Logo({ ca, size = 44 }: { ca: string; size?: number }) {
+export function Logo({ ca, size = 44, src }: { ca: string; size?: number; src?: string | null }) {
   const t = getToken(ca); const tr = getTrend(ca) ?? getHot(ca);
   const sym = (t?.symbol || tr?.symbol || "?").toUpperCase();
   const [err, setErr] = useState(false);
   return (
     <div className="logo" style={{ width: size, height: size, fontSize: size * 0.32 }}>
-      {getLogo(ca) && !err ? <img alt="" src={getLogo(ca)!} onError={() => setErr(true)} loading="lazy" /> : sym.slice(0, 2)}
+      {(src || getLogo(ca)) && !err ? <img alt="" src={(src || getLogo(ca))!} onError={() => setErr(true)} loading="lazy" /> : sym.slice(0, 2)}
     </div>
   );
 }
@@ -116,7 +117,7 @@ export function Toasts() {
       {ts.map((t) => (
         <div key={t.id} className={`toast ${t.kind}`}>
           {t.text}
-          {t.tx && <a href={`https://arc-scan.org/tx/${t.tx}`} target="_blank" rel="noreferrer" className="mono" style={{ display: "block", color: "var(--cobalt)", fontSize: 11, marginTop: 4 }}>{short(t.tx, 8)} ↗</a>}
+          {t.tx && <button onClick={() => openUrl(`https://arc-scan.org/tx/${t.tx}`)} className="mono" style={{ display: "block", color: "var(--cobalt)", fontSize: 11, marginTop: 4 }}>{short(t.tx, 8)} ↗</button>}
         </div>
       ))}
     </div>

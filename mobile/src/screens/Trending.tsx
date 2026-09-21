@@ -47,8 +47,16 @@ export default function Trending() {
     if (q.trim()) {
       const s = q.trim().toLowerCase();
       if (isAddr(s)) return [s];
-      base = all.filter((ca) => { const t = getToken(ca); return t && (t.symbol?.toLowerCase().includes(s) || t.name?.toLowerCase().includes(s)); }).slice(0, 60);
-      return base;
+      // search the trending rows too (they are here before the 3 MB list finishes on a slow phone), rank exact
+      // symbol first, then symbol prefix, then name — ARGUS above Margarita for "arg"
+      const cands = new Set<string>([...hot, ...trend, ...all]);
+      const score = (ca: string) => {
+        const t = getToken(ca); const tr = getHot(ca) ?? getTrend(ca);
+        const sym = (t?.symbol || tr?.symbol || "").toLowerCase(); const name = (t?.name || "").toLowerCase();
+        if (sym === s) return 0; if (sym.startsWith(s)) return 1; if (name.startsWith(s)) return 2; if (sym.includes(s)) return 3; if (name.includes(s)) return 4; return 9;
+      };
+      return [...cands].map((ca) => [ca, score(ca)] as const).filter(([, sc]) => sc < 9)
+        .sort((a, b) => a[1] - b[1] || ((getHot(b[0]) ?? getTrend(b[0]))?.vol ?? 0) - ((getHot(a[0]) ?? getTrend(a[0]))?.vol ?? 0)).slice(0, 60).map(([ca]) => ca);
     }
     switch (tab) {
       case "trending": base = hot.length ? hot : trend; break;
@@ -85,7 +93,7 @@ export default function Trending() {
         <span className="pill" style={{ color: live ? "var(--up)" : "var(--dim)" }}>● {live ? "live" : "…"}</span>
         <button className="icon-btn" onClick={() => { setSearching((s) => !s); setQ(""); }}><Icon.search className="" /></button>
       </>} />
-      {searching && <div style={{ padding: "0 14px 8px" }}><div className="field"><Icon.search className="" /><input autoFocus placeholder="name, symbol or 0x address" value={q} onChange={(e) => setQ(e.target.value)} autoCapitalize="none" autoCorrect="off" /><button className="pill" onClick={() => { setSearching(false); setQ(""); }}>✕</button></div></div>}
+      {searching && <div style={{ padding: "0 14px 8px" }}><div className="field"><Icon.search className="" /><input type="search" placeholder="name, symbol or 0x address" value={q} onChange={(e) => setQ(e.target.value)} autoCapitalize="none" autoCorrect="off" enterKeyHint="search" ref={(el) => { if (el && searching && !q) setTimeout(() => el.focus(), 50); }} /><button className="pill" onClick={() => { setSearching(false); setQ(""); }}>✕</button></div></div>}
       {!q && <>
         <div className="seg">{TABS.map(([k, l]) => <button key={k} className={`chip ${tab === k ? "on" : ""}`} onClick={() => setTab(k)}>{l}{k === "watch" && snapshot.w ? ` ${snapshot.w}` : ""}</button>)}</div>
         <div className="seg" style={{ paddingTop: 0 }}>

@@ -4,8 +4,9 @@ import { api, streamUrl, type Holding, type Sim, type Stats, type Trade } from "
 import * as HW from "../lib/arc-hotwallet";
 import { usd, num, pct, price, ago, short } from "../lib/fmt";
 import { go } from "../lib/router";
-import { getToken, getHot, getTrend, isWatched, loadRisk, getRisk, toggleWatch, toast, useStore } from "../lib/store";
+import { getToken, getHot, getTrend, isWatched, loadRisk, loadLogos, getRisk, toggleWatch, toast, useStore } from "../lib/store";
 import { Header, Icon, Logo } from "../components/ui";
+import { openUrl } from "../lib/native";
 import { BuySheet } from "../components/BuySheet";
 
 type TabK = "trades" | "holders" | "traders" | "dev" | "info";
@@ -34,8 +35,10 @@ export default function Token({ ca }: { ca: string }) {
   const chartBox = useRef<HTMLDivElement>(null); const chart = useRef<IChartApi | null>(null); const series = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const sym = t?.symbol || tr?.symbol || (meta?.symbol as string) || short(ca);
 
+  const [liq, setLiq] = useState<number | null>(null);
   useEffect(() => {
-    void loadRisk([ca]);
+    void loadRisk([ca]); void loadLogos([ca]);
+    api.liq([ca]).then((m) => setLiq(m[ca] ?? null)).catch(() => undefined);
     api.stats(ca).then(setStats).catch(() => undefined);
     api.trades(ca, 80).then(setTrades).catch(() => undefined);
     api.sim(ca).then(setSim).catch(() => undefined);
@@ -90,20 +93,20 @@ export default function Token({ ca }: { ca: string }) {
         <button className="icon-btn" onClick={() => { toggleWatch(ca); toast(watched ? "Removed from watchlist" : "Added to watchlist", "ok"); }} style={{ color: watched ? "var(--amber)" : undefined }}><Icon.star className="" /></button>
         <button className="icon-btn" onClick={() => { navigator.clipboard?.writeText(ca); toast("Address copied", "ok"); }}><Icon.copy className="" /></button>
       </>} />
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "4px 14px 10px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "4px 14px 10px", flexWrap: "wrap" }}>
         <Logo ca={ca} size={48} />
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: "1 1 180px", minWidth: 0 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}><b style={{ fontSize: 22 }} className="num">{price(px)}</b><span className={`num ${(tr?.chg ?? 0) >= 0 ? "up" : "down"}`} style={{ fontWeight: 700 }}>{pct(tr?.chg)}</span></div>
           <div className="muted" style={{ fontSize: 12, display: "flex", gap: 8 }}>{t?.name && <span>{t.name}</span>}{t?.pad && <span>· {t.pad}</span>}<span className="mono">· {short(ca)}</span></div>
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {links.x && <a className="icon-btn" href={`https://x.com/${String(links.x).replace(/^@/, "")}`} target="_blank" rel="noreferrer" style={{ fontWeight: 800 }}>𝕏</a>}
-          {links.tg && <a className="icon-btn" href={`https://t.me/${String(links.tg).replace(/^@/, "")}`} target="_blank" rel="noreferrer"><Icon.send className="" /></a>}
-          {links.web && <a className="icon-btn" href={String(links.web).startsWith("http") ? String(links.web) : `https://${links.web}`} target="_blank" rel="noreferrer"><Icon.external className="" /></a>}
+        <div style={{ display: "flex", gap: 6, flex: "0 0 auto" }}>
+          {links.x && <button className="icon-btn" onClick={() => openUrl(`https://x.com/${String(links.x).replace(/^@/, "")}`)} style={{ fontWeight: 800 }}>𝕏</button>}
+          {links.tg && <button className="icon-btn" onClick={() => openUrl(`https://t.me/${String(links.tg).replace(/^@/, "")}`)}><Icon.send className="" /></button>}
+          {links.web && <button className="icon-btn" onClick={() => openUrl(String(links.web).startsWith("http") ? String(links.web) : `https://${links.web}`)}><Icon.external className="" /></button>}
         </div>
       </div>
 
-      <div className="tiles"><div className="tile"><small>MCAP</small><b className="amber">{usd(mcap)}</b></div><div className="tile"><small>LIQ</small><b>{usd(stats?.liq ?? t?.liqUsd ?? (meta?.liqUsd as number | undefined))}</b></div><div className="tile"><small>VOL 24H</small><b>{usd(stats?.vol24 ?? tr?.vol)}</b></div><div className="tile"><small>TRADERS</small><b>{num(stats?.traders24 ?? tr?.traders)}</b></div></div>
+      <div className="tiles"><div className="tile"><small>MCAP</small><b className="amber">{usd(mcap)}</b></div><div className="tile"><small>LIQ</small><b>{usd(liq ?? stats?.liq ?? t?.liqUsd)}</b></div><div className="tile"><small>VOL 24H</small><b>{usd(stats?.vol24 ?? tr?.vol)}</b></div><div className="tile"><small>TRADERS</small><b>{num(stats?.traders24 ?? tr?.traders)}</b></div></div>
 
       <div className="seg" style={{ paddingTop: 0 }}>{TF.map(([k, l]) => <button key={k} className={`chip ${tf === k ? "on" : ""}`} onClick={() => setTf(k)}>{l}</button>)}</div>
       <div ref={chartBox} style={{ height: 240, margin: "0 6px" }} />
@@ -118,7 +121,7 @@ export default function Token({ ca }: { ca: string }) {
         <div className="label" style={{ margin: "0 0 6px" }}>Safety</div>
         <div className="kv" style={{ borderTop: 0 }}><span>Sell simulation</span><b className={sim?.verdict === "ok" ? "up" : sim?.verdict === "thin" ? "amber" : sim ? "down" : "muted"}>{!sim ? <span className="muted">checking…</span> : sim.verdict === "ok" ? "exit OK" : sim.verdict === "thin" ? `thin pool −${sim.loss_pct?.toFixed(0) ?? "?"}%` : sim.verdict === "trap" ? "⚠ CANNOT EXIT" : sim.verdict === "error" ? "—" : "no exit route"}</b></div>
         <div className="kv"><span>Deployer holds</span><b className={rk?.dev_pct != null && rk.dev_pct >= 15 ? "down" : rk?.dev_pct != null && rk.dev_pct >= 5 ? "amber" : "up"}>{rk?.dev_pct != null ? `${rk.dev_pct.toFixed(1)}%` : "—"}</b></div>
-        <div className="kv"><span>Dev net 24h</span><b className={devNet > 50 ? "down" : devNet < -50 ? "up" : "muted"}>{rk && (rk.dev_sold_usd || rk.dev_bought_usd) ? `${devNet > 0 ? "−" : "+"}${usd(Math.abs(devNet))} (sold ${usd(rk.dev_sold_usd)}, bought ${usd(rk.dev_bought_usd)})` : "nothing"}</b></div>
+        <div className="kv"><span>Dev net 24h</span><b className={devNet > 50 ? "down" : devNet < -50 ? "up" : "muted"} style={{ textAlign: "right" }}>{rk && (rk.dev_sold_usd || rk.dev_bought_usd) ? <>{devNet > 0 ? "−" : "+"}{usd(Math.abs(devNet))}<div className="muted" style={{ fontSize: 11, fontWeight: 400 }}>sold {usd(rk.dev_sold_usd)} · bought {usd(rk.dev_bought_usd)}</div></> : "nothing"}</b></div>
         <div className="kv"><span>Launch-block wallets</span><b className={rk?.bundle_pct != null && rk.bundle_pct >= 25 ? "down" : "muted"}>{rk?.bundle_pct != null ? `${rk.bundle_pct.toFixed(0)}% (${rk.bundlers ?? 0} wallets)` : "—"}</b></div>
         <div className="kv"><span>Top-10 hold</span><b className={rk?.top10_pct != null && rk.top10_pct >= 50 ? "down" : "muted"}>{rk?.top10_pct != null ? `${rk.top10_pct.toFixed(0)}%` : "—"}</b></div>
         {rk?.dev_rugs ? <div className="kv"><span>Deployer history</span><b className="down">{rk.dev_rugs} dumped of {rk.dev_launches ?? "?"} launches</b></div> : null}
@@ -137,12 +140,37 @@ export default function Token({ ca }: { ca: string }) {
       {tab === "trades" && (trades.length === 0 ? <div className="empty">No trades yet</div> : trades.slice(0, 60).map((x) => (
         <div key={x.tx + x.ts} className="trade-row"><span className="muted num">{ago(x.ts)}</span><b className={x.side === "buy" ? "up" : "down"}>{x.side.toUpperCase()}</b><span className="num">{usd(x.usdc, 2)}</span><span className="num muted">{num(x.tokens)}</span><button className="mono muted" style={{ fontSize: 12 }} onClick={() => go(`/profile/${x.wallet}`)}>{short(x.wallet, 3)}</button></div>
       )))}
-      {tab === "holders" && (holders == null ? <div className="empty">Loading…</div> : holders.length === 0 ? <div className="empty">No holder data</div> : (holders as { address?: string; holder?: string; balance?: { formatted?: string } | string; percentage?: number; share?: number }[]).slice(0, 50).map((h, i) => (
-        <div key={i} className="trade-row" style={{ gridTemplateColumns: "28px 1fr auto auto" }}><span className="muted num">{i + 1}</span><button className="mono" style={{ textAlign: "left", fontSize: 12.5 }} onClick={() => go(`/profile/${h.address ?? h.holder}`)}>{short(String(h.address ?? h.holder ?? ""), 5)}</button><span className="num">{typeof h.balance === "object" ? num(Number(h.balance?.formatted)) : num(Number(h.balance))}</span><b className="num">{h.percentage != null ? `${Number(h.percentage).toFixed(1)}%` : h.share != null ? `${(Number(h.share) * 100).toFixed(1)}%` : ""}</b></div>
-      )))}
-      {tab === "traders" && <pre className="muted" style={{ fontSize: 11, padding: 14, whiteSpace: "pre-wrap" }}>{traders ? JSON.stringify(traders, null, 1).slice(0, 2000) : "Loading…"}</pre>}
+      {tab === "holders" && (holders == null ? <div className="empty">Loading…</div> : holders.length === 0 ? <div className="empty">No holder data</div> : (
+        <>
+          <div className="list-h"><span>#</span><span>wallet</span><span>balance</span><span>share</span></div>
+          {(holders as { rank?: number; address?: { address?: string; label?: string | null; tag?: string | null; is_contract?: boolean | null }; balance?: { formatted?: string }; share?: string | number }[]).slice(0, 60).map((h, i) => {
+            const a = h.address?.address ?? ""; const lbl = h.address?.label || h.address?.tag || (a.endsWith("dead") ? "burn" : a === ca ? "token contract" : "");
+            const share = h.share != null ? Number(h.share) * 100 : null;
+            return (
+              <div key={a + i} className="trade-row" style={{ gridTemplateColumns: "28px 1fr auto 56px" }}>
+                <span className="muted num">{h.rank ?? i + 1}</span>
+                <button className="mono" style={{ textAlign: "left", fontSize: 12.5, display: "flex", gap: 6, alignItems: "center" }} onClick={() => go(`/profile/${a}`)}>{short(a, 5)}{lbl && <span className="pill">{lbl}</span>}{h.address?.is_contract && !lbl && <span className="pill">contract</span>}</button>
+                <span className="num">{num(Number(h.balance?.formatted ?? 0))}</span>
+                <b className={`num ${share != null && share >= 10 ? "down" : ""}`} style={{ textAlign: "right" }}>{share != null ? `${share.toFixed(1)}%` : ""}</b>
+              </div>
+            );
+          })}
+        </>
+      ))}
+      {tab === "traders" && (traders == null ? <div className="empty">Loading…</div> : (
+        <>
+          <div className="list-h"><span>wallet</span><span>bought · sold</span><span>PnL</span></div>
+          {(((traders as { traders?: Record<string, unknown>[] }).traders ?? []) as { wallet: string; bought: number; sold: number; pnl: number; buys: number; sells: number; dev?: boolean; insider_rank?: number | null; tok?: number }[]).slice(0, 40).map((x) => (
+            <div key={x.wallet} className="trade-row" style={{ gridTemplateColumns: "1fr auto auto" }} onClick={() => go(`/profile/${x.wallet}`)}>
+              <div><span className="mono" style={{ fontSize: 12.5 }}>{short(x.wallet, 5)}</span>{x.dev && <span className="pill red" style={{ marginLeft: 6 }}>dev</span>}{x.insider_rank ? <span className="pill green" style={{ marginLeft: 6 }}>insider #{x.insider_rank}</span> : null}<div className="muted num" style={{ fontSize: 11.5 }}>{x.buys}↑ {x.sells}↓{x.tok ? ` · holds ${num(x.tok)}` : ""}</div></div>
+              <div className="num muted" style={{ fontSize: 12, textAlign: "right" }}><span className="up">{usd(x.bought)}</span><br /><span className="down">{usd(x.sold)}</span></div>
+              <b className={`num ${x.pnl >= 0 ? "up" : "down"}`}>{x.pnl >= 0 ? "+" : "−"}{usd(Math.abs(x.pnl))}</b>
+            </div>
+          ))}
+        </>
+      ))}
       {tab === "dev" && <div className="empty">{rk?.dev_launches ? `Deployer launched ${rk.dev_launches} tokens, ${rk.dev_rugs ?? 0} dumped.` : "No deployer history."}</div>}
-      {tab === "info" && <div className="card"><div className="kv" style={{ borderTop: 0 }}><span>Contract</span><b className="mono" style={{ fontSize: 12 }}>{short(ca, 8)}</b></div><div className="kv"><span>Launchpad</span><b>{t?.pad ?? "—"}</b></div><div className="kv"><span>Created</span><b>{t?.createdAt ? ago(Date.parse(t.createdAt) / 1000) + " ago" : "—"}</b></div><div className="kv"><span>Supply</span><b className="num">{num(stats?.supply ?? tr?.supply)}</b></div><div className="kv"><span>ATH mcap</span><b>{usd(tr?.ath_mcap)}</b></div><a className="kv" href={`https://arc-scan.org/token/${ca}`} target="_blank" rel="noreferrer"><span>Explorer</span><b style={{ color: "var(--cobalt)" }}>arc-scan ↗</b></a></div>}
+      {tab === "info" && <div className="card"><div className="kv" style={{ borderTop: 0 }}><span>Contract</span><b className="mono" style={{ fontSize: 12 }}>{short(ca, 8)}</b></div><div className="kv"><span>Launchpad</span><b>{t?.pad ?? "—"}</b></div><div className="kv"><span>Created</span><b>{t?.createdAt ? ago(Date.parse(t.createdAt) / 1000) + " ago" : "—"}</b></div><div className="kv"><span>Supply</span><b className="num">{num(stats?.supply ?? tr?.supply)}</b></div><div className="kv"><span>ATH mcap</span><b>{usd(tr?.ath_mcap)}</b></div><button className="kv" style={{ width: "100%" }} onClick={() => openUrl(`https://arc-scan.org/token/${ca}`)}><span>Explorer</span><b style={{ color: "var(--cobalt)" }}>arc-scan ↗</b></button></div>}
 
       <div className="tradebar">
         <button className="btn primary" onClick={() => setSheet("buy")}>Buy</button>

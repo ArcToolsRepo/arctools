@@ -24,9 +24,19 @@ export type Sim = { verdict: "ok" | "thin" | "trap" | "no_route" | "unrouted" | 
 export type Holding = { token: string; symbol: string | null; name?: string; logo?: string | null; amount: number; raw?: string; price?: number | null; valueUsdc: number | null; avgEntry?: number | null; unrealized?: number | null; trades?: number; transferredIn?: boolean; lastTrade?: number };
 
 const j = async <T,>(url: string, ms = 12_000): Promise<T> => {
-  const r = await fetch(url, { signal: AbortSignal.timeout(ms) });
-  if (!r.ok) throw new Error(`${r.status} ${url.split("?")[0].split("/").slice(-1)[0]}`);
-  return (await r.json()) as T;
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(ms) });
+    if (!r.ok) throw new Error(`${r.status} ${url.split("?")[0].split("/").slice(-1)[0]}`);
+    return (await r.json()) as T;
+  } catch (e) {
+    // the edge proxy is a speed-up, never a dependency: if it fails (network, CORS, 5xx) ask the bot directly
+    if (url.startsWith(BOT_API)) {
+      const r = await fetch(url.replace(BOT_API, BOT_DIRECT), { signal: AbortSignal.timeout(ms) });
+      if (!r.ok) throw new Error(`${r.status} ${url.split("?")[0].split("/").slice(-1)[0]}`);
+      return (await r.json()) as T;
+    }
+    throw e;
+  }
 };
 
 export const api = {
@@ -50,6 +60,7 @@ export const api = {
   insiders: (limit = 100) => j<{ rows: Record<string, unknown>[] }>(`${BOT_API}/api/insiders?limit=${limit}`).then((r) => r.rows ?? []),
   alpha: () => j<{ rows: Record<string, unknown>[] }>(`${BOT_API}/api/alpha`).then((r) => r.rows ?? []),
   feed: (limit = 40) => j<{ rows: Record<string, unknown>[] }>(`${BOT_API}/api/feed?limit=${limit}`).then((r) => r.rows ?? []),
+  liq: (cas: string[]) => j<{ liq: Record<string, number> }>(`${BOT_API}/api/liq?tokens=${cas.join(",")}`).then((r) => r.liq ?? {}),
   chain: () => j<{ last_block: number; index_lag_s: number | null; down: boolean }>(`${BOT_API}/api/chain-status`),
   burn: () => j<Record<string, unknown>>(`${BOT_API}/api/arct-burn`),
   buyback: () => j<Record<string, unknown>>(`${BOT_API}/api/buyback-stats`),

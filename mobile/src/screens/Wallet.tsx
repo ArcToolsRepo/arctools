@@ -151,9 +151,9 @@ export default function Wallet() {
       {hold == null ? <div className="empty">Loading…</div> : hold.length === 0 ? <div className="empty">No tokens yet. Find one on Trending and tap buy.</div> :
         hold.sort((a, b) => (b.valueUsdc ?? 0) - (a.valueUsdc ?? 0)).map((h) => { const pnlPct = h.avgEntry && h.price ? (h.price / h.avgEntry - 1) * 100 : null; return (
           <div key={h.token} className="row" onClick={() => go(`/token/${h.token}`)}>
-            <Logo ca={h.token} />
+            <Logo ca={h.token} src={h.logo} />
             <div className="row-main">
-              <div className="row-name"><b>{h.symbol || short(h.token)}</b></div>
+              <div className="row-name"><b>{h.symbol || short(h.token)}</b>{h.name && h.name !== h.symbol && <span>{h.name}</span>}</div>
               <div className="row-sub num"><span>{num(h.amount)}</span>{pnlPct != null && <span className={pnlPct >= 0 ? "up" : "down"}>{pct(pnlPct)}</span>}{h.transferredIn && <span>transferred in</span>}</div>
             </div>
             <div className="row-right"><div className="row-mc" style={{ color: "var(--ink)" }}>{usd(h.valueUsdc, 2)}</div>{h.unrealized != null && <div className={`row-chg ${h.unrealized >= 0 ? "up" : "down"}`}>{h.unrealized >= 0 ? "+" : "−"}{usd(Math.abs(h.unrealized), 2)}</div>}</div>
