@@ -3,17 +3,11 @@ import { api } from "../lib/api";
 import { go } from "../lib/router";
 import { Header, Icon } from "../components/ui";
 
-const ITEMS: [string, string, string, keyof typeof Icon][] = [
-  ["/insiders", "Insiders", "Wallets that were early last time, ranked by what they made", "users"],
-  ["/alerts", "Alerts", "Whales, movers, dev sells on your watchlist", "bell"],
-  ["/launchpad", "ArcToolsPad", "Launch a token on Arc — 30 USDC, instant", "rocket"],
-  ["/pay", "Pay links", "Send USDC with a link; the receiver claims", "link"],
-  ["/referrals", "Referrals", "Earn 25% of the fees your invites generate", "gift"],
-  ["/bridge", "Bridge", "USDC from other chains to Arc (CCTP)", "bridge"],
-  ["/rewards", "ARCT & burn", "Buyback stats, burn counter, staking", "flame"],
-  ["/history", "History", "Your trades and transfers", "chart"],
-  ["/profile", "My profile", "Public trader page for your wallet", "user"],
-  ["/settings", "Settings", "Slippage, quick-buy amounts, clone filter", "gear"],
+const ITEMS: [string, string, keyof typeof Icon][] = [
+  ["/trades", "Live trades", "bolt"], ["/traders", "Top traders", "users"], ["/insiders", "Insiders", "eye"],
+  ["/alerts", "Alerts", "bell"], ["/launchpad", "Launch", "rocket"], ["/pay", "Pay links", "link"],
+  ["/referrals", "Referrals", "gift"], ["/bridge", "Bridge", "bridge"], ["/rewards", "ARCT", "flame"],
+  ["/history", "History", "chart"], ["/profile", "Profile", "user"], ["/settings", "Settings", "gear"],
 ];
 
 export default function More() {
@@ -22,9 +16,9 @@ export default function More() {
   return (
     <>
       <Header title="More" />
-      <div className="card" style={{ padding: 0 }}>
-        {ITEMS.map(([to, title, sub, ic]) => { const Ic = Icon[ic]; return (
-          <button key={to} className="menu-row" style={{ width: "100%", textAlign: "left" }} onClick={() => go(to)}><span className="icon-btn"><Ic className="" /></span><div><b>{title}</b><small>{sub}</small></div><Icon.chev className="chev" /></button>
+      <div className="tilegrid">
+        {ITEMS.map(([to, title, ic]) => { const Ic = Icon[ic]; return (
+          <button key={to} className="tilebtn" onClick={() => go(to)}><Ic className="" /><span>{title}</span></button>
         ); })}
       </div>
       <div className="card" style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }} >

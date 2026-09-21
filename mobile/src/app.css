@@ -120,3 +120,13 @@ a { color: inherit; text-decoration: none; }
 .menu-row b { display: block; font-size: 15px; }
 .menu-row small { color: var(--muted); font-size: 12.5px; }
 .menu-row .chev { margin-left: auto; color: var(--dim); }
+
+/* More: a slim grid of tiles, not a wall of 60 px rows */
+.tilegrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 14px 12px; }
+.tilebtn { background: var(--bg2); border-radius: 14px; padding: 14px 6px 12px; display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--ink); }
+.tilebtn svg { width: 22px; height: 22px; color: var(--up); }
+.tilebtn:active { background: var(--bg3); }
+/* quick-buy amount chips in the Trending header */
+.amts { display: flex; gap: 4px; background: var(--bg3); border-radius: 10px; padding: 3px; }
+.amts button { padding: 5px 9px; border-radius: 8px; font-size: 12px; font-weight: 800; color: var(--muted); }
+.amts button.on { background: var(--up); color: #04140a; }

@@ -3,7 +3,7 @@ import { tap } from "../lib/native";
 import { api, streamUrl, type Trend } from "../lib/api";
 import { isAddr } from "../lib/fmt";
 import { go } from "../lib/router";
-import { allTokens, applyTrendFrame, getPrefs, getToken, getTrend, getHot, getWatch, loadList, loadLogos, loadRisk, loadTrending, orders, useStore } from "../lib/store";
+import { allTokens, applyTrendFrame, getPrefs, getToken, getTrend, getHot, getWatch, loadList, loadLogos, loadRisk, loadTrending, orders, setPrefs, useStore } from "../lib/store";
 import * as HW from "../lib/arc-hotwallet";
 import { quickBuy } from "../lib/trade";
 import { Header, Icon, Skeleton, TokenRow } from "../components/ui";
@@ -14,12 +14,13 @@ const TABS: [Tab, string][] = [["trending", "Trending"], ["new", "New"], ["top",
 
 export default function Trending() {
   const [tab, setTab] = useState<Tab>("trending");
-  const [pad, setPad] = useState<string>("all");
+  const [pad, setPad] = useState<string>(() => new URLSearchParams((location.hash.split("?")[1]) || "").get("pad") ?? "all");
   const [pads, setPads] = useState<{ pad: string; n: number; label?: string; logo?: string | null }[]>([]);
   const [q, setQ] = useState(""); const [searching, setSearching] = useState(false);
   const [buyFor, setBuyFor] = useState<string | null>(null);
   const [live, setLive] = useState(false);
   const snapshot = useStore(useCallback(() => ({ o: orders(), n: allTokens().length, w: getWatch().size }), []));
+  const prefs = useStore(getPrefs);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { void loadTrending(); void loadList(); api.padcounts().then(setPads).catch(() => undefined); }, []);
@@ -90,7 +91,8 @@ export default function Trending() {
   return (
     <>
       <Header title="ArcTools" right={<>
-        <span className="pill" style={{ color: live ? "var(--up)" : "var(--dim)" }}>● {live ? "live" : "…"}</span>
+        <div className="amts" title="quick-buy amount">{prefs.presets.map((p) => <button key={p} className={prefs.quickBuy === p ? "on" : ""} onClick={() => setPrefs({ quickBuy: p })}>{p}</button>)}</div>
+        <span className="pill" style={{ color: live ? "var(--up)" : "var(--dim)" }}>●</span>
         <button className="icon-btn" onClick={() => { setSearching((s) => !s); setQ(""); }}><Icon.search className="" /></button>
       </>} />
       {searching && <div style={{ padding: "0 14px 8px" }}><div className="field"><Icon.search className="" /><input type="search" placeholder="name, symbol or 0x address" value={q} onChange={(e) => setQ(e.target.value)} autoCapitalize="none" autoCorrect="off" enterKeyHint="search" ref={(el) => { if (el && searching && !q) setTimeout(() => el.focus(), 50); }} /><button className="pill" onClick={() => { setSearching(false); setQ(""); }}>✕</button></div></div>}

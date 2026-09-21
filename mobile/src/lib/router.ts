@@ -5,7 +5,7 @@ export type Route =
   | { name: "trending" } | { name: "watch" } | { name: "swap"; token?: string } | { name: "wallet" } | { name: "more" }
   | { name: "token"; ca: string } | { name: "insiders" } | { name: "launchpad" } | { name: "pay" } | { name: "referrals" }
   | { name: "bridge" } | { name: "rewards" } | { name: "alerts" } | { name: "profile"; wallet?: string } | { name: "settings" }
-  | { name: "send" } | { name: "receive" } | { name: "history" } | { name: "search" };
+  | { name: "send" } | { name: "receive" } | { name: "history" } | { name: "search" } | { name: "trades" } | { name: "traders" };
 
 export function parse(hash: string): Route {
   const h = (hash || "#/").replace(/^#/, "");
@@ -21,7 +21,7 @@ export function parse(hash: string): Route {
     case "token": return seg[1] ? { name: "token", ca: seg[1].toLowerCase() } : { name: "trending" };
     case "profile": return { name: "profile", wallet: seg[1] };
     case "insiders": case "launchpad": case "pay": case "referrals": case "bridge": case "rewards": case "alerts":
-    case "settings": case "send": case "receive": case "history": case "search":
+    case "settings": case "send": case "receive": case "history": case "search": case "trades": case "traders":
       return { name: seg[0] } as Route;
     default: return { name: "trending" };
   }
@@ -43,8 +43,8 @@ export function useRoute(): Route {
 /** which bottom tab a route belongs to (token pages light up Trending, sub-pages light up More) */
 export const tabOf = (r: Route): "trending" | "watch" | "swap" | "wallet" | "more" => {
   switch (r.name) {
-    case "trending": case "token": case "search": return "trending";
-    case "watch": case "alerts": return "watch";
+    case "trending": case "token": case "search": case "trades": return "trending";
+    case "watch": case "alerts": case "traders": case "insiders": return "watch";
     case "swap": return "swap";
     case "wallet": case "send": case "receive": case "history": return "wallet";
     default: return "more";

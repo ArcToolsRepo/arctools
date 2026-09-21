@@ -1,22 +1,27 @@
 /** The "More" pages. Each is small on purpose: one job, real data, no decoration. */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import * as HW from "../lib/arc-hotwallet";
+import { ARCT, FN, VAULT, p32, pnum } from "../lib/arc-wallet";
 import { api, type Trade } from "../lib/api";
 import { usd, num, pct, ago, short, isAddr } from "../lib/fmt";
 import { go, type Route } from "../lib/router";
 import { getPrefs, setPrefs, toast, useStore, getWatch, loadRisk, getRisk } from "../lib/store";
 import { Header, Icon, Logo } from "../components/ui";
-import { openUrl } from "../lib/native";
+import { Launch, Pay as PayNative, Referrals as RefNative, Bridge as BridgeNative, Trades, Traders } from "./Native";
+import { openUrl, buzzOk } from "../lib/native";
+import { Unlock } from "./Wallet";
 
 export default function Sub({ route }: { route: Route }) {
   switch (route.name) {
     case "insiders": return <Insiders />;
     case "alerts": return <Alerts />;
-    case "launchpad": return <Launchpad />;
-    case "pay": return <Pay />;
-    case "referrals": return <Referrals />;
-    case "bridge": return <Bridge />;
+    case "launchpad": return <Launch />;
+    case "pay": return <PayNative />;
+    case "referrals": return <RefNative />;
+    case "bridge": return <BridgeNative />;
+    case "trades": return <Trades />;
+    case "traders": return <Traders />;
     case "rewards": return <Rewards />;
     case "history": return <History />;
     case "profile": return <Profile wallet={route.wallet} />;
@@ -68,85 +73,65 @@ function Alerts() {
   );
 }
 
-// ---------- Launchpad ----------
-function Launchpad() {
-  return (
-    <>
-      <Header title="ArcToolsPad" back />
-      <div className="card"><b style={{ fontSize: 16 }}>Launch a token on Arc</b><p className="muted" style={{ margin: "6px 0 0", fontSize: 13.5 }}>30 USDC, instant. The launch flow needs an image upload and a few fields — it opens in the built-in browser with your app wallet's address prefilled.</p></div>
-      <div style={{ padding: "0 14px" }}><button className="btn primary" onClick={() => openUrl(`https://arctools.fun/launchpad2?from=${HW.hotAddress() ?? ""}`)}>Open launchpad</button></div>
-      <div className="label">Recent launches</div>
-      <div className="empty" style={{ padding: 20 }}>Trending → chip "ArcToolsPad" shows every token launched here.</div>
-    </>
-  );
-}
-
-// ---------- Pay links ----------
-function Pay() {
-  const addr = HW.hotAddress();
-  const [links, setLinks] = useState<Record<string, unknown>[] | null>(null);
-  useEffect(() => { if (addr) api.claimsBySender(addr).then(setLinks).catch(() => setLinks([])); }, [addr]);
-  return (
-    <>
-      <Header title="Pay links" back />
-      <div className="card"><b style={{ fontSize: 16 }}>Send USDC with a link</b><p className="muted" style={{ margin: "6px 0 0", fontSize: 13.5 }}>Lock USDC in ArcClaim, share one link; the receiver claims to any wallet. 2% collection fee. Unclaimed links can be reclaimed.</p></div>
-      <div style={{ padding: "0 14px" }}><button className="btn primary" onClick={() => openUrl("https://arctools.fun/pay2")}>Create a pay link</button></div>
-      <div className="label">Your links</div>
-      {!addr ? <div className="empty">Create a wallet first.</div> : links == null ? <div className="empty">Loading…</div> : links.length === 0 ? <div className="empty">No links yet.</div> : links.map((l, i) => (
-        <div key={i} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", fontSize: 13.5 }}><span className="num">{usd(Number(l.amount ?? l.usdc ?? 0), 2)}</span><span className={String(l.state ?? l.status) === "claimed" ? "up" : "muted"}>{String(l.state ?? l.status ?? "")}</span><span className="muted">{ago(Number(l.ts ?? l.created))}</span></div>
-      ))}
-    </>
-  );
-}
-
-// ---------- Referrals ----------
-function Referrals() {
-  const addr = HW.hotAddress(); const link = addr ? `https://arctools.fun/?ref=${addr}` : "";
-  const [qr, setQr] = useState("");
-  useEffect(() => { if (link) QRCode.toDataURL(link, { margin: 1, width: 200 }).then(setQr); }, [link]);
-  return (
-    <>
-      <Header title="Referrals" back />
-      <div className="card"><b style={{ fontSize: 16 }}>Earn 25% of the fees your invites generate</b><p className="muted" style={{ margin: "6px 0 0", fontSize: 13.5 }}>Paid in USDC, claimable any time on the site. Share your link or the QR.</p></div>
-      {!addr ? <div className="empty">Create a wallet first.</div> : (
-        <div className="card" style={{ textAlign: "center" }}>
-          {qr && <img alt="" src={qr} style={{ width: 160, height: 160, borderRadius: 10, background: "#fff", padding: 6 }} />}
-          <div className="mono" style={{ fontSize: 12, wordBreak: "break-all", margin: "10px 0" }}>{link}</div>
-          <div className="grid2"><button className="btn ghost sm" onClick={() => { navigator.clipboard?.writeText(link); toast("Link copied", "ok"); }}>Copy link</button><button className="btn ghost sm" onClick={() => (navigator as { share?: (d: { url: string; text: string }) => Promise<void> }).share?.({ url: link, text: "Trade every Arc launchpad in one tap — ArcTools" })}>Share</button></div>
-        </div>
-      )}
-      <div style={{ padding: "0 14px" }}><button className="btn ghost" onClick={() => openUrl("https://arctools.fun/referrals2")}>Earnings & claim ↗</button></div>
-    </>
-  );
-}
-
-// ---------- Bridge ----------
-function Bridge() {
-  return (
-    <>
-      <Header title="Bridge" back />
-      <div className="card"><b style={{ fontSize: 16 }}>USDC from another chain → Arc</b><p className="muted" style={{ margin: "6px 0 0", fontSize: 13.5 }}>Circle CCTP. Ethereum, Base, Arbitrum, Polygon, Avalanche, Optimism. 2% fee → ARCT buyback. You need the source-chain wallet (MetaMask etc.), so this opens in the browser; paste your app address as the destination:</p>
-        <button className="field" style={{ marginTop: 10, width: "100%" }} onClick={() => { navigator.clipboard?.writeText(HW.hotAddress() ?? ""); toast("Address copied", "ok"); }}><span className="mono" style={{ fontSize: 12.5, flex: 1, textAlign: "left" }}>{HW.hotAddress() ?? "create a wallet first"}</span><Icon.copy className="" /></button>
-      </div>
-      <div style={{ padding: "0 14px" }}><button className="btn primary" onClick={() => openUrl("https://arctools.fun/bridge2")}>Open bridge</button></div>
-    </>
-  );
-}
-
-// ---------- Rewards / ARCT ----------
+// ---------- Rewards / ARCT: stats + native staking ----------
 function Rewards() {
   const [burn, setBurn] = useState<Record<string, number> | null>(null); const [bb, setBb] = useState<Record<string, unknown> | null>(null);
-  useEffect(() => { api.burn().then((r) => setBurn(r as Record<string, number>)).catch(() => undefined); api.buyback().then(setBb).catch(() => undefined); }, []);
-  const ARCT = "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52";
+  const [, tick] = useState(0); useEffect(() => { const off = HW.onHotChange(() => tick((n) => n + 1)); return () => { off(); }; }, []);
+  const addr = HW.hotAddress();
+  const [pos, setPos] = useState<{ bal: bigint; staked: bigint; claimable: bigint } | null>(null);
+  const [mode, setMode] = useState<"stake" | "withdraw">("stake"); const [amt, setAmt] = useState(""); const [busy, setBusy] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    api.burn().then((r) => setBurn(r as Record<string, number>)).catch(() => undefined); api.buyback().then(setBb).catch(() => undefined);
+    if (!addr) return;
+    try {
+      const [b, st, cl] = await Promise.all([HW.hotCall(ARCT, FN.balanceOf + p32(addr)), HW.hotCall(VAULT, FN.staked + p32(addr)), HW.hotCall(VAULT, FN.claimableUsdc + p32(addr)).catch(() => "0x0")]);
+      const h = (x: string | null) => (x && x !== "0x" ? BigInt(x) : 0n);
+      setPos({ bal: h(b), staked: h(st), claimable: h(cl) });
+    } catch { /* keep */ }
+  }, [addr]);
+  useEffect(() => { void load(); }, [load, busy]);
+  const run = async () => {
+    setBusy("…");
+    try {
+      const wei = amt.toLowerCase() === "max" ? (mode === "stake" ? pos!.bal : pos!.staked) : BigInt(Math.round(Number(amt) * 1e6)) * 10n ** 12n;
+      if (wei <= 0n) throw new Error("Enter an amount");
+      if (mode === "stake") {
+        const al = await HW.hotCall(ARCT, "0xdd62ed3e" + p32(addr!) + p32(VAULT));
+        if (!al || al === "0x" || BigInt(al) < wei) { setBusy("Approving…"); await HW.hotWait(await HW.hotApprove(ARCT, VAULT, (1n << 256n) - 1n)); }
+        setBusy("Staking…"); const h = await HW.hotSend({ to: VAULT, data: FN.stake + pnum(wei), gasLimit: 250_000n }); buzzOk(); toast(`Staked ${num(Number(wei) / 1e18)} ARCT`, "ok", h);
+      } else { setBusy("Withdrawing…"); const h = await HW.hotSend({ to: VAULT, data: FN.withdraw + pnum(wei), gasLimit: 250_000n }); buzzOk(); toast(`Withdrew ${num(Number(wei) / 1e18)} ARCT`, "ok", h); }
+      setAmt("");
+    } catch (e) { toast(String((e as Error).message || e).slice(0, 140), "err"); } finally { setBusy(null); }
+  };
+  const claim = async () => { setBusy("Claiming…"); try { const h = await HW.hotSend({ to: VAULT, data: FN.claimUsdc, gasLimit: 200_000n }); buzzOk(); toast("USDC rewards claimed", "ok", h); } catch (e) { toast(String((e as Error).message).slice(0, 140), "err"); } finally { setBusy(null); } };
+  const f18 = (v: bigint) => Number(v) / 1e18;
   return (
     <>
       <Header title="ARCT" back />
       <div className="tiles" style={{ gridTemplateColumns: "1fr 1fr" }}>
         <div className="tile"><small>Burned</small><b className="up">{burn ? `${num(burn.burned)} (${burn.pct?.toFixed(2)}%)` : "…"}</b></div>
-        <div className="tile"><small>Buybacks</small><b>{bb ? `${bb.runs} runs · ${usd(Number(bb.usdc_spent), 0)}` : "…"}</b></div>
+        <div className="tile"><small>Buybacks</small><b>{bb ? `${bb.runs} · ${usd(Number(bb.usdc_spent), 0)}` : "…"}</b></div>
       </div>
-      <div className="card"><b>How it works</b><p className="muted" style={{ margin: "6px 0 0", fontSize: 13.5 }}>Every fee — 0.5% swap, 1% sniper, 1% pad trade, 2% bridge, 2% pay-link — lands in the treasury. A keeper buys ARCT and sends it to the burn address in the same transaction, on schedule. Nothing is held; everything is verifiable on chain.</p></div>
-      <div className="grid2" style={{ padding: "0 14px" }}><button className="btn primary" onClick={() => go(`/token/${ARCT}`)}>Trade ARCT</button><button className="btn ghost" onClick={() => openUrl("https://arctools.fun/rewards2")}>Staking ↗</button></div>
+      {addr && (
+        <div className="card" style={{ padding: 12 }}>
+          <div className="label" style={{ margin: "0 0 6px" }}>Staking</div>
+          <div className="kv" style={{ borderTop: 0 }}><span>Staked</span><b className="num">{pos ? num(f18(pos.staked)) : "…"} ARCT</b></div>
+          <div className="kv"><span>In wallet</span><b className="num">{pos ? num(f18(pos.bal)) : "…"} ARCT</b></div>
+          <div className="kv"><span>Claimable</span><b className="num up">{pos ? `${f18(pos.claimable).toFixed(4)} USDC` : "…"}</b></div>
+          {!HW.isUnlocked() ? <Unlock /> : (
+            <>
+              <div className="seg" style={{ padding: "8px 0" }}>{(["stake", "withdraw"] as const).map((m) => <button key={m} className={`chip ${mode === m ? "on" : ""}`} onClick={() => setMode(m)}>{m}</button>)}</div>
+              <div className="field"><span className="muted">ARCT</span><input inputMode="decimal" placeholder="0" value={amt} onChange={(e) => setAmt(e.target.value.replace(/[^0-9.]/g, ""))} /><button className="pill" onClick={() => setAmt("max")}>MAX</button></div>
+              <div className="grid2" style={{ marginTop: 10 }}>
+                <button className={`btn sm ${mode === "stake" ? "primary" : "ghost"}`} disabled={!!busy || !amt} onClick={run}>{busy ?? (mode === "stake" ? "Stake" : "Withdraw")}</button>
+                <button className="btn sm ghost" disabled={!!busy || !pos || pos.claimable === 0n} onClick={claim}>Claim USDC</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      <div className="card"><b>How it works</b><p className="muted" style={{ margin: "6px 0 0", fontSize: 13.5 }}>Every fee — 0.5% swap, 1% sniper, 1% pad trade, 2% bridge, 2% pay-link — lands in the treasury; a keeper buys ARCT and burns it in the same transaction. Stakers earn USDC from ArcToolsPad fees plus 5% of the supply of every token launched there.</p></div>
+      <div style={{ padding: "0 14px" }}><button className="btn primary" onClick={() => go(`/token/${ARCT}`)}>Trade ARCT</button></div>
     </>
   );
 }
@@ -212,7 +197,7 @@ function Settings() {
         <div className="kv" style={{ borderTop: 0 }}><span>Hide clone farms</span><button className={`pill ${prefs.hideClones ? "green" : ""}`} onClick={() => setPrefs({ hideClones: !prefs.hideClones })}>{prefs.hideClones ? "on" : "off"}</button></div>
       </div>
       <div className="label">About</div>
-      <div className="card muted" style={{ fontSize: 12.5 }}>ArcTools for Android v1.2 · arctools.fun · Fees fund ARCT buybacks that burn in the same transaction. Your key never leaves this phone. Internal review only — no third-party audit.</div>
+      <div className="card muted" style={{ fontSize: 12.5 }}>ArcTools for Android v1.3 · arctools.fun · Fees fund ARCT buybacks that burn in the same transaction. Your key never leaves this phone. Internal review only — no third-party audit.</div>
     </>
   );
 }
