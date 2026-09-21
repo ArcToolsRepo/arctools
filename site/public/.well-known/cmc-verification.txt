@@ -1,0 +1,9 @@
+ArcTools (ARCT) — CoinMarketCap listing verification
+This file is published by the ArcTools team, owners of arctools.fun.
+Token contract (Arc, chain id 5042): 0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52
+Treasury: 0xb35c471b31D636B96f95b84E7A27D69B63235C0D
+Official X: https://x.com/ArcToolsBackup
+Official Telegram: https://t.me/ArcToolsPortal , https://t.me/ARCTrends
+Source: https://github.com/ArcToolsRepo/arctools
+Supply API: https://arctools.fun/api/supply?q=total | ?q=circulating
+Date: 2026-09-21

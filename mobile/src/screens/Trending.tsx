@@ -32,19 +32,23 @@ export default function Trending() {
   useEffect(() => { void loadTrending(); void loadList(); api.padcounts().then(setPads).catch(() => undefined); }, []);
   // push feed: trending frames arrive as the bot refreshes them; the poller is only the safety net
   useEffect(() => {
-    let es: EventSource | null = null; let closed = false; let backoff = 2000; let lastBeat = Date.now();
+    let es: EventSource | null = null; let closed = false; let backoff = 2000; let lastBeat = Date.now(); let lastFrame = 0;
     const open = () => {
       if (closed) return;
       es = new EventSource(streamUrl());
-      const beat = () => { lastBeat = Date.now(); setLive(true); };
+      // `chain` heartbeats prove the socket is open, not that data flows: a connection that only ever carried
+      // heartbeats made the poller back off to 60 s and market caps sat still. Only a trending frame counts as live.
+      const beat = () => { lastBeat = Date.now(); };
+      const frame = () => { lastBeat = Date.now(); lastFrame = Date.now(); setLive(true); };
       es.addEventListener("hello", beat); es.addEventListener("chain", beat);
-      es.addEventListener("trending", (ev) => { beat(); try { const q = (ev as MessageEvent).lastEventId || ""; const j = JSON.parse((ev as MessageEvent).data) as { rows?: Trend[] }; if (j.rows?.length) applyTrendFrame(q, j.rows); } catch { /* bad frame */ } });
+      es.addEventListener("trending", (ev) => { frame(); try { const q = (ev as MessageEvent).lastEventId || ""; const j = JSON.parse((ev as MessageEvent).data) as { rows?: Trend[] }; if (j.rows?.length) applyTrendFrame(q, j.rows); } catch { /* bad frame */ } });
       es.onerror = () => { setLive(false); es?.close(); es = null; if (!closed) setTimeout(open, backoff); backoff = Math.min(backoff * 2, 15_000); };
     };
     open();
-    const pulse = setInterval(() => { if (Date.now() - lastBeat > 40_000) { setLive(false); es?.close(); es = null; if (!closed) open(); } }, 5000);
+    const pulse = setInterval(() => { if (Date.now() - lastBeat > 40_000) { setLive(false); es?.close(); es = null; if (!closed) open(); } else if (live && Date.now() - lastFrame > 45_000) setLive(false); }, 5000);
     const poll = setInterval(() => { if (!document.hidden) void loadTrending(!live); }, live ? 60_000 : 15_000);
-    return () => { closed = true; es?.close(); clearInterval(pulse); clearInterval(poll); };
+    const list = setInterval(() => { if (!document.hidden) void loadList(); }, 60_000);
+    return () => { closed = true; es?.close(); clearInterval(pulse); clearInterval(poll); clearInterval(list); };
   }, [live]);
 
   const rows = useMemo(() => {

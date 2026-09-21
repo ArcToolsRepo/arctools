@@ -123,6 +123,23 @@ async def api(req):
                 return web.json_response({"error": f"not prunable: {table}"}, status=400)
             return web.json_response(await prune(table, max(3, min(180, int(req.query.get("days", "21")))),
                                                  max(1, min(60, int(req.query.get("batches", "10"))))))
+        if action == "export-pools":
+            # every token we know with every pool we have seen for it: V3 (insider_pools), V4 (v4_pools), plus the
+            # pad/venue routing from social_tokens/token_symbols. One CSV; the owner slices it himself.
+            rows = await db.fetchall(text("""
+                SELECT p.token, COALESCE(s.symbol,'') AS symbol, 'v3' AS kind, p.pool AS pool, NULL AS hooks, NULL AS fee, p.is0
+                FROM insider_pools p LEFT JOIN token_symbols s ON s.token = p.token
+                UNION ALL
+                SELECT v.token, COALESCE(s.symbol,''), 'v4', v.id, v.hooks, v.fee, v.is0
+                FROM v4_pools v LEFT JOIN token_symbols s ON s.token = v.token
+                UNION ALL
+                SELECT t.token, COALESCE(t.symbol,''), 'nopool', NULL, NULL, NULL, NULL
+                FROM token_symbols t WHERE t.token NOT IN (SELECT token FROM insider_pools) AND t.token NOT IN (SELECT token FROM v4_pools)
+                ORDER BY 1, 3"""))
+            import io, csv
+            buf = io.StringIO(); w = csv.writer(buf); w.writerow(["token", "symbol", "kind", "pool", "hooks", "fee", "usdc_is0"])
+            for r in rows: w.writerow([r["token"], r["symbol"], r["kind"], r["pool"] or "", r["hooks"] or "", r["fee"] if r["fee"] is not None else "", r["is0"] if r["is0"] is not None else ""])
+            return web.Response(text=buf.getvalue(), content_type="text/csv", headers={"Content-Disposition": "attachment; filename=arc-tokens-pools.csv"})
         if action == "token-age":
             t = (req.query.get("token") or "").lower()
             r = await db.fetchone(text("SELECT MIN(ts) AS mn, MAX(ts) AS mx, COUNT(*) AS n, COUNT(*) FILTER (WHERE price1m > 0 AND usdc >= 0.5) AS priced, MIN(ts) FILTER (WHERE price1m > 0 AND usdc >= 0.5) AS mn_priced FROM swaps WHERE token = :t").bindparams(t=t))

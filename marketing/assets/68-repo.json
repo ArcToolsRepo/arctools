@@ -1,0 +1,87 @@
+{
+ "name": "ArcToolsRepo/arctools",
+ "branch": "main",
+ "files": [
+  [
+   ".gitignore",
+   "file"
+  ],
+  [
+   "HANDOVER.md",
+   "file"
+  ],
+  [
+   "README.md",
+   "file"
+  ],
+  [
+   "audit.py",
+   "file"
+  ],
+  [
+   "buybot",
+   "dir"
+  ],
+  [
+   "contracts",
+   "dir"
+  ],
+  [
+   "marketing",
+   "dir"
+  ],
+  [
+   "mobile",
+   "dir"
+  ],
+  [
+   "rpc-relay",
+   "dir"
+  ],
+  [
+   "site",
+   "dir"
+  ],
+  [
+   "sniper-bot",
+   "dir"
+  ],
+  [
+   "sniper-scripts",
+   "dir"
+  ],
+  [
+   "sniper",
+   "dir"
+  ],
+  [
+   "website",
+   "dir"
+  ]
+ ],
+ "langs": [
+  [
+   "TypeScript",
+   69.8
+  ],
+  [
+   "Python",
+   17.1
+  ],
+  [
+   "CSS",
+   9.2
+  ],
+  [
+   "Solidity",
+   3.1
+  ],
+  [
+   "JavaScript",
+   0.4
+  ]
+ ],
+ "last": "gitignore: runtime secret files (ingest/relay/bridge-owner/hb)",
+ "commits": 305,
+ "license": null
+}
