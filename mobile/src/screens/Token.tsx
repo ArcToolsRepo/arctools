@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createChart, ColorType, CandlestickSeries, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
-import { api, streamUrl, type Risk, type Sim, type Stats, type Trade } from "../lib/api";
+import { api, streamUrl, type Holding, type Sim, type Stats, type Trade } from "../lib/api";
+import * as HW from "../lib/arc-hotwallet";
 import { usd, num, pct, price, ago, short } from "../lib/fmt";
 import { go } from "../lib/router";
 import { getToken, getHot, getTrend, isWatched, loadRisk, getRisk, toggleWatch, toast, useStore } from "../lib/store";
@@ -23,6 +24,13 @@ export default function Token({ ca }: { ca: string }) {
   const [holders, setHolders] = useState<unknown[] | null>(null);
   const [traders, setTraders] = useState<Record<string, unknown> | null>(null);
   const [sheet, setSheet] = useState<"buy" | "sell" | null>(null);
+  const [pos, setPos] = useState<Holding | null | undefined>(undefined);   // undefined = loading, null = none
+  const [, hotTick] = useState(0); useEffect(() => { const off = HW.onHotChange(() => hotTick((n) => n + 1)); return () => { off(); }; }, []);
+  useEffect(() => {
+    const a = HW.hotAddress(); if (!a) { setPos(null); return; }
+    const load = () => api.holdings(a).then((r) => setPos((r.holdings ?? []).find((h) => h.token.toLowerCase() === ca) ?? null)).catch(() => setPos(null));
+    load(); const id = setInterval(load, 20_000); return () => clearInterval(id);
+  }, [ca, sheet]);
   const chartBox = useRef<HTMLDivElement>(null); const chart = useRef<IChartApi | null>(null); const series = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const sym = t?.symbol || tr?.symbol || (meta?.symbol as string) || short(ca);
 
@@ -116,6 +124,15 @@ export default function Token({ ca }: { ca: string }) {
         {rk?.dev_rugs ? <div className="kv"><span>Deployer history</span><b className="down">{rk.dev_rugs} dumped of {rk.dev_launches ?? "?"} launches</b></div> : null}
       </div>
 
+      {pos && pos.amount > 0 && (
+        <div className="card" style={{ padding: "10px 14px", borderLeft: "3px solid var(--up)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <div><div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em" }}>Your position</div><b className="num" style={{ fontSize: 16 }}>{num(pos.amount)} {sym}</b></div>
+            <div style={{ textAlign: "right" }}><b className="num" style={{ fontSize: 16 }}>{usd(pos.valueUsdc, 2)}</b>{pos.unrealized != null && <div className={`num ${pos.unrealized >= 0 ? "up" : "down"}`} style={{ fontSize: 12.5, fontWeight: 700 }}>{pos.unrealized >= 0 ? "+" : "−"}{usd(Math.abs(pos.unrealized), 2)}{pos.avgEntry && pos.price ? ` (${pct((pos.price / pos.avgEntry - 1) * 100)})` : ""}</div>}</div>
+          </div>
+          <div className="presets" style={{ marginTop: 8, gridTemplateColumns: "repeat(4, 1fr)" }}>{[25, 50, 75, 100].map((p) => <button key={p} className="pill red" style={{ height: 32, justifyContent: "center" }} onClick={() => setSheet("sell")}>Sell {p}%</button>)}</div>
+        </div>
+      )}
       <div className="seg">{(["trades", "holders", "traders", "dev", "info"] as TabK[]).map((k) => <button key={k} className={`chip ${tab === k ? "on" : ""}`} onClick={() => setTab(k)}>{k === "traders" ? "top traders" : k === "dev" ? "dev tokens" : k}</button>)}</div>
       {tab === "trades" && (trades.length === 0 ? <div className="empty">No trades yet</div> : trades.slice(0, 60).map((x) => (
         <div key={x.tx + x.ts} className="trade-row"><span className="muted num">{ago(x.ts)}</span><b className={x.side === "buy" ? "up" : "down"}>{x.side.toUpperCase()}</b><span className="num">{usd(x.usdc, 2)}</span><span className="num muted">{num(x.tokens)}</span><button className="mono muted" style={{ fontSize: 12 }} onClick={() => go(`/profile/${x.wallet}`)}>{short(x.wallet, 3)}</button></div>

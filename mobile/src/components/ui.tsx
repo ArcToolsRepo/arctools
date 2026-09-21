@@ -1,5 +1,5 @@
-import React, { useEffect, useState, type ReactNode } from "react";
-import { getToasts, useStore, getToken, getTrend, getHot, getRisk, isWatched, getLogo } from "../lib/store";
+import React, { useEffect, useRef, useState, type ReactNode } from "react";
+import { getToasts, useStore, getToken, getTrend, getHot, getRisk, isWatched, getLogo, getPrefs } from "../lib/store";
 import { usd, pct, ago, short } from "../lib/fmt";
 import { go } from "../lib/router";
 
@@ -53,7 +53,8 @@ export function Logo({ ca, size = 44 }: { ca: string; size?: number }) {
 }
 
 /** the row: logo · name/age/pad · MC/change · buy */
-export function TokenRow({ ca, onBuy, showRisk = true }: { ca: string; onBuy?: (ca: string) => void; showRisk?: boolean }) {
+export function TokenRow({ ca, onBuy, onQuick, showRisk = true }: { ca: string; onBuy?: (ca: string) => void; onQuick?: (ca: string) => void; showRisk?: boolean }) {
+  const press = useRef<number>(0);
   const t = getToken(ca); const tr = getHot(ca) ?? getTrend(ca); const rk = showRisk ? getRisk(ca) : undefined;
   const sym = t?.symbol || tr?.symbol || short(ca);
   const name = t?.name && t.name !== sym ? t.name : "";
@@ -77,7 +78,14 @@ export function TokenRow({ ca, onBuy, showRisk = true }: { ca: string; onBuy?: (
       <div className="row-right">
         <div className="row-mc">{usd(mcap)}</div>
         <div className={`row-chg ${tr?.chg != null ? (tr.chg >= 0 ? "up" : "down") : "muted"}`}>{pct(tr?.chg)}</div>
-        {onBuy && <button className="buy" onClick={(e) => { e.stopPropagation(); onBuy(ca); }}><Icon.bolt className="" /></button>}
+        {onBuy && (
+          <button className="buy" title="tap: quick buy · hold: choose amount"
+            onPointerDown={(e) => { e.stopPropagation(); press.current = Date.now(); }}
+            onPointerUp={(e) => { e.stopPropagation(); const held = Date.now() - press.current; press.current = 0; if (held > 450 || !onQuick) onBuy(ca); else onQuick(ca); }}
+            onClick={(e) => e.stopPropagation()}>
+            <Icon.bolt className="" />{onQuick && <span style={{ fontSize: 10, marginLeft: 3 }}>{getPrefs().quickBuy}</span>}
+          </button>
+        )}
       </div>
     </div>
   );

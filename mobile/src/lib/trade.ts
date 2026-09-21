@@ -4,6 +4,7 @@ import { api } from "./api";
 import { ARC_AGGREGATOR, encodeAggregatorSwap } from "./arc-wallet";
 import * as HW from "./arc-hotwallet";
 import { getPrefs, toast } from "./store";
+import { buzzErr, buzzOk } from "./native";
 
 const FEE_BPS = 50;                       // matches the site's /swap tab and the on-chain fee
 const USDC_DEC = 18n;                     // native USDC on Arc is 18-dec under the hood
@@ -73,11 +74,11 @@ export async function sell(token: string, pctOfBalance: number, onStep?: (s: str
 export async function quickBuy(token: string, symbol: string, usdc: number) {
   try {
     const h = await buy(token, usdc, (s) => toast(s, "info"));
-    toast(`Bought ${symbol} for ${usdc} USDC`, "ok", h);
+    buzzOk(); toast(`Bought ${symbol} for ${usdc} USDC`, "ok", h);
     HW.hotWait(h).then((r) => { if (r.status !== 1) toast(`${symbol} buy reverted on-chain`, "err", h); }).catch(() => undefined);
     return h;
   } catch (e) {
-    toast(String((e as Error).message || e).slice(0, 160), "err");
+    buzzErr(); toast(String((e as Error).message || e).slice(0, 160), "err");
     throw e;
   }
 }

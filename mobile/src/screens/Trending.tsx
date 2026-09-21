@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { tap } from "../lib/native";
 import { api, streamUrl, type Trend } from "../lib/api";
 import { isAddr } from "../lib/fmt";
 import { go } from "../lib/router";
@@ -64,6 +65,18 @@ export default function Trending() {
   useEffect(() => { void loadRisk(rows.slice(0, 40)); void loadLogos(rows.slice(0, 40)); }, [rows]);
 
   const onBuy = (ca: string) => { if (!HW.hasWallet()) return go("/wallet"); setBuyFor(ca); };
+  // one tap = buy the default amount right now. No confirmation: that is what the ⚡ is for. Locked wallet → sheet.
+  const onQuick = (ca: string) => {
+    if (!HW.hasWallet()) return go("/wallet");
+    if (!HW.isUnlocked()) return setBuyFor(ca);
+    tap(); const t = getToken(ca); const tr = getHot(ca) ?? getTrend(ca);
+    void quickBuy(ca, t?.symbol || tr?.symbol || "token", getPrefs().quickBuy).catch(() => undefined);
+  };
+  // pull-to-refresh: a touch that starts at scrollTop 0 and drags down 80 px reloads both lists
+  const pull = useRef<{ y0: number; armed: boolean }>({ y0: 0, armed: false });
+  const [pulling, setPulling] = useState(false);
+  const onTS = (e: React.TouchEvent) => { if (window.scrollY <= 0) pull.current = { y0: e.touches[0].clientY, armed: true }; };
+  const onTM = (e: React.TouchEvent) => { if (pull.current.armed && e.touches[0].clientY - pull.current.y0 > 80 && !pulling) { setPulling(true); Promise.all([loadTrending(true), loadList(true)]).finally(() => { setPulling(false); pull.current.armed = false; }); } };
   const loading = !snapshot.o.hot.length && !snapshot.o.trend.length && !snapshot.n;
 
   return (
@@ -80,9 +93,10 @@ export default function Trending() {
           {pads.slice(0, 24).map((p) => <button key={p.pad} className={`chip ${pad === p.pad ? "on" : ""}`} onClick={() => setPad(pad === p.pad ? "all" : p.pad)}>{p.logo && <img alt="" src={p.logo} />}{p.label ?? p.pad}</button>)}
         </div>
       </>}
-      <div ref={listRef}>
+      <div ref={listRef} onTouchStart={onTS} onTouchMove={onTM}>
+        {pulling && <div className="empty" style={{ padding: 10 }}>refreshing…</div>}
         {loading ? <Skeleton /> : rows.length === 0 ? <div className="empty">{tab === "watch" ? "Nothing on your watchlist yet. Tap ★ on a token." : q ? "No match. Paste a contract address to open any token." : "Nothing here right now."}</div>
-          : rows.map((ca) => <TokenRow key={ca} ca={ca} onBuy={onBuy} />)}
+          : rows.map((ca) => <TokenRow key={ca} ca={ca} onBuy={onBuy} onQuick={onQuick} />)}
       </div>
       <BuySheet ca={buyFor} onClose={() => setBuyFor(null)} />
     </>

@@ -18,12 +18,12 @@ function AppPage() {
     const ua = navigator.userAgent; setOs(/android/i.test(ua) ? "android" : /iphone|ipad/i.test(ua) ? "ios" : "other");
   }, []);
   return (
-    <main className="arc-body">
-      <ArcNav />
-      <section style={{ maxWidth: 720, margin: "0 auto", padding: "32px 20px 80px" }}>
-        <p className="arc-eyebrow">Android · direct download</p>
+    <main className="arc-site" style={{ minHeight: "100dvh" }}>
+      <ArcNav active="/app" />
+      <section className="arc-section" style={{ maxWidth: 760, paddingTop: 112, paddingBottom: 80 }}>
+        <p className="arc-eyebrow">ANDROID · DIRECT DOWNLOAD</p>
         <h1 className="arc-h2" style={{ fontSize: 36, margin: "6px 0 10px" }}>ArcTools in your pocket.</h1>
-        <p style={{ color: "var(--arc-muted)", fontSize: 16, lineHeight: 1.5, margin: 0 }}>Every Arc launchpad in one list, one-tap buys, the token page with chart and safety checks, and a wallet whose key never leaves your phone. The same engine as the site — as an app.</p>
+        <p className="arc-body" style={{ maxWidth: 720 }}>Every Arc launchpad in one list, one-tap buys, the token page with chart and safety checks, and a wallet whose key never leaves your phone. The same engine as the site — as an app.</p>
 
         <div style={{ background: "var(--arc-paper)", border: "1px solid var(--arc-line)", borderRadius: 14, padding: 18, margin: "22px 0" }}>
           {m ? (

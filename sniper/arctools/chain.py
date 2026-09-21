@@ -58,6 +58,11 @@ class Chain:
                                        "timed out", "timeout", "405", "403", "502", "503", "read-only", "method not allowed")) \
             or name in ("clientconnectorerror", "timeouterror", "clientresponseerror", "serverdisconnectederror")
         limited = any(k in msg for k in ("quota", "exceeded", "429", "too many", "rate limit", "-32600", "-32005"))
+        # a node that ANSWERED about the request is healthy — never bench it for what it said. -32602 (invalid
+        # params: "block range extends beyond current head", bad tx) and reverts come from a live node.
+        answered = "-32602" in msg or "-32000" in msg or "revert" in msg or "insufficient funds" in msg or "nonce" in msg or "already known" in msg
+        if answered:
+            return
         if dead or limited:
             q = 120 if dead else (20 if idx == 0 else 90)
             if self._down.get(idx, 0) <= time.time():
