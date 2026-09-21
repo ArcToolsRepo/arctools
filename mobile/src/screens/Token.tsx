@@ -49,16 +49,23 @@ export default function Token({ ca }: { ca: string }) {
   // chart
   useEffect(() => {
     if (!chartBox.current) return;
-    const c = createChart(chartBox.current, {
-      layout: { background: { type: ColorType.Solid, color: "#0a0c10" }, textColor: "#8b93a7", fontSize: 10 },
-      grid: { vertLines: { color: "rgba(255,255,255,0.04)" }, horzLines: { color: "rgba(255,255,255,0.04)" } },
-      rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
-      crosshair: { mode: 0 }, handleScroll: true, handleScale: true, height: 240, width: chartBox.current.clientWidth,
-    });
-    const s = c.addSeries(CandlestickSeries, { upColor: "#22c55e", downColor: "#ef4444", borderVisible: false, wickUpColor: "#22c55e", wickDownColor: "#ef4444", priceFormat: { type: "price", precision: 8, minMove: 0.00000001 } });
-    chart.current = c; series.current = s;
-    const ro = new ResizeObserver(() => c.applyOptions({ width: chartBox.current?.clientWidth ?? 360 })); ro.observe(chartBox.current);
-    return () => { ro.disconnect(); c.remove(); chart.current = null; series.current = null; };
+    let c: ReturnType<typeof createChart>;
+    try {
+      const c = createChart(chartBox.current, {
+        layout: { background: { type: ColorType.Solid, color: "#0a0c10" }, textColor: "#8b93a7", fontSize: 10 },
+        grid: { vertLines: { color: "rgba(255,255,255,0.04)" }, horzLines: { color: "rgba(255,255,255,0.04)" } },
+        rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+        crosshair: { mode: 0 }, handleScroll: true, handleScale: true, height: 240, width: chartBox.current.clientWidth,
+      });
+      const s = c.addSeries(CandlestickSeries, { upColor: "#22c55e", downColor: "#ef4444", borderVisible: false, wickUpColor: "#22c55e", wickDownColor: "#ef4444", priceFormat: { type: "price", precision: 8, minMove: 0.00000001 } });
+      chart.current = c; series.current = s;
+      const ro = new ResizeObserver(() => c.applyOptions({ width: chartBox.current?.clientWidth ?? 360 })); ro.observe(chartBox.current);
+      return () => { ro.disconnect(); c.remove(); chart.current = null; series.current = null; };
+    } catch (e) {
+      // a WebView without a working canvas must not take the whole token page down — the rest (price, buy/sell,
+      // trades, position) is worth more than the chart
+      console.warn("chart init failed", e); chartBox.current.textContent = "Chart unavailable on this device"; return;
+    }
   }, []);
   useEffect(() => {
     let alive = true;

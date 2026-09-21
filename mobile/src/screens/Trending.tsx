@@ -25,7 +25,7 @@ export default function Trending() {
   const prefs = useStore(getPrefs);
   const listRef = useRef<HTMLDivElement>(null);
   const [alphaList, setAlpha] = useState<string[]>([]); const [insiderList, setInsiders] = useState<string[]>([]); const [holdingList, setHoldings] = useState<string[]>([]);
-  useEffect(() => { if ((tab === "all" || tab === "new") && !hasFullList()) void loadList(true, true); }, [tab]);
+  useEffect(() => { if ((tab === "all" || tab === "new" || pad !== "all") && !hasFullList()) void loadList(true, true); }, [tab, pad]);
   useEffect(() => {
     if (tab === "alpha" && !alphaList.length) api.alpha().then((rows) => setAlpha(rows.map((r) => String(r.token).toLowerCase()))).catch(() => undefined);
     if (tab === "insiders" && !insiderList.length) api.insiderPicks().then(setInsiders).catch(() => undefined);
@@ -86,7 +86,12 @@ export default function Trending() {
       case "holdings": base = holdingList; break;
       case "watch": base = [...getWatch()]; break;
     }
-    if (pad !== "all") base = base.filter((ca) => (getToken(ca)?.pad ?? "").toLowerCase() === pad.toLowerCase());
+    // a launchpad chip is a view of the WHOLE list for that pad (newest first), like the site's "All · <pad>" —
+    // filtering the current tab's 22 insider rows by pad gave 0 rows and a misleading "Loading…"
+    if (pad !== "all") {
+      const pl = pad.toLowerCase();
+      base = [...all].filter((ca) => (getToken(ca)?.pad ?? "").toLowerCase() === pl).sort(byAge);
+    }
     if (hide && tab !== "watch" && tab !== "holdings") base = base.filter((ca) => !clone(ca));
     return base.slice(0, tab === "all" || tab === "new" ? 400 : 150);
   }, [snapshot, tab, pad, q, alphaList, insiderList, holdingList]);
@@ -120,7 +125,7 @@ export default function Trending() {
       </>} />
       {searching && <div style={{ padding: "0 14px 8px" }}><div className="field"><Icon.search className="" /><input type="search" placeholder="name, symbol or 0x address" value={q} onChange={(e) => setQ(e.target.value)} autoCapitalize="none" autoCorrect="off" enterKeyHint="search" ref={(el) => { if (el && searching && !q) setTimeout(() => el.focus(), 50); }} /><button className="pill" onClick={() => { setSearching(false); setQ(""); }}>✕</button></div></div>}
       {!q && <>
-        <div className="seg">{TABS.map(([k, l]) => <button key={k} className={`chip ${tab === k ? "on" : ""}`} onClick={() => setTab(k)}>{l}{k === "watch" && snapshot.w ? ` ${snapshot.w}` : ""}</button>)}</div>
+        <div className="seg">{TABS.map(([k, l]) => <button key={k} className={`chip ${tab === k ? "on" : ""}`} onClick={() => { setTab(k); if (pad !== "all") setPad("all"); }}>{l}{k === "watch" && snapshot.w ? ` ${snapshot.w}` : ""}</button>)}</div>
         <div className="padrow">
           <small className="padrow__lbl">Launchpads</small>
           <div className="seg" style={{ padding: "0 14px 8px" }}>
@@ -132,7 +137,7 @@ export default function Trending() {
       </>}
       <div ref={listRef} onTouchStart={onTS} onTouchMove={onTM}>
         {pulling && <div className="empty" style={{ padding: 10 }}>refreshing…</div>}
-        {loading ? <Skeleton /> : rows.length === 0 ? <div className="empty">{tab === "watch" ? "Nothing on your watchlist yet. Tap ★ on a token." : tab === "holdings" ? (HW.hasWallet() ? "You hold no tokens yet." : "Create a wallet to see your holdings here.") : tab === "new15" ? "No launch in the last 15 minutes." : q ? "No match. Paste a contract address to open any token." : "Loading…"}</div>
+        {loading ? <Skeleton /> : rows.length === 0 ? <div className="empty">{tab === "watch" ? "Nothing on your watchlist yet. Tap ★ on a token." : tab === "holdings" ? (HW.hasWallet() ? "You hold no tokens yet." : "Create a wallet to see your holdings here.") : pad !== "all" ? <>No {pad} tokens in the list yet.<br /><button className="chip" style={{ marginTop: 10 }} onClick={() => setPad("all")}>Show all launchpads</button></> : tab === "new15" ? "No launch in the last 15 minutes." : q ? "No match. Paste a contract address to open any token." : snapshot.n === 0 ? "Loading…" : "Nothing here right now."}</div>
           : rows.map((ca) => <TokenRow key={ca} ca={ca} onBuy={onBuy} onQuick={onQuick} />)}
       </div>
       <BuySheet ca={buyFor} onClose={() => setBuyFor(null)} />
