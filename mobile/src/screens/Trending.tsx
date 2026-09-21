@@ -26,11 +26,21 @@ export default function Trending() {
   const listRef = useRef<HTMLDivElement>(null);
   const [alphaList, setAlpha] = useState<string[]>([]); const [insiderList, setInsiders] = useState<string[]>([]); const [holdingList, setHoldings] = useState<string[]>([]);
   useEffect(() => { if ((tab === "all" || tab === "new" || pad !== "all") && !hasFullList()) void loadList(true, true); }, [tab, pad]);
+  // Alpha / Insider picks / Holdings: loaded when the tab opens and refreshed every 60 s while it stays open —
+  // they used to load once per session (same stale-list class as the New tabs bug). Holdings also reload after
+  // any wallet event (a buy from the token page, an auto-snipe from the bot), so a position shows up without leaving.
+  const loadTabList = useCallback(() => {
+    if (tab === "alpha") api.alpha().then((rows) => setAlpha(rows.map((r) => String(r.token).toLowerCase()))).catch(() => undefined);
+    else if (tab === "insiders") api.insiderPicks().then(setInsiders).catch(() => undefined);
+    else if (tab === "holdings") { const a = HW.hotAddress(); if (a) api.holdings(a).then((r) => setHoldings((r.holdings ?? []).filter((h) => h.amount > 0).sort((x, y) => (y.valueUsdc ?? 0) - (x.valueUsdc ?? 0)).map((h) => h.token.toLowerCase()))).catch(() => undefined); }
+  }, [tab]);
   useEffect(() => {
-    if (tab === "alpha" && !alphaList.length) api.alpha().then((rows) => setAlpha(rows.map((r) => String(r.token).toLowerCase()))).catch(() => undefined);
-    if (tab === "insiders" && !insiderList.length) api.insiderPicks().then(setInsiders).catch(() => undefined);
-    if (tab === "holdings") { const a = HW.hotAddress(); if (a) api.holdings(a).then((r) => setHoldings((r.holdings ?? []).filter((h) => h.amount > 0).sort((x, y) => (y.valueUsdc ?? 0) - (x.valueUsdc ?? 0)).map((h) => h.token.toLowerCase()))).catch(() => undefined); }
-  }, [tab, alphaList.length, insiderList.length]);
+    loadTabList();
+    if (tab !== "alpha" && tab !== "insiders" && tab !== "holdings") return;
+    const id = setInterval(() => { if (!document.hidden) loadTabList(); }, 60_000);
+    const off = tab === "holdings" ? HW.onHotChange(() => setTimeout(loadTabList, 4000)) : null;
+    return () => { clearInterval(id); off?.(); };
+  }, [tab, loadTabList]);
 
   useEffect(() => { void loadTrending(); void loadList(); api.padcounts().then((r) => setPads([...r].sort((x, y) => (x.pad === "ArcToolsPad" ? -1 : y.pad === "ArcToolsPad" ? 1 : 0)))).catch(() => undefined); }, []);
   // push feed: trending frames arrive as the bot refreshes them; the poller is only the safety net

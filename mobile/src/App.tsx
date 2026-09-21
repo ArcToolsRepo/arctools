@@ -36,8 +36,8 @@ class Boundary extends React.Component<{ children: React.ReactNode; routeKey: st
   }
 }
 
-export const APP_VERSION_CODE = 15;
-export const APP_VERSION = "2.4";
+export const APP_VERSION_CODE = 16;
+export const APP_VERSION = "2.5";
 
 const TABS = [
   ["trending", "Trending", Icon.fire, "/"], ["watch", "Watch", Icon.star, "/watch"], ["swap", "Swap", Icon.swap, "/swap"],
