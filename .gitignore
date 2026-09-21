@@ -16,3 +16,7 @@ mobile/keys/
 sniper/.openrouter_key
 .openrouter_key
 *.key
+.ingest_key
+.bridge_owner_key
+.relay_key
+.hb_auth
