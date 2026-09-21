@@ -32,7 +32,11 @@ const snap = (label: string) => {
 };
 for (const ms of [500, 2000, 5000, 9000, 14000]) { await new Promise((r) => setTimeout(r, ms - (Date.now() - t0) > 0 ? ms - (Date.now() - t0) : 0)); snap(`t${ms}`); }
 const click = async (label: string) => { const el = Array.from(doc.querySelectorAll(".chip")).find((c: any) => c.textContent.trim().startsWith(label)) as any; if (!el) { console.log(`no chip "${label}"`); return; } el.click(); await new Promise((r) => setTimeout(r, 4000)); snap(`after "${label}"`); };
-for (const l of ["Insider picks", "ArcToolsPad", "Trending", "New 15m", "Arguspad", "All"]) await click(l);
+await click("All"); await click("New pairs");
+const firstRow = () => (doc.querySelector(".row")?.textContent || "").replace(/\s+/g, " ").slice(0, 60);
+const before = firstRow(); console.log("New pairs top row now:", before);
+console.log("waiting 130 s for the 60 s list refresh to land a newer launch…"); await new Promise((r) => setTimeout(r, 130_000));
+const after = firstRow(); console.log("New pairs top row after refresh:", after, "| changed:", after !== before);
 const nav = async (hash: string) => { win.location.hash = hash; win.dispatchEvent(new win.Event("hashchange")); await new Promise((r) => setTimeout(r, 5000)); const root = doc.getElementById("root")!; const txt = root.textContent!.replace(/\s+/g, " "); console.log(`[nav ${hash}] ${root.innerHTML.length}ch rows=${doc.querySelectorAll(".row").length} loading=${/Loading…|Loading\.\.\./.test(txt)} text="${txt.slice(0, 140)}"`); };
 const first = doc.querySelector(".row"); if (first) console.log("first row:", first.textContent?.replace(/\s+/g, " ").slice(0, 160));
 console.log("errors:", errors.length ? errors.slice(0, 8) : "none");

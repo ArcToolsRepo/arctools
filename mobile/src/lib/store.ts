@@ -51,7 +51,11 @@ export async function loadList(force = false, full = false) {
   try {
     const rows = await api.tokens(!full);
     for (const t of rows) tokens.set(t.token.toLowerCase(), t);
-    if (full || !haveFull) allOrder = rows.map((t) => t.token.toLowerCase());
+    // ALWAYS fold the fresh rows into the order. Replacing the order only on full loads meant that after the user
+    // had opened All/New once, every 60 s refresh (alive list) added new launches to the map but never to the
+    // order the New tabs iterate — no new token appeared for the rest of the session.
+    const fresh = rows.map((t) => t.token.toLowerCase());
+    allOrder = full ? fresh : [...new Set([...fresh, ...allOrder])];
     if (full) haveFull = true;
     lastList = Date.now(); emit();
   } catch { /* keep what we have */ }
