@@ -2,6 +2,24 @@
 import { useEffect, useState } from "react";
 import { checkUpdate, installUpdate, onUpdateChange, pendingUpdate, updateRequired, type Progress } from "../lib/update";
 import { toast } from "../lib/store";
+import { APP_VERSION } from "../App";
+
+/** Settings card: current version, last check, "Check for updates" — visible even when nothing is pending. */
+export function UpdateCard() {
+  const [, tick] = useState(0); const [checking, setChecking] = useState(false); const [checkedAt, setCheckedAt] = useState<number | null>(null);
+  useEffect(() => { const off = onUpdateChange(() => tick((n) => n + 1)); return () => { off(); }; }, []);
+  const m = pendingUpdate();
+  const check = async () => { setChecking(true); try { await checkUpdate(true); setCheckedAt(Date.now()); } finally { setChecking(false); } };
+  return (
+    <div className="card" style={{ display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div><b>App updates</b><div className="muted" style={{ fontSize: 12 }}>Installed: ArcOne {APP_VERSION} · updates install in-app, no browser</div></div>
+        {!m && <button className="btn sm" disabled={checking} onClick={check}>{checking ? "Checking…" : "Check now"}</button>}
+      </div>
+      {m ? <UpdateBanner compact /> : <div className="muted" style={{ fontSize: 12 }}>{checkedAt ? "You are on the latest version." : "Checked at launch and every hour."}</div>}
+    </div>
+  );
+}
 
 export function UpdateBanner({ compact = false }: { compact?: boolean }) {
   const [, tick] = useState(0);
@@ -16,7 +34,7 @@ export function UpdateBanner({ compact = false }: { compact?: boolean }) {
     catch (e) { toast(`Update failed: ${String((e as Error).message).slice(0, 80)}`, "err"); }
   };
   return (
-    <div className={`upd ${updateRequired() ? "upd--req" : ""}`}>
+    <div className={`upd ${updateRequired() ? "upd--req" : ""} ${compact ? "upd--in" : ""}`}>
       <div className="upd__txt">
         <b>ArcOne {m.version} is out</b>
         <small>{updateRequired() ? "This version is no longer supported — update to keep trading." : m.changelog ?? "Fixes and improvements. Your wallet and settings stay."}</small>

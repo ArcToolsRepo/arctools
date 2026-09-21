@@ -42,12 +42,17 @@ export const getRisk = (ca: string) => risk.get(ca.toLowerCase());
 export const orders = () => ({ hot: hotOrder, trend: trendOrder, all: allOrder });
 export const allTokens = () => [...tokens.values()];
 
-export async function loadList(force = false) {
-  if (!force && Date.now() - lastList < 60_000 && tokens.size) return;
+let haveFull = false;
+export const hasFullList = () => haveFull;
+/** Two-stage list: `alive` rows first (~9 k, fast on a phone), the full 16 k only when a tab needs the long tail.
+ *  Parsing 5 MB of JSON in the WebView blocked the UI for ~10 s and the tabs sat on "loading". */
+export async function loadList(force = false, full = false) {
+  if (!force && Date.now() - lastList < 60_000 && tokens.size && (haveFull || !full)) return;
   try {
-    const rows = await api.tokens();
+    const rows = await api.tokens(!full);
     for (const t of rows) tokens.set(t.token.toLowerCase(), t);
-    allOrder = rows.map((t) => t.token.toLowerCase());
+    if (full || !haveFull) allOrder = rows.map((t) => t.token.toLowerCase());
+    if (full) haveFull = true;
     lastList = Date.now(); emit();
   } catch { /* keep what we have */ }
 }

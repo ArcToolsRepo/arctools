@@ -1,10 +1,11 @@
+import { loadMeta } from "../lib/token-meta";
 import { UpdateBanner } from "../components/UpdateBanner";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { tap } from "../lib/native";
 import { api, streamUrl, type Trend } from "../lib/api";
 import { isAddr } from "../lib/fmt";
 import { go } from "../lib/router";
-import { allTokens, applyTrendFrame, getPrefs, getToken, getTrend, getHot, getWatch, loadList, loadLogos, loadRisk, loadTrending, orders, setPrefs, toast, useStore } from "../lib/store";
+import { allTokens, applyTrendFrame, hasFullList, getPrefs, getToken, getTrend, getHot, getWatch, loadList, loadLogos, loadRisk, loadTrending, orders, setPrefs, toast, useStore } from "../lib/store";
 import * as HW from "../lib/arc-hotwallet";
 import { quickBuy } from "../lib/trade";
 import { BRAND, Header, Icon, Skeleton, TokenRow } from "../components/ui";
@@ -24,6 +25,7 @@ export default function Trending() {
   const prefs = useStore(getPrefs);
   const listRef = useRef<HTMLDivElement>(null);
   const [alphaList, setAlpha] = useState<string[]>([]); const [insiderList, setInsiders] = useState<string[]>([]); const [holdingList, setHoldings] = useState<string[]>([]);
+  useEffect(() => { if ((tab === "all" || tab === "new") && !hasFullList()) void loadList(true, true); }, [tab]);
   useEffect(() => {
     if (tab === "alpha" && !alphaList.length) api.alpha().then((rows) => setAlpha(rows.map((r) => String(r.token).toLowerCase()))).catch(() => undefined);
     if (tab === "insiders" && !insiderList.length) api.insiderPicks().then(setInsiders).catch(() => undefined);
@@ -89,7 +91,9 @@ export default function Trending() {
     return base.slice(0, tab === "all" || tab === "new" ? 400 : 150);
   }, [snapshot, tab, pad, q, alphaList, insiderList, holdingList]);
 
-  useEffect(() => { void loadRisk(rows.slice(0, 40)); void loadLogos(rows.slice(0, 40)); }, [rows]);
+  const [, bump] = useState(0);
+  // risk, logos and mint dates for the visible rows; meta resolves the real age (ArcOne showed first-sighting age)
+  useEffect(() => { void loadRisk(rows.slice(0, 40)); void loadLogos(rows.slice(0, 40)); loadMeta(rows.slice(0, 60)).then(() => bump((n) => n + 1)).catch(() => undefined); }, [rows]);
 
   const onBuy = (ca: string) => { if (!HW.hasWallet()) return go("/wallet"); setBuyFor(ca); };
   // one tap = buy the default amount right now. No confirmation: that is what the ⚡ is for. Locked wallet → sheet.

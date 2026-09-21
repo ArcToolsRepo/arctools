@@ -1,3 +1,4 @@
+import { peekBirthdays } from "../lib/token-meta";
 import React, { useEffect, useRef, useState, type ReactNode } from "react";
 import { getToasts, useStore, getToken, getTrend, getHot, getRisk, isWatched, getLogo, getPrefs } from "../lib/store";
 import { usd, pct, ago, short } from "../lib/fmt";
@@ -61,7 +62,10 @@ export function TokenRow({ ca, onBuy, onQuick, showRisk = true }: { ca: string; 
   const sym = t?.symbol || tr?.symbol || short(ca);
   const name = t?.name && t.name !== sym ? t.name : "";
   const mcap = tr?.mcap ?? t?.mcapUsd ?? null;
-  const born = t?.createdAt ? Date.parse(t.createdAt) / 1000 : tr?.first_ts ?? null;
+  // age: the explorer's mint time when we have it, never younger than our first sighting (same rule as the site)
+  const seen = t?.createdAt ? Date.parse(t.createdAt) / 1000 : tr?.first_ts ?? null;
+  const mint = peekBirthdays([ca]).get(ca.toLowerCase()) ?? null;
+  const born = mint != null && seen != null ? Math.min(mint, seen) : mint ?? seen;
   const devNet = rk?.dev_net_usd ?? ((rk?.dev_sold_usd ?? 0) - (rk?.dev_bought_usd ?? 0));
   return (
     <div className="row" onClick={() => go(`/token/${ca}`)}>

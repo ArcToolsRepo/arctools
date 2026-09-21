@@ -181,3 +181,5 @@ a { color: inherit; text-decoration: none; }
 .icon-btn.sm { width: 30px; height: 30px; font-size: 18px; }
 .padrow__lbl { display: block; padding: 0 16px 4px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
 .chip__n { margin-left: 6px; opacity: 0.6; font-weight: 600; font-size: 11px; }
+
+.upd--in { margin: 0; }

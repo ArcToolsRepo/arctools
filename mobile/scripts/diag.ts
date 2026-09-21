@@ -1,0 +1,16 @@
+import "./shim";
+const t0 = Date.now(); const lap = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
+const S = await import("../src/lib/store"); const { api } = await import("../src/lib/api"); const TM = await import("../src/lib/token-meta");
+const step = async (name: string, fn: () => Promise<unknown>) => { try { const r = await fn(); console.log(`OK   ${name} (${lap()})`, typeof r === "string" ? r : ""); return r; } catch (e) { console.log(`FAIL ${name} (${lap()}):`, String((e as Error).message || e).slice(0, 160)); return null; } };
+const ARCT = "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52";
+await step("loadTrending", async () => { await S.loadTrending(); const { hot, trend } = S.orders(); const tr = S.getHot(hot[0]); return `hot ${hot.length} trend ${trend.length}, first ${tr?.symbol} mcap ${tr?.mcap} chg ${tr?.chg} first_ts ${(tr as any)?.first_ts}`; });
+await step("loadList", async () => { await S.loadList(); const { all } = S.orders(); const t = S.getToken(all[0]); return `all ${all.length}, first ${t?.symbol} createdAt ${t?.createdAt} pad ${t?.pad} logo ${t?.logo ? "yes" : "no"}; with logo: ${S.allTokens().filter((x) => x.logo).length}`; });
+await step("loadLogos(hot 30)", async () => { const hot = S.orders().hot.slice(0, 30); await S.loadLogos(hot); const n = hot.filter((c) => S.getLogo(c)).length; return `${n}/${hot.length} with logo`; });
+await step("tokenMeta(hot 10)", async () => { const hot = S.orders().hot.slice(0, 10); const m = await api.tokenMeta(hot); const mm = (m as any).meta ?? m; const k = Object.keys(mm); return `${k.length}/10 entries, deploy_ts on ${k.filter((x) => mm[x]?.deploy_ts).length}, logo on ${k.filter((x) => mm[x]?.logo).length}`; });
+await step("token-meta lib", async () => { const hot = S.orders().hot.slice(0, 10); const fn = (TM as any).loadMeta ?? (TM as any).ensureMeta ?? (TM as any).fetchMeta; if (fn) await fn(hot); const b = TM.peekBirthdays(hot); return `${b.size}/${hot.length} birthdays via ${fn?.name ?? "none"}`; });
+await step("loadRisk", async () => { await S.loadRisk(S.orders().hot.slice(0, 20)); return `risk entries ${S.orders().hot.slice(0, 20).filter((c) => S.getRisk(c)).length}/20`; });
+await step("stats(ARCT)", async () => { const s = await api.stats(ARCT); return `price1m ${s.price1m} vol24 ${s.vol24} supply ${(s as any).supply} mcap ${(s as any).mcap} chg24 ${s.change?.["24h"]}`; });
+await step("ohlc(ARCT 5m)", async () => { const r = await api.ohlc(ARCT, "5m", 5); const c = (r as any).candles ?? r; return `${c.length} candles, last t ${c[c.length - 1]?.t ?? c[c.length - 1]?.time} (age ${Math.round(Date.now() / 1000 - (c[c.length - 1]?.t ?? c[c.length - 1]?.time))}s)`; });
+await step("tokenPage(ARCT)", async () => JSON.stringify(await api.tokenPage(ARCT)).slice(0, 160));
+await step("chain", async () => JSON.stringify(await api.chain()).slice(0, 100));
+process.exit(0);

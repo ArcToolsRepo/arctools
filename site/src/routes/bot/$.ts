@@ -22,10 +22,8 @@ const EDGE_TTL: Array<[RegExp, number]> = [
   [/^api\/buyback-stats\b/, 30],
   [/^api\/token-meta\b/, 60],
   [/^api\/token-stats\b/, 10],
-  [/^api\/trades\b/, 5],
   [/^api\/holder-risk\b/, 20],
   [/^api\/bubbles\b/, 60],
-  [/^api\/ohlc\b/, 10],
 ];
 
 function edgeTtl(splat: string, search: string): number {
@@ -43,7 +41,12 @@ async function proxy(request: Request, splat: string): Promise<Response> {
   if (cache && cacheKey) {
     const hit = await cache.match(cacheKey);
     if (hit) {
+      // The hit carried the cached cache-control, and Cloudflare's CDN layer then re-cached the Worker's answer with
+      // its default 4 h TTL (cf-cache-status HIT, max-age=14400): token charts and trending sat still for hours.
+      // Re-state a short, explicit policy on every hit so the CDN never invents one.
       const h = new Headers(hit.headers); h.set("x-arc-edge", "hit"); h.set("access-control-allow-origin", "*");
+      h.set("cache-control", `public, max-age=${Math.min(ttl, 5)}, s-maxage=${ttl}, stale-while-revalidate=${ttl * 3}`);
+      h.set("cdn-cache-control", `max-age=${ttl}`);
       return new Response(hit.body, { status: hit.status, headers: h });
     }
   }
@@ -71,6 +74,7 @@ async function proxy(request: Request, splat: string): Promise<Response> {
     if (ttl && last.status === 200 && cache && cacheKey) {
       // stale-while-revalidate: the browser may keep it briefly, the edge keeps it for ttl seconds
       out.set("cache-control", `public, max-age=${Math.min(ttl, 5)}, s-maxage=${ttl}, stale-while-revalidate=${ttl * 3}`);
+      out.set("cdn-cache-control", `max-age=${ttl}`);
       out.set("x-arc-edge", "miss");
       const bytes = await last.arrayBuffer();
       out.delete("vary"); out.delete("set-cookie");

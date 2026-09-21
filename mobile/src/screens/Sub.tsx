@@ -1,5 +1,5 @@
 /** The "More" pages. Each is small on purpose: one job, real data, no decoration. */
-import { UpdateBanner } from "../components/UpdateBanner";
+import { UpdateCard } from "../components/UpdateBanner";
 import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import * as HW from "../lib/arc-hotwallet";
@@ -201,8 +201,8 @@ function Settings() {
         <div className="kv" style={{ borderTop: 0 }}><span>Hide clone farms</span><button className={`pill ${prefs.hideClones ? "green" : ""}`} onClick={() => setPrefs({ hideClones: !prefs.hideClones })}>{prefs.hideClones ? "on" : "off"}</button></div>
       </div>
       <div className="label">About</div>
-      <UpdateBanner compact />
-      <div className="card muted" style={{ fontSize: 12.5 }}>ArcOne v1.8 · powered by ArcTools · arctools.fun · Fees fund ARCT buybacks that burn in the same transaction. Your key never leaves this phone. Internal review only — no third-party audit.</div>
+      <UpdateCard />
+      <div className="card muted" style={{ fontSize: 12.5 }}>ArcOne v1.9 · powered by ArcTools · arctools.fun · Fees fund ARCT buybacks that burn in the same transaction. Your key never leaves this phone. Internal review only — no third-party audit.</div>
     </>
   );
 }

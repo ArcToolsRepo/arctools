@@ -42,7 +42,7 @@ const j = async <T,>(url: string, ms = 12_000): Promise<T> => {
 export const api = {
   trending: (minutes: number, limit = 200, sort?: "trend") =>
     j<{ rows: Trend[] }>(`${BOT_API}/api/trending?minutes=${minutes}&limit=${limit}${sort ? `&sort=${sort}` : ""}`).then((r) => r.rows ?? []),
-  tokens: () => j<{ tokens: PadToken[] }>(`${SITE}/api/tokens?lite=1`, 30_000).then((r) => r.tokens ?? []),
+  tokens: (alive = false) => j<{ tokens: PadToken[] }>(`${SITE}/api/tokens?lite=1${alive ? "&alive=1" : ""}`, alive ? 30_000 : 60_000).then((r) => r.tokens ?? []),
   padcounts: () => j<{ rows: { pad: string; n: number; label?: string; logo?: string | null }[] }>(`${SITE}/api/padcounts`).then((r) => r.rows ?? []),
   tokenPage: (ca: string) => j<Record<string, unknown>>(`${SITE}/api/tokenpage?ca=${ca}`),
   trades: (ca: string, limit = 60) => j<{ trades: Trade[] }>(`${BOT_API}/api/trades?token=${ca}&limit=${limit}`).then((r) => r.trades ?? []),

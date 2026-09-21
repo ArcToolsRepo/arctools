@@ -24,7 +24,12 @@ export const Route = createFileRoute("/api/tokens")({
         // an unknown CA anyway. Ship the rows that can appear in a list.
         // every row, slim fields. Dropping "dead" rows made the app show 8.8k of 15.9k tokens and its New tab
         // miss launches the site lists. The saving was the fields, not the rows: ~300 B/row → ~1 MB gzipped.
-        const src = rows;
+        // alive=1 (the app's first paint): rows that traded, have a cap, or are younger than a week — ~9 k instead of
+        // 16 k. 5 MB of JSON parsed on a phone WebView blocked the UI for ten seconds and showed "loading" forever;
+        // the full list is fetched in the background only when the All / New pairs tabs need it.
+        const aliveOnly = u.searchParams.get("alive") === "1";
+        const weekAgo = Date.now() - 86_400_000;   // traded, has a cap, or launched in the last 24 h (Arc is 10 days old — a week kept 97 % of rows)
+        const src = aliveOnly ? rows.filter((t) => (t.volUsd ?? 0) > 0 || (t.mcapUsd ?? 0) > 0 || (t.createdAt ? Date.parse(t.createdAt) > weekAgo : false)) : rows;
         const out = lite
           ? src.map((t) => ({
               token: t.token, symbol: t.symbol, name: t.name, pad: t.pad, logo: t.logo, createdAt: t.createdAt,
