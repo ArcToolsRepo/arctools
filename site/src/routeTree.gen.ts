@@ -49,6 +49,7 @@ import { Route as UHandleRouteImport } from './routes/u.$handle'
 import { Route as Token2CaRouteImport } from './routes/token2.$ca'
 import { Route as TokenCaRouteImport } from './routes/token.$ca'
 import { Route as PadCaRouteImport } from './routes/pad.$ca'
+import { Route as LockerIdRouteImport } from './routes/locker_.$id'
 import { Route as InsiderWalletRouteImport } from './routes/insider.$wallet'
 import { Route as BotSplatRouteImport } from './routes/bot/$'
 import { Route as ApiWarmRouteImport } from './routes/api/warm'
@@ -270,6 +271,11 @@ const PadCaRoute = PadCaRouteImport.update({
   path: '/pad/$ca',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LockerIdRoute = LockerIdRouteImport.update({
+  id: '/locker_/$id',
+  path: '/locker/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InsiderWalletRoute = InsiderWalletRouteImport.update({
   id: '/insider/$wallet',
   path: '/insider/$wallet',
@@ -425,6 +431,7 @@ export interface FileRoutesByFullPath {
   '/api/warm': typeof ApiWarmRoute
   '/bot/$': typeof BotSplatRoute
   '/insider/$wallet': typeof InsiderWalletRoute
+  '/locker/$id': typeof LockerIdRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
   '/token2/$ca': typeof Token2CaRoute
@@ -487,6 +494,7 @@ export interface FileRoutesByTo {
   '/api/warm': typeof ApiWarmRoute
   '/bot/$': typeof BotSplatRoute
   '/insider/$wallet': typeof InsiderWalletRoute
+  '/locker/$id': typeof LockerIdRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
   '/token2/$ca': typeof Token2CaRoute
@@ -550,6 +558,7 @@ export interface FileRoutesById {
   '/api/warm': typeof ApiWarmRoute
   '/bot/$': typeof BotSplatRoute
   '/insider/$wallet': typeof InsiderWalletRoute
+  '/locker_/$id': typeof LockerIdRoute
   '/pad/$ca': typeof PadCaRoute
   '/token/$ca': typeof TokenCaRoute
   '/token2/$ca': typeof Token2CaRoute
@@ -614,6 +623,7 @@ export interface FileRouteTypes {
     | '/api/warm'
     | '/bot/$'
     | '/insider/$wallet'
+    | '/locker/$id'
     | '/pad/$ca'
     | '/token/$ca'
     | '/token2/$ca'
@@ -676,6 +686,7 @@ export interface FileRouteTypes {
     | '/api/warm'
     | '/bot/$'
     | '/insider/$wallet'
+    | '/locker/$id'
     | '/pad/$ca'
     | '/token/$ca'
     | '/token2/$ca'
@@ -738,6 +749,7 @@ export interface FileRouteTypes {
     | '/api/warm'
     | '/bot/$'
     | '/insider/$wallet'
+    | '/locker_/$id'
     | '/pad/$ca'
     | '/token/$ca'
     | '/token2/$ca'
@@ -801,6 +813,7 @@ export interface RootRouteChildren {
   ApiWarmRoute: typeof ApiWarmRoute
   BotSplatRoute: typeof BotSplatRoute
   InsiderWalletRoute: typeof InsiderWalletRoute
+  LockerIdRoute: typeof LockerIdRoute
   PadCaRoute: typeof PadCaRoute
   TokenCaRoute: typeof TokenCaRoute
   Token2CaRoute: typeof Token2CaRoute
@@ -1092,6 +1105,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PadCaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/locker_/$id': {
+      id: '/locker_/$id'
+      path: '/locker/$id'
+      fullPath: '/locker/$id'
+      preLoaderRoute: typeof LockerIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/insider/$wallet': {
       id: '/insider/$wallet'
       path: '/insider/$wallet'
@@ -1289,6 +1309,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiWarmRoute: ApiWarmRoute,
   BotSplatRoute: BotSplatRoute,
   InsiderWalletRoute: InsiderWalletRoute,
+  LockerIdRoute: LockerIdRoute,
   PadCaRoute: PadCaRoute,
   TokenCaRoute: TokenCaRoute,
   Token2CaRoute: Token2CaRoute,

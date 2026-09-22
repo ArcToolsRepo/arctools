@@ -33,9 +33,9 @@ const snap = (label: string) => {
 for (const ms of [500, 2000, 5000, 9000, 14000]) { await new Promise((r) => setTimeout(r, ms - (Date.now() - t0) > 0 ? ms - (Date.now() - t0) : 0)); snap(`t${ms}`); }
 const click = async (label: string) => { const el = Array.from(doc.querySelectorAll(".chip")).find((c: any) => c.textContent.trim().startsWith(label)) as any; if (!el) { console.log(`no chip "${label}"`); return; } el.click(); await new Promise((r) => setTimeout(r, 4000)); snap(`after "${label}"`); };
 const rowsTxt = () => Array.from(doc.querySelectorAll(".row")).slice(0, 3).map((r: any) => r.textContent.replace(/\s+/g, " ").slice(0, 28));
-for (const l of ["Trending", "Top volume", "Gainers", "Alpha", "Insider picks", "All", "New pairs"]) {
+for (const l of ["foci.family", "Trending"]) {
   await click(l); const n0 = doc.querySelectorAll(".row").length; const top0 = rowsTxt();
-  await new Promise((r) => setTimeout(r, 75_000));
+  await new Promise((r) => setTimeout(r, 4_000));
   const n1 = doc.querySelectorAll(".row").length; const top1 = rowsTxt();
   console.log(`AUDIT ${l.padEnd(13)} rows ${n0}→${n1} | top changed: ${JSON.stringify(top0) !== JSON.stringify(top1)} | empty="${(doc.querySelector(".empty")?.textContent || "").slice(0, 30)}"`);
 }

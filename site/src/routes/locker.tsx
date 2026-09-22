@@ -142,7 +142,8 @@ function NewLock({ addr, fee, send, onDone }: { addr: string; fee: number | null
         setBusy("Locking…");
         await send(ARC_LOCKER, SEL.lockERC20 + p32(asset) + pnum(amountWei) + pnum(unlockAt) + pnum(vestEnd) + p32(addr), feeWei);
       }
-      setMsg({ ok: true, text: `Locked until ${when(unlockAt)}${vestDays && !isNft ? `, vesting ${vestDays} days after that` : ""}.` }); setAmount(""); setTokenId(""); onDone();
+      const mineNow = await locksOf(addr).catch(() => [] as LockRow[]); const newest = mineNow.length ? Math.max(...mineNow.map((x) => x.id)) : null;
+      setMsg({ ok: true, text: `Locked until ${when(unlockAt)}${vestDays && !isNft ? `, vesting ${vestDays} days after that` : ""}.${newest != null ? ` Proof link: arctools.fun/locker/${newest}` : ""}` }); setAmount(""); setTokenId(""); onDone();
     } catch (e) { setMsg({ ok: false, text: String((e as Error).message || e).slice(0, 200) }); } finally { setBusy(null); }
   };
 
@@ -203,7 +204,7 @@ function LockCard({ l, me, send, onDone }: { l: LockRow; me: string; send: (to: 
     <div style={{ border: "1px solid var(--arc-line)", borderRadius: 10, marginBottom: 10, padding: 12 }}>
       <div className="arc-mono" style={{ display: "flex", fontSize: 12, justifyContent: "space-between" }}>
         <span><strong style={{ color: "var(--arc-ink)" }}>{title}</strong> · {amt} · <a href={`/token/${l.token0}`} style={{ color: "var(--arc-cobalt)" }}>{short(l.token0)}</a>{l.token1 ? <> / <a href={`/token/${l.token1}`} style={{ color: "var(--arc-cobalt)" }}>{short(l.token1)}</a></> : null}</span>
-        <span style={{ color: l.withdrawn ? "var(--arc-muted)" : unlocked ? "var(--arc-green, #22c580)" : "var(--arc-amber, #ffb054)" }}>{l.withdrawn ? "withdrawn" : unlocked ? "unlocked" : `locked until ${when(l.unlockAt)}`}</span>
+        <span style={{ color: l.withdrawn ? "var(--arc-muted)" : unlocked ? "var(--arc-green, #22c580)" : "var(--arc-amber, #ffb054)" }}>{l.withdrawn ? "withdrawn" : unlocked ? "unlocked" : `locked until ${when(l.unlockAt)}`} · <a href={`/locker/${l.id}`} style={{ color: "var(--arc-cobalt)" }}>#{l.id}</a></span>
       </div>
       {l.kind === "ERC20" && l.vestEnd > l.unlockAt && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: "4px 0 0" }}>linear vesting until {when(l.vestEnd)}</p>}
       {!l.withdrawn && mineNow && (
@@ -211,6 +212,7 @@ function LockCard({ l, me, send, onDone }: { l: LockRow; me: string; send: (to: 
           {unlocked && <button className="arc-mono" disabled={!!busy} onClick={() => void act("Withdrawing…", SEL.withdraw + pnum(l.id) + p32(me))} style={chip(true)} type="button">{busy === "Withdrawing…" ? busy : "Withdraw"}</button>}
           <button className="arc-mono" disabled={!!busy} onClick={() => { const d = Number(prompt("Extend by how many days?", "90")); if (d > 0) void act("Extending…", SEL.extend + pnum(l.id) + pnum(l.unlockAt + d * 86400) + pnum(Math.max(l.vestEnd, l.unlockAt) + d * 86400)); }} style={chip(false)} type="button">Extend</button>
           {l.label === "v3-position" && <button className="arc-mono" disabled={!!busy} onClick={() => void act("Collecting…", SEL.collectV3Fees + pnum(l.id) + p32(me))} style={chip(false)} type="button">Collect fees</button>}
+          <button className="arc-mono" onClick={() => { void navigator.clipboard.writeText(`https://arctools.fun/locker/${l.id}`); setErr("Link copied — anyone can verify this lock at arctools.fun/locker/" + l.id); }} style={chip(false)} type="button">Copy link</button>
           <button className="arc-mono" disabled={!!busy} onClick={() => { const to = prompt("Transfer lock ownership to (address):"); if (to && /^0x[0-9a-fA-F]{40}$/.test(to)) void act("Transferring…", SEL.transferLock + pnum(l.id) + p32(to)); }} style={chip(false)} type="button">Transfer</button>
         </div>
       )}

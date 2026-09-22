@@ -129,6 +129,8 @@ export default function Locker() {
                   {open && <button className="chip on" disabled={!!busy} onClick={() => act("Withdrawing…", SEL.withdraw + pnum(l.id) + p32(me!))}>Withdraw</button>}
                   <button className="chip" disabled={!!busy} onClick={() => { const d = Number(prompt("Extend by how many days?", "90")); if (d > 0) void act("Extending…", SEL.extend + pnum(l.id) + pnum(l.unlockAt + d * 86400) + pnum(Math.max(l.vestEnd, l.unlockAt) + d * 86400)); }}>Extend</button>
                   {l.label === "v3-position" && <button className="chip" disabled={!!busy} onClick={() => act("Collecting…", SEL.collectV3Fees + pnum(l.id) + p32(me!))}>Collect fees</button>}
+                  <button className="chip" onClick={() => { void navigator.clipboard?.writeText(`https://arctools.fun/locker/${l.id}`); toast(`Link copied: arctools.fun/locker/${l.id}`, "ok"); }}>Copy link</button>
+                  <button className="chip" onClick={() => import("../lib/native").then((n) => n.openUrl(`https://arctools.fun/locker/${l.id}`))}>Proof page</button>
                 </div>}
               </div>
             );
