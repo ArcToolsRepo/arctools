@@ -52,7 +52,7 @@ export function BuyContent({ v2 = false }: { v2?: boolean }) {
       <p className="arc-eyebrow">BUY ARCT</p>
       <h1 className="arc-h2" style={{ fontSize: 30 }}>Card → USDC on Arc → ARCT</h1>
       <p className="arc-body" style={{ maxWidth: 760 }}>
-        Two steps, one page. Buy USDC with a card, Apple Pay or Google Pay through MoonPay — it lands directly in your own wallet on Arc, we never hold it.
+        Two steps, one page. Buy USDC with a card, Apple Pay or Google Pay through MoonPay (USDC on the Arc network) — it lands directly in your own wallet, we never hold it.
         Then swap it to ARCT here in one click (0.5 % fee, the same as /swap, spent on ARCT buyback and burn). Card purchases need MoonPay&apos;s ID check the first time; MoonPay&apos;s fee is shown inside its widget before you pay.
       </p>
       <div className="arc-pay-grid" style={{ display: "grid", gap: 20, gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", marginTop: 22 }}>
@@ -98,7 +98,13 @@ function CardStep({ addr }: { addr: string }) {
       const r = await onrampLink({ data: { wallet: addr, fiat, amount } });
       if (!r.configured) setNote("Card purchases open as soon as our MoonPay account is approved. Until then: buy USDC on an exchange and withdraw it on Arc (see below).");
       else if (!r.url) setNote(r.reason ?? "could not build the link");
-      else { window.open(r.url, "_blank", "noopener"); setNote(`MoonPay opened in a new tab${r.env === "sandbox" ? " (sandbox — test cards only)" : ""}. When the purchase completes the USDC shows up on the right within a few seconds.`); }
+      else {
+        if (r.mode === "public") { try { await navigator.clipboard.writeText(addr); } catch { /* clipboard blocked: the address is shown above */ } }
+        window.open(r.url, "_blank", "noopener");
+        setNote(r.mode === "public"
+          ? `MoonPay opened in a new tab. Sign in, keep "USDC (Arc)" as the coin, and when it asks for the wallet address paste yours — it is already copied: ${addr}. The USDC shows up on the right within seconds of MoonPay sending it.`
+          : "MoonPay opened in a new tab. When the purchase completes the USDC shows up on the right within a few seconds.");
+      }
     } catch (e) { setNote(String((e as Error).message ?? e)); }
     setBusy(false);
   };
@@ -111,10 +117,12 @@ function CardStep({ addr }: { addr: string }) {
           {["usd", "eur", "pln", "gbp", "chf"].map((c) => <option key={c} value={c}>{c.toUpperCase()}</option>)}
         </select>
       </div>
-      <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, margin: 0 }}>Delivered as USDC on Arc to <span style={{ color: "var(--arc-ink)" }}>{addr}</span>. Minimum 20, MoonPay ID check on first purchase.</p>
+      <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, margin: 0 }}>Your wallet on Arc: <span style={{ color: "var(--arc-ink)" }}>{addr}</span>
+        <button className="arc-mono" onClick={() => { void navigator.clipboard.writeText(addr); setNote("Address copied."); }} style={{ ...chip(false), marginLeft: 8, padding: "2px 8px" }} type="button">Copy</button>
+        <br />Paste it as the wallet address in MoonPay. Choose network <strong>Arc</strong> (USDC · Arc). Minimum 20, MoonPay ID check on first purchase.</p>
       {q?.configured && q.usdc != null && (
         <div className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 10, display: "grid", fontSize: 12, gap: 4, padding: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "var(--arc-muted)" }}>You receive</span><span style={{ color: "#22c580" }}>≈ {q.usdc.toFixed(2)} USDC on Arc</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "var(--arc-muted)" }}>You receive</span><span style={{ color: "#22c580" }}>≈ {q.usdc.toFixed(2)} USDC {q.env === "sandbox" ? "(sandbox: Ethereum test USDC)" : "on Arc"}</span></div>
           <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "var(--arc-muted)" }}>MoonPay fee</span><span>{(q.fee ?? 0).toFixed(2)} {fiat.toUpperCase()}{q.networkFee ? ` + ${q.networkFee.toFixed(2)} network` : ""}</span></div>
           <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "var(--arc-muted)" }}>Card limits</span><span>{q.min != null ? `${q.min}–${q.max} ${fiat.toUpperCase()}` : "—"}</span></div>
         </div>
