@@ -50,6 +50,7 @@ export function ArcNav({ active }: { active?: string }) {
   const primary = [
     ["/trade", "Terminal"],
     ["/swap", "Swap"],
+    ["/buy", "Buy ARCT"],
     ["/portfolio", "Portfolio"],
   ] as const;
   const groups: { label: string; items: readonly (readonly [string, string])[] }[] = [

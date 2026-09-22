@@ -8,7 +8,7 @@ export const Route = createFileRoute("/api/ads")({
     GET: async () => {
       try {
         const [ads, nf] = await Promise.all([activeAds(), nextFree()]);
-        void retryNotices().catch(() => null);
+        await retryNotices().catch(() => null);   // awaited: a dangling promise dies with the response in a Worker
         return Response.json({ ads: ads.map((a) => ({ id: a.id, title: a.title, url: a.url, ends_at: a.ends_at })), slots: AD_SLOTS, days: AD_DAYS, next_free_at: nf.nextFreeAt, queued: nf.queued },
           { headers: { "access-control-allow-origin": "*", "cache-control": "public, max-age=60", "cdn-cache-control": "max-age=60" } });
       } catch (e) {

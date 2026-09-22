@@ -41,6 +41,8 @@ import { Route as Insiders2RouteImport } from './routes/insiders2'
 import { Route as InsidersRouteImport } from './routes/insiders'
 import { Route as FeedRouteImport } from './routes/feed'
 import { Route as DiagRouteImport } from './routes/diag'
+import { Route as Buy2RouteImport } from './routes/buy2'
+import { Route as BuyRouteImport } from './routes/buy'
 import { Route as Bridge2RouteImport } from './routes/bridge2'
 import { Route as BridgeRouteImport } from './routes/bridge'
 import { Route as AppRouteImport } from './routes/app'
@@ -239,6 +241,16 @@ const DiagRoute = DiagRouteImport.update({
   path: '/diag',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Buy2Route = Buy2RouteImport.update({
+  id: '/buy2',
+  path: '/buy2',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BuyRoute = BuyRouteImport.update({
+  id: '/buy',
+  path: '/buy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const Bridge2Route = Bridge2RouteImport.update({
   id: '/bridge2',
   path: '/bridge2',
@@ -432,6 +444,8 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRoute
   '/bridge': typeof BridgeRoute
   '/bridge2': typeof Bridge2Route
+  '/buy': typeof BuyRoute
+  '/buy2': typeof Buy2Route
   '/diag': typeof DiagRoute
   '/feed': typeof FeedRoute
   '/insiders': typeof InsidersRoute
@@ -503,6 +517,8 @@ export interface FileRoutesByTo {
   '/app': typeof AppRoute
   '/bridge': typeof BridgeRoute
   '/bridge2': typeof Bridge2Route
+  '/buy': typeof BuyRoute
+  '/buy2': typeof Buy2Route
   '/diag': typeof DiagRoute
   '/feed': typeof FeedRoute
   '/insiders': typeof InsidersRoute
@@ -575,6 +591,8 @@ export interface FileRoutesById {
   '/app': typeof AppRoute
   '/bridge': typeof BridgeRoute
   '/bridge2': typeof Bridge2Route
+  '/buy': typeof BuyRoute
+  '/buy2': typeof Buy2Route
   '/diag': typeof DiagRoute
   '/feed': typeof FeedRoute
   '/insiders': typeof InsidersRoute
@@ -648,6 +666,8 @@ export interface FileRouteTypes {
     | '/app'
     | '/bridge'
     | '/bridge2'
+    | '/buy'
+    | '/buy2'
     | '/diag'
     | '/feed'
     | '/insiders'
@@ -719,6 +739,8 @@ export interface FileRouteTypes {
     | '/app'
     | '/bridge'
     | '/bridge2'
+    | '/buy'
+    | '/buy2'
     | '/diag'
     | '/feed'
     | '/insiders'
@@ -790,6 +812,8 @@ export interface FileRouteTypes {
     | '/app'
     | '/bridge'
     | '/bridge2'
+    | '/buy'
+    | '/buy2'
     | '/diag'
     | '/feed'
     | '/insiders'
@@ -862,6 +886,8 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRoute
   BridgeRoute: typeof BridgeRoute
   Bridge2Route: typeof Bridge2Route
+  BuyRoute: typeof BuyRoute
+  Buy2Route: typeof Buy2Route
   DiagRoute: typeof DiagRoute
   FeedRoute: typeof FeedRoute
   InsidersRoute: typeof InsidersRoute
@@ -1153,6 +1179,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DiagRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/buy2': {
+      id: '/buy2'
+      path: '/buy2'
+      fullPath: '/buy2'
+      preLoaderRoute: typeof Buy2RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/buy': {
+      id: '/buy'
+      path: '/buy'
+      fullPath: '/buy'
+      preLoaderRoute: typeof BuyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/bridge2': {
       id: '/bridge2'
       path: '/bridge2'
@@ -1422,6 +1462,8 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRoute,
   BridgeRoute: BridgeRoute,
   Bridge2Route: Bridge2Route,
+  BuyRoute: BuyRoute,
+  Buy2Route: Buy2Route,
   DiagRoute: DiagRoute,
   FeedRoute: FeedRoute,
   InsidersRoute: InsidersRoute,
