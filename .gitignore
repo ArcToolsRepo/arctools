@@ -20,3 +20,4 @@ sniper/.openrouter_key
 .bridge_owner_key
 .relay_key
 .hb_auth
+.predict_operator_key

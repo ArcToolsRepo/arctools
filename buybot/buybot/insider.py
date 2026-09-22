@@ -2742,6 +2742,8 @@ async def start_api():
     _stream.register(app)
     from . import logos as _logos
     _logos.register(app)
+    from . import predict as _predict
+    _predict.register(app)
     _liq.register_risk(app)
     from . import referrals as _ref
     _ref.register(app)

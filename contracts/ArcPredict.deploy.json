@@ -1,0 +1,39 @@
+{
+  "admin": "0x408c3d3Fd36fdF84888f343417787D8710E76fE8",
+  "operator": "0x048C0257091c256F825FdD3b8ad3491B648584D1",
+  "treasury": "0xb35c471b31D636B96f95b84E7A27D69B63235C0D",
+  "compiler": "0.8.26",
+  "markets": {
+    "BTC/USD": {
+      "address": "0x88fb5f7Fd4a9cEeF59AaE3DD5fEE92259E2B10e0",
+      "interval": 120,
+      "buffer": 45,
+      "minBet": "1000000000000000000",
+      "maxBet": "500000000000000000000",
+      "feeBps": 300,
+      "tx": "2fb8b33fd791947e3055d13ae3b3e0d1bef940e4e4d0b031d0c9fb81b2002b88",
+      "block": 22192019
+    },
+    "ETH/USD": {
+      "address": "0x4d235443685AD0273b8Dd3Ebd4F3af9E466afB4d",
+      "interval": 120,
+      "buffer": 45,
+      "minBet": "1000000000000000000",
+      "maxBet": "500000000000000000000",
+      "feeBps": 300,
+      "tx": "3733c73ec0dd5fc0cd499399aa2295f1d46e1d4b3412d7cdc308f81822f04305",
+      "block": 22192022
+    },
+    "SOL/USD": {
+      "address": "0x6D8B07940A378Ea97E9C4caa4Bdab40603639fc4",
+      "interval": 120,
+      "buffer": 45,
+      "minBet": "1000000000000000000",
+      "maxBet": "500000000000000000000",
+      "feeBps": 300,
+      "tx": "d803b58f48688fae2aed58eacacca8320098286b3198db109b07f30dd201f22e",
+      "block": 22192026
+    }
+  },
+  "deployed_at": 1790087414
+}

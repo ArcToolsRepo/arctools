@@ -25,6 +25,8 @@ import { Route as Referrals2RouteImport } from './routes/referrals2'
 import { Route as ReferralsRouteImport } from './routes/referrals'
 import { Route as Profile2RouteImport } from './routes/profile2'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as Predict2RouteImport } from './routes/predict2'
+import { Route as PredictRouteImport } from './routes/predict'
 import { Route as Portfolio2RouteImport } from './routes/portfolio2'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as Pay2RouteImport } from './routes/pay2'
@@ -159,6 +161,16 @@ const Profile2Route = Profile2RouteImport.update({
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Predict2Route = Predict2RouteImport.update({
+  id: '/predict2',
+  path: '/predict2',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PredictRoute = PredictRouteImport.update({
+  id: '/predict',
+  path: '/predict',
   getParentRoute: () => rootRouteImport,
 } as any)
 const Portfolio2Route = Portfolio2RouteImport.update({
@@ -462,6 +474,8 @@ export interface FileRoutesByFullPath {
   '/pay2': typeof Pay2Route
   '/portfolio': typeof PortfolioRoute
   '/portfolio2': typeof Portfolio2Route
+  '/predict': typeof PredictRoute
+  '/predict2': typeof Predict2Route
   '/profile': typeof ProfileRoute
   '/profile2': typeof Profile2Route
   '/referrals': typeof ReferralsRoute
@@ -535,6 +549,8 @@ export interface FileRoutesByTo {
   '/pay2': typeof Pay2Route
   '/portfolio': typeof PortfolioRoute
   '/portfolio2': typeof Portfolio2Route
+  '/predict': typeof PredictRoute
+  '/predict2': typeof Predict2Route
   '/profile': typeof ProfileRoute
   '/profile2': typeof Profile2Route
   '/referrals': typeof ReferralsRoute
@@ -609,6 +625,8 @@ export interface FileRoutesById {
   '/pay2': typeof Pay2Route
   '/portfolio': typeof PortfolioRoute
   '/portfolio2': typeof Portfolio2Route
+  '/predict': typeof PredictRoute
+  '/predict2': typeof Predict2Route
   '/profile': typeof ProfileRoute
   '/profile2': typeof Profile2Route
   '/referrals': typeof ReferralsRoute
@@ -684,6 +702,8 @@ export interface FileRouteTypes {
     | '/pay2'
     | '/portfolio'
     | '/portfolio2'
+    | '/predict'
+    | '/predict2'
     | '/profile'
     | '/profile2'
     | '/referrals'
@@ -757,6 +777,8 @@ export interface FileRouteTypes {
     | '/pay2'
     | '/portfolio'
     | '/portfolio2'
+    | '/predict'
+    | '/predict2'
     | '/profile'
     | '/profile2'
     | '/referrals'
@@ -830,6 +852,8 @@ export interface FileRouteTypes {
     | '/pay2'
     | '/portfolio'
     | '/portfolio2'
+    | '/predict'
+    | '/predict2'
     | '/profile'
     | '/profile2'
     | '/referrals'
@@ -904,6 +928,8 @@ export interface RootRouteChildren {
   Pay2Route: typeof Pay2Route
   PortfolioRoute: typeof PortfolioRoute
   Portfolio2Route: typeof Portfolio2Route
+  PredictRoute: typeof PredictRoute
+  Predict2Route: typeof Predict2Route
   ProfileRoute: typeof ProfileRoute
   Profile2Route: typeof Profile2Route
   ReferralsRoute: typeof ReferralsRoute
@@ -1065,6 +1091,20 @@ declare module '@tanstack/react-router' {
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/predict2': {
+      id: '/predict2'
+      path: '/predict2'
+      fullPath: '/predict2'
+      preLoaderRoute: typeof Predict2RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/predict': {
+      id: '/predict'
+      path: '/predict'
+      fullPath: '/predict'
+      preLoaderRoute: typeof PredictRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/portfolio2': {
@@ -1480,6 +1520,8 @@ const rootRouteChildren: RootRouteChildren = {
   Pay2Route: Pay2Route,
   PortfolioRoute: PortfolioRoute,
   Portfolio2Route: Portfolio2Route,
+  PredictRoute: PredictRoute,
+  Predict2Route: Predict2Route,
   ProfileRoute: ProfileRoute,
   Profile2Route: Profile2Route,
   ReferralsRoute: ReferralsRoute,

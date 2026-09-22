@@ -5,6 +5,7 @@ from aiogram.client.default import DefaultBotProperties
 
 from buybot.config import CFG
 from buybot import bridge_keeper, contract_socials, dexscreener, faze, identity, padfeeds, xfeed, balances, bridge_watch, insider_alerts, rules, watchlist, db, insider, social, watcher, trending, kols, rpc_monitor, logos
+from buybot import predict
 from buybot.handlers import router
 
 logging.getLogger("web3.manager.RequestManager").setLevel(logging.CRITICAL)  # failover jest obslugiwany w chain.py; ERROR to szum
@@ -77,6 +78,7 @@ async def main():
         asyncio.create_task(insider_alerts.alerts_loop(), name="insider-alerts"),
         asyncio.create_task(bridge_watch.watch_loop(), name="bridge-watch"),
         asyncio.create_task(bridge_watch.proxy_sweep_loop(), name="bridge-sweeper"),
+        asyncio.create_task(predict.operator_loop(), name="predict-operator"),
         asyncio.create_task(rpc_monitor.monitor_loop(), name="rpc-monitor"),
         asyncio.create_task(logos.hunt_loop(), name="logo-hunter"),
         asyncio.create_task(xfeed.feed_loop(), name="x-feed"),
