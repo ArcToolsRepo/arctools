@@ -235,6 +235,15 @@ function Trade() {
   }, []);
   // 28 source chips in one row is a wall: show the handful people actually filter by and keep the rest one click away
   const [padsOpen, setPadsOpen] = useState(false);
+  // launchpads the indexer knows that are not on the hand-typed list below (a new pad shows up here the day it launches)
+  const [extraPads, setExtraPads] = useState<string[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/padcounts").then((r) => r.json()).then((j: { rows?: { pad: string; n: number }[] }) => {
+      if (alive && j.rows) setExtraPads(j.rows.map((r) => r.pad).filter((x) => !!x && x !== "UniswapV3"));
+    }).catch(() => null);
+    return () => { alive = false; };
+  }, []);
   // ?pad=Minara — what the rail links to. Without this the link navigated but the list stayed unfiltered.
   useEffect(() => {
     const qs = new URLSearchParams(window.location.search);
@@ -242,7 +251,7 @@ function Trade() {
     const want = qs.get("pad");
     if (want) {
       const hit = PADS.find(([k]) => norm(k) === norm(want)) ?? PADS.find(([, l]) => norm(l) === norm(want));
-      if (hit) setPadF(hit[0]);
+      setPadF(hit ? hit[0] : want);
     }
     // the rail also links to tabs and sorts; without this they navigated and changed nothing
     const wantTab = qs.get("tab");
@@ -259,7 +268,15 @@ function Trade() {
   const [page, setPage] = useState(1);
   const [minMc, setMinMc] = useState(""); const [maxMc, setMaxMc] = useState(""); const [minVol, setMinVol] = useState("");
   const PAD_PRIMARY = ["all", "ArcToolsPad", "UniswapV4", "Hopium", "Minara", "Stocks"];
-  const PADS: [string, string][] = [["all", tr_("All sources")], ["ArcToolsPad", "ArcToolsPad"], ["ArcPad", "ArcPad"], ["RadarDex", "RadarDex"], ["Warp", "Warp"], ["Tolly", "Tolly"], ["Archemist", "Archemist"], ["Arguspad", "Arguspad"], ["UniswapV4", "Uniswap V4"], ["UniswapV3", "Uniswap V3 pools"], ["Lift", "Lift"], ["eve.fun", "eve.fun"], ["Ellipse", "Ellipse"], ["Sashimi", "Sashimi"], ["aka.fun", "aka.fun"], ["long.supply", "📈 Stock pairs"], ["Stocks", "📈 Stocks"], ["DYORSwap", "DYORSwap · V2"], ["UBI.fun", "UBI.fun"], ["Klik", "Klik"], ["Minara", "Minara"], ["faze.fun", "faze.fun"], ["sharc.fun", "sharc.fun"], ["creo.family", "creo.family"], ["peach.ag", "peach.ag"], ["pools.trade", "pools.trade"], ["Hopium", "Hopium"]];
+  const PADS_BASE: [string, string][] = [["all", tr_("All sources")], ["ArcToolsPad", "ArcToolsPad"], ["ArcPad", "ArcPad"], ["RadarDex", "RadarDex"], ["Warp", "Warp"], ["Tolly", "Tolly"], ["Archemist", "Archemist"], ["Arguspad", "Arguspad"], ["UniswapV4", "Uniswap V4"], ["UniswapV3", "Uniswap V3 pools"], ["Lift", "Lift"], ["eve.fun", "eve.fun"], ["Ellipse", "Ellipse"], ["Sashimi", "Sashimi"], ["aka.fun", "aka.fun"], ["long.supply", "📈 Stock pairs"], ["Stocks", "📈 Stocks"], ["DYORSwap", "DYORSwap · V2"], ["UBI.fun", "UBI.fun"], ["Klik", "Klik"], ["Minara", "Minara"], ["faze.fun", "faze.fun"], ["sharc.fun", "sharc.fun"], ["creo.family", "creo.family"], ["peach.ag", "peach.ag"], ["pools.trade", "pools.trade"], ["Hopium", "Hopium"]];
+  const PADS: [string, string][] = useMemo(() => {
+    const normK = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const seen = new Set(PADS_BASE.map(([k]) => normK(k)));
+    const out = [...PADS_BASE];
+    for (const x of extraPads) if (!seen.has(normK(x))) { seen.add(normK(x)); out.push([x, x]); }
+    return out;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extraPads]);
   useEffect(() => { try { setToastsOn(localStorage.getItem("arctools_toasts") !== "0"); } catch { /* ignore */ } }, []);
   const toggleToasts = () => setToastsOn((v) => { try { localStorage.setItem("arctools_toasts", v ? "0" : "1"); } catch { /* ignore */ } return !v; });
   const [browserAddr, setBrowserAddr] = useState<string | null>(null);
