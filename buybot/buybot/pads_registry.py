@@ -51,12 +51,18 @@ FACTORIES: dict[str, dict] = {
     # --- 18.09: hopium.gg, "stock-paired launchpad": token + Uniswap v4 pool + locked position in one tx; pairs are USDC or
     # long.supply stock tokens; trading fee 3-10 % of which 2 % is theirs. Tokens expose logo()/description()/website() on-chain.
     "hopium":   {"label": "Hopium",      "url": "https://hopium.gg",     "twitter": "hopium_gg",       "factories": ["0x0727fe8a5c7073e5b5882bc5ba8d73a427cbe3aa"], "model": "instant V4 pool quoted in USDC or a stock token, liquidity locked (hook 0xc75076a1…, locker 0xa306b48e…)"},
+    # --- 22.09: foci.family — Uniswap v4 launch with its own hook; factory event 0xdcacba5e… (token, pool-ish, creator)
+    "foci":     {"label": "foci.family", "url": "https://foci.family", "twitter": "focidotfamily",    "factories": ["0x5c5c202271e1300bd5ce43a4f5c1cea8efd57b63"], "model": "instant V4 pool with hook 0xf847790b…, USDC-quoted", "hooks": ["0xf847790b6fa5da300bb3f56f10d743e71e98e044"]},
     "ubi":      {"label": "UBI.fun",     "url": "https://ubi.fun",       "twitter": "ubidotfun",       "factories": ["0xee3e862efde6dcd6df5648af0e2731b9d1df4605", "0xe07f7ca66ec795592385018dd998f0b50b8a2834"], "model": "V4 pool, hooks 0x20eead6d… / 0xc780c0f4…"},
 }
 
 # Launchpads we have already reverse-engineered but that are NOT on Arc mainnet yet (or show no real tokens). Kept out of
 # FACTORIES so the Terminal never lists tokens nobody can buy. Going live = move the entry into FACTORIES and fill "factories".
 PENDING_FACTORIES: dict[str, dict] = {
+    # 22.09: solonpad.fun — Uniswap v4 launch (memeHook 0x9d1a376d…, launchDeployer 0xe70e060f…, launchLocker 0x3e93df00…,
+    # graduationExecutor 0xb39af010…). Contracts live on Arc, ZERO launches yet (no pool with the hook, no deployer event).
+    # The hook is already in venues.V4_HOOKS, so the first pool is labelled "solonpad.fun" the moment it appears.
+    "solonpad": {"label": "solonpad.fun", "url": "https://solonpad.fun", "twitter": "Solonlabs1", "factories": [], "model": "Uniswap v4 launch with hook, USDC-quoted", "hooks": ["0x9d1a376de8525a2cd622b5c2ce99984f8432e044"], "status": "contracts deployed, 0 launches (22.09)"},
     "arcfun":   {"label": "Arcfun",      "url": "https://arcfun.app",    "twitter": None, "factories": [], "model": "USDC bonding curve → DEX", "status": "site shows placeholder tokens only (16.09)"},
     "o1":       {"label": "o1 Launchpad", "url": "https://o1launchpad.com", "twitter": "o1_exchange", "factories": [], "model": "single-sided Uniswap v4 launch, crypto- and stock-paired markets", "status": "docs name Arc as a creation target, but the public API needs an x-api-key and lists only Base 8453 / Monad 143 / Robinhood 4663; no Arc factory confirmed on-chain yet (16.09)"},
     "arclaunch":{"label": "ARCLaunch",   "url": "https://arclaunch.fun", "twitter": None, "factories": [], "model": "?", "status": "no tokens / contracts visible (16.09)"},

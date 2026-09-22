@@ -204,7 +204,7 @@ function Settings() {
       </div>
       <div className="label">About</div>
       <UpdateCard />
-      <div className="card muted" style={{ fontSize: 12.5 }}>ArcOne v2.6 · powered by ArcTools · arctools.fun · Fees fund ARCT buybacks that burn in the same transaction. Your key never leaves this phone. Internal review only — no third-party audit.</div>
+      <div className="card muted" style={{ fontSize: 12.5 }}>ArcOne v2.7 · powered by ArcTools · arctools.fun · Fees fund ARCT buybacks that burn in the same transaction. Your key never leaves this phone. Internal review only — no third-party audit.</div>
     </>
   );
 }

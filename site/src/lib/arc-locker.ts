@@ -1,10 +1,10 @@
 /** ArcLocker — reads straight from the contract (two eth_calls, memoised 60 s). No indexer involved.
- *  Contract: 0x02d21F3449d1aEB9Adb5A866EEe39D380aEd374a (Arc). Locks are ERC-20 (tokens, V2 LP) or ERC-721
+ *  Contract: 0x07868eB2E92D4F1D9967f6Dc3B8a8Af5623Dbb94 (Arc). Locks are ERC-20 (tokens, V2 LP) or ERC-721
  *  (Uniswap V3 NPM / v4 Positions NFT). For V3/v4 positions we also read the position's liquidity and the pool's
  *  in-range liquidity so a token page can say "62 % of the pool's liquidity is locked until …". */
 import { rpc, toNum } from "./arc-api";
 
-export const ARC_LOCKER = "0x02d21F3449d1aEB9Adb5A866EEe39D380aEd374a";
+export const ARC_LOCKER = "0x07868eB2E92D4F1D9967f6Dc3B8a8Af5623Dbb94";
 export const V3_NPM = "0x39654A85A4C05127f5Fd6ED22CAeC077A0fB1377";
 export const V4_POSM = "0x6049c9a0e26405c0985f9e3685c87d0ae917f82b";
 const ZERO = "0x0000000000000000000000000000000000000000";

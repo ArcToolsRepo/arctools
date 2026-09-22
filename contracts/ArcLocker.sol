@@ -11,8 +11,12 @@ pragma solidity ^0.8.26;
  *
  *  Rules
  *    - A lock has an owner (can extend, transfer ownership, withdraw after unlock) and an unlock time that can
- *      only move LATER. No admin key can release a lock early — the platform owner can only change the fee and
- *      the fee receiver. There is no pause, no upgrade, no rescue function.
+ *      only move LATER. No admin key can move a lock's assets anywhere but back to the lock's own owner:
+ *      the ONLY emergency path is `announceRescue(id)` (public event) followed, at least 48 h later, by
+ *      `rescue(id)`, which returns the asset to the lock owner. It exists for contract bugs (e.g. a token whose
+ *      transfer changes behaviour). Worst-case abuse = somebody gets their own tokens back early, in public.
+ *      The platform owner can otherwise only change the fee, the fee receiver and the fee-exempt list.
+ *      There is no pause and no upgrade.
  *    - Optional linear vesting for ERC-20 locks: nothing before `unlockAt`, then linear until `vestEnd`
  *      (vestEnd == unlockAt → everything at once).
  *    - V3 positions keep earning: while locked, the owner can collect the position's swap fees to any address
@@ -93,6 +97,11 @@ contract ArcLocker {
     modifier nonReentrant() { require(_g == 1, "reentrancy"); _g = 2; _; _g = 1; }
 
     event ExemptChanged(address indexed who, bool exempt);
+    event RescueAnnounced(uint256 indexed id, uint64 executableAt, string reason);
+    event RescueCancelled(uint256 indexed id);
+    event Rescued(uint256 indexed id, address indexed to, uint256 amountOrId);
+    uint64 public constant RESCUE_DELAY = 48 hours;
+    mapping(uint256 => uint64) public rescueAt;    // lock id → earliest time rescue(id) may run (0 = none announced)
     constructor(address _treasury) { owner = msg.sender; treasury = _treasury; feeExempt[msg.sender] = true; feeExempt[_treasury] = true; }
 
     // ------------------------------------------------------------------ admin (fee only — never the locks)
@@ -102,6 +111,26 @@ contract ArcLocker {
     }
     function transferOwnership(address n) external onlyOwner { require(n != address(0), "zero"); owner = n; }
     function setExempt(address who, bool exempt) external onlyOwner { feeExempt[who] = exempt; emit ExemptChanged(who, exempt); }
+
+    // ------------------------------------------------------------------ emergency path (to the lock owner only)
+    function announceRescue(uint256 id, string calldata reason) external onlyOwner {
+        require(id < locks.length && !locks[id].withdrawn, "no lock");
+        rescueAt[id] = uint64(block.timestamp) + RESCUE_DELAY;
+        emit RescueAnnounced(id, rescueAt[id], reason);
+    }
+    function cancelRescue(uint256 id) external onlyOwner { delete rescueAt[id]; emit RescueCancelled(id); }
+    /// @notice After the announced delay: return the locked asset to the lock's owner. Nothing else is possible.
+    function rescue(uint256 id) external onlyOwner nonReentrant {
+        Lock storage L = locks[id];
+        require(rescueAt[id] != 0 && block.timestamp >= rescueAt[id], "not announced / too early");
+        require(!L.withdrawn, "withdrawn");
+        delete rescueAt[id];
+        L.withdrawn = true;
+        uint256 amt = L.amountOrId; L.amountOrId = 0;
+        if (L.kind == Kind.ERC721) IERC721(L.asset).transferFrom(address(this), L.lockOwner, amt);
+        else require(IERC20(L.asset).transfer(L.lockOwner, amt), "transfer");
+        emit Rescued(id, L.lockOwner, amt);
+    }
 
     // ------------------------------------------------------------------ lock
     function _takeFee() internal {

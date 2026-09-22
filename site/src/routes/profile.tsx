@@ -90,9 +90,11 @@ function Profile() {
     }
     // index positions the indexer did not list (indexer lag right after a buy): keep them until the next refresh
     for (const [k, ix] of idx) if (!seen.has(k) && ix.net > 0 && (ix.value ?? 0) >= 0.01 && holdings.length === 0) merged.push(ix);
+    // dust filter: anything worth under $1 is noise in a holdings list (airdrops, leftovers) — hidden, not sold
+    const visible = merged.filter((m) => (m.value ?? 0) >= 1 || (m.value == null && m.net > 0 && (m.cost ?? 0) >= 1));
     merged.sort((x, y) => (y.value ?? 0) - (x.value ?? 0));
     const gotSomething = holdings.length > 0 || ((p?.positions ?? []) as Position[]).length > 0;
-    if (gotSomething) setPos(merged.filter((x) => (x.value ?? 0) >= 0.005 || x.external));
+    if (gotSomething) setPos(visible);
     if (h) setHist(h);
     // every token the wallet ever traded — closed ones carry realized PnL even with nothing left to show as a holding
     if (p?.positions) {

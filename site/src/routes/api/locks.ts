@@ -12,7 +12,7 @@ export const Route = createFileRoute("/api/locks")({
         if (!/^0x[0-9a-f]{40}$/.test(key)) return Response.json({ error: "token or owner" }, { status: 400 });
         const { memo } = await import("@/lib/arc-api");
         const locks = await memo(`locks:${token ? "t" : "o"}:${key}`, 60_000, () => (token ? locksForToken(key) : locksOf(key)), () => true);
-        return Response.json({ locks, contract: "0x02d21F3449d1aEB9Adb5A866EEe39D380aEd374a" }, { headers: { "access-control-allow-origin": "*", "cache-control": "public, max-age=30, s-maxage=60" } });
+        return Response.json({ locks, contract: "0x07868eB2E92D4F1D9967f6Dc3B8a8Af5623Dbb94" }, { headers: { "access-control-allow-origin": "*", "cache-control": "public, max-age=30, s-maxage=60" } });
       },
     },
   },

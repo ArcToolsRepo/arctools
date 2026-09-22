@@ -8,7 +8,7 @@ import { Header, Icon } from "../components/ui";
 import { Unlock } from "./Wallet";
 import { buzzOk } from "../lib/native";
 
-export const ARC_LOCKER = "0x02d21F3449d1aEB9Adb5A866EEe39D380aEd374a";
+export const ARC_LOCKER = "0x07868eB2E92D4F1D9967f6Dc3B8a8Af5623Dbb94";
 const V3_NPM = "0x39654A85A4C05127f5Fd6ED22CAeC077A0fB1377"; const V4_POSM = "0x6049c9a0e26405c0985f9e3685c87d0ae917f82b";
 const SEL = { lockERC20: "0x6f75d653", lockERC721: "0x9d864c00", withdraw: "0x00f714ce", extend: "0x00fc7d8f", collectV3Fees: "0xf444b184", feeFor: "0xec46a409", approve: "0x095ea7b3", allowance: "0xdd62ed3e", balanceOf: "0x70a08231", decimals: "0x313ce567", symbol: "0x95d89b41", ownerOf: "0x6352211e", getApproved: "0x081812fc" };
 const p32 = (a: string) => a.replace(/^0x/, "").toLowerCase().padStart(64, "0");

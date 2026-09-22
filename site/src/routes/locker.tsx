@@ -79,6 +79,7 @@ function Body() {
       </div>
       <div style={card}>
         <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: "0 0 12px", textTransform: "uppercase" }}>My locks {addr ? `· ${short(addr)}` : ""}</p>
+        {addr && addr.toLowerCase() === LOCKER_OWNER && <RescuePanel send={send} />}
         {!addr ? <p className="arc-body" style={{ color: "var(--arc-muted)" }}>Connect to see your locks.</p>
           : mine.length === 0 ? <p className="arc-body" style={{ color: "var(--arc-muted)" }}>No locks from this wallet yet.</p>
           : mine.map((l) => <LockCard key={l.id} l={l} me={addr} send={send} onDone={reload} />)}
@@ -214,6 +215,28 @@ function LockCard({ l, me, send, onDone }: { l: LockRow; me: string; send: (to: 
         </div>
       )}
       {err && <p className="arc-mono" style={{ color: "#f0534f", fontSize: 11, marginTop: 8 }}>{err}</p>}
+    </div>
+  );
+}
+
+const LOCKER_OWNER = "0x408c3d3fd36fdf84888f343417787d8710e76fe8";
+const RSEL = { announce: "0x88eceaeb", cancel: "0x0a3b2aa3", rescue: "0x6ac053ad" };
+/** Owner-only emergency path: announce (public event) → 48 h → rescue returns the asset to the LOCK OWNER, nowhere else. */
+function RescuePanel({ send }: { send: (to: string, data: string, value?: bigint) => Promise<string> }) {
+  const [id, setId] = useState(""); const [reason, setReason] = useState(""); const [busy, setBusy] = useState<string | null>(null); const [out, setOut] = useState<string | null>(null);
+  const enc = (str: string) => { const b = new TextEncoder().encode(str); return pnum(0x40) + pnum(b.length) + Array.from(b).map((x) => x.toString(16).padStart(2, "0")).join("").padEnd(Math.ceil(b.length / 32) * 64, "0"); };
+  const run = async (label: string, data: string) => { setBusy(label); setOut(null); try { const h = await send(ARC_LOCKER, data); setOut(`${label} ok · ${h.slice(0, 14)}…`); } catch (e) { setOut(String((e as Error).message || e).slice(0, 140)); } finally { setBusy(null); } };
+  return (
+    <div style={{ border: "1px dashed #f0534f", borderRadius: 10, marginBottom: 12, padding: 12 }}>
+      <p className="arc-mono" style={{ color: "#f0534f", fontSize: 11, margin: "0 0 8px", textTransform: "uppercase" }}>Owner · emergency rescue (returns to the lock owner after 48 h, public)</p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <input className="arc-mono" inputMode="numeric" onChange={(e) => setId(e.target.value.trim())} placeholder="lock id" style={{ ...inp, width: 90 }} value={id} />
+        <input className="arc-mono" onChange={(e) => setReason(e.target.value)} placeholder="reason (public)" style={{ ...inp, flex: 1, minWidth: 160 }} value={reason} />
+        <button className="arc-mono" disabled={!!busy || !/^\d+$/.test(id)} onClick={() => void run("announceRescue", RSEL.announce + pnum(Number(id)) + enc(reason || "owner rescue"))} style={chip(false)} type="button">Announce</button>
+        <button className="arc-mono" disabled={!!busy || !/^\d+$/.test(id)} onClick={() => void run("cancelRescue", RSEL.cancel + pnum(Number(id)))} style={chip(false)} type="button">Cancel</button>
+        <button className="arc-mono" disabled={!!busy || !/^\d+$/.test(id)} onClick={() => void run("rescue", RSEL.rescue + pnum(Number(id)))} style={chip(true)} type="button">Rescue (after 48 h)</button>
+      </div>
+      {out && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginTop: 8 }}>{out}</p>}
     </div>
   );
 }

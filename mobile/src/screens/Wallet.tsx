@@ -123,7 +123,8 @@ export default function Wallet() {
   const load = useCallback(async () => {
     if (!addr) return;
     HW.hotBalance(addr).then(setBal).catch(() => undefined);
-    api.holdings(addr).then((r) => setHold(r.holdings ?? [])).catch(() => setHold([]));
+    // dust under $1 is hidden (airdrops, leftovers) — same rule as the site
+    api.holdings(addr).then((r) => setHold((r.holdings ?? []).filter((h) => (h.valueUsdc ?? 0) >= 1))).catch(() => setHold([]));
   }, [addr]);
   useEffect(() => { void load(); const id = setInterval(load, 20_000); return () => clearInterval(id); }, [load]);
 

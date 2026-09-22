@@ -457,6 +457,8 @@ const V4_HOOK_NAMES: Record<string, string> = {
   "0xbaba3f590b3661de78998d1576a73a4d726b2acc": "Sashimi",
   "0x47e7936ae9891e61c5123db720593c05de7120cc": "faze.fun",
   "0x173c4bdd5cf95a935d2b5636c573c5f4df062044": "peach.ag",
+  "0xf847790b6fa5da300bb3f56f10d743e71e98e044": "foci.family",
+  "0x9d1a376de8525a2cd622b5c2ce99984f8432e044": "solonpad.fun",
   "0xf73a3f56c533f7f1146fbc97806f07efa66ce0cc": "Klik",
   "0xc75076a17c1ba3dd949773f9036efa4a840020cc": "Hopium",
   "0xca55cdde6578f6f8113dd339520e13418abc2acc": "Lift",
@@ -1105,6 +1107,7 @@ export const getPortfolio = createServerFn({ method: "POST" })
     const usdc = Number(toNum(usdcHex as string | null)) / 1e6;
 
     const holdings: Holding[] = [];
+    const decHint: number[] = [];
     const rawBalances: bigint[] = [];
 
     // primary discovery: the arc-scan indexer lists EVERY erc20 the wallet holds
@@ -1125,14 +1128,19 @@ export const getPortfolio = createServerFn({ method: "POST" })
         const raw = BigInt(it.balance?.raw ?? "0");
         if (!addr || raw <= 0n || addr.toLowerCase() === USDC.toLowerCase()) continue;
         const dec = it.balance?.decimals ?? it.token?.decimals ?? 18;
-        holdings.push({
-          amount: Number(raw / 10n ** BigInt(Math.max(0, dec - 6))) / 1e6,
-          symbol: it.token?.symbol ?? "?",
-          token: addr,
-          valueUsdc: null,
-        });
-        rawBalances.push(raw);
+        holdings.push({ amount: 0, symbol: it.token?.symbol ?? "?", token: addr, valueUsdc: null });
+        rawBalances.push(raw); decHint.push(dec);
         if (holdings.length >= 100) break;
+      }
+      // arc-scan is a DISCOVERY source only: its balances lag and were off by orders of magnitude (SOLON: 9e-7
+      // reported vs 66,479 on-chain → "0.00" in the profile). Read every balance from the chain in one multicall.
+      if (holdings.length) {
+        const live = await multicall(holdings.map((h) => ({ data: SEL.balanceOf + pad32(wallet), target: h.token })), 40).catch(() => [] as (string | null)[]);
+        holdings.forEach((h, i) => {
+          const v = live[i]; if (v && v !== "0x") rawBalances[i] = BigInt(v);
+          h.amount = Number(rawBalances[i] / 10n ** BigInt(Math.max(0, decHint[i] - 6))) / 1e6;
+        });
+        for (let i = holdings.length - 1; i >= 0; i--) if (rawBalances[i] <= 0n) { holdings.splice(i, 1); rawBalances.splice(i, 1); decHint.splice(i, 1); }
       }
       indexed = true;
     } catch {
@@ -1154,28 +1162,25 @@ export const getPortfolio = createServerFn({ method: "POST" })
             token: t.address,
             valueUsdc: null,
           });
-          rawBalances.push(bal);
+          rawBalances.push(bal); decHint.push(18);
         }
       });
     }
 
-    // value every holding through the quoter (quoter sims are heavy: small chunks)
-    const quotes = await multicall(
-      holdings.map((h, i) => ({ data: quoteCalldata(h.token, rawBalances[i]), target: QUOTER_V2 })),
-      40,
-    );
-    holdings.forEach((h, i) => {
-      const q = quotes[i];
-      h.valueUsdc = q && q.length >= 66 ? Number(BigInt("0x" + q.slice(2, 66))) / 1e6 : null;
-    });
-    // no canonical V3 quote (pad curve, V4, other pads): fall back per token, a few at a time
-    const missing = holdings.map((h, i) => [h, i] as const).filter(([h]) => !h.valueUsdc);
-    for (let k = 0; k < missing.length; k += 4) {
-      await Promise.all(missing.slice(k, k + 4).map(async ([h, i]) => {
-        const v = await quoteToUsdc(h.token, rawBalances[i]).catch(() => null);
-        if (v && v > 0) h.valueUsdc = v;
-      }));
-    }
+    // Value from the swap index (last trade price per token, one small GET per token, in parallel). The quoter path
+    // simulated 8 tokens × 40 legs and blew the Worker's time budget — the profile then rendered "0 holdings"
+    // while native USDC (a plain balance) looked fine. Quoter stays as a per-token fallback for unindexed tokens.
+    const decs = await multicall(holdings.map((h) => ({ data: SEL.decimals, target: h.token })), 40).catch(() => [] as (string | null)[]);
+    await Promise.all(holdings.map(async (h, i) => {
+      const dec = Number(toNum((decs[i] as string | null) ?? null)) || 18;
+      const amount = Number(rawBalances[i] / BigInt(10) ** BigInt(Math.max(0, dec - 6))) / 1e6;
+      try {
+        const st = (await (await fetch(`${INSIDER_API}/api/token-stats?token=${h.token.toLowerCase()}`, { signal: AbortSignal.timeout(4000) })).json()) as { price1m?: number | null };
+        if (st.price1m && st.price1m > 0) { h.valueUsdc = (st.price1m / 1e6) * amount; return; }
+      } catch { /* fall through */ }
+      const v = await quoteToUsdc(h.token, rawBalances[i]).catch(() => null);
+      if (v && v > 0) h.valueUsdc = v;
+    }));
     holdings.sort((a, b) => (b.valueUsdc ?? 0) - (a.valueUsdc ?? 0));
     const total = usdc + holdings.reduce((s, h) => s + (h.valueUsdc ?? 0), 0);
     return { holdings, total, usdc };

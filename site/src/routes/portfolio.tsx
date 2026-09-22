@@ -31,6 +31,7 @@ function PortfolioPage() {
   const [wallet, setWallet] = useState("");
   // deep link from Intel / Insiders / the bots: /portfolio?w=0x… loads that wallet straight away
   const autoRan = useRef(false);
+  const [hidden, setHidden] = useState(0);
   const [holdings, setHoldings] = useState<Holding[] | null>(null);
   const [usdc, setUsdc] = useState(0);
   const [total, setTotal] = useState(0);
@@ -77,7 +78,9 @@ function PortfolioPage() {
       setError(res.error);
       return;
     }
-    setHoldings(res.holdings);
+    // dust (< $1) is hidden, counted, never valued into "total" differently — it is still in res.total
+    setHidden(res.holdings.filter((h) => (h.valueUsdc ?? 0) < 1).length);
+    setHoldings(res.holdings.filter((h) => (h.valueUsdc ?? 0) >= 1));
     setUsdc(res.usdc);
     setTotal(res.total);
   };
@@ -182,6 +185,7 @@ function PortfolioPage() {
                   </span>
                 </div>
               ))}
+              {hidden > 0 && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: "8px 0 0" }}>{hidden} holding{hidden > 1 ? "s" : ""} under $1 hidden</p>}
               {holdings.length === 0 && (
                 <p className="arc-mono" style={{ fontSize: 13, padding: "14px 0" }}>
                   No tokens found in this wallet.
