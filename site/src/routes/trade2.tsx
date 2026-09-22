@@ -4,6 +4,7 @@ import { BOT_API, BOT_ORIGIN } from "@/lib/bot-api";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
+import { AdBand } from "@/components/ad-band";
 import { DsRail } from "@/components/ds-rail";
 import { usePrefs } from "@/lib/i18n";
 import { holderRisk, listAllTokens, listFirstPaint, tokenLogos, type PadToken, xAvatar } from "@/lib/arc-api";
@@ -884,6 +885,7 @@ function Trade() {
               <h1 style={{ fontSize: 26, margin: 0 }}>Terminal</h1>
               <span style={{ color: "var(--arc-muted)", fontSize: 13 }}>{tr_("every Arc launchpad · one click · best price across venues · ")}<a href="/profile2" style={{ color: "var(--arc-cobalt)" }}>{tr_("profile & history →")}</a></span>
             </div>
+            <AdBand v2 />
             {/* quick-buy bar */}
             <button className="arc-mono arc-mobile-bar" onClick={() => setMobileOpen((o) => (o === "settings" ? "" : "settings"))} type="button">
               <span>⚡ {buyAmt} USDC · slip {slip}% · {signer === "hot" ? (addr ? "trading wallet" : "no wallet") : "browser wallet"}</span><span style={{ color: "var(--arc-muted)" }}>{mobileOpen === "settings" ? "hide ▴" : "settings ▾"}</span>

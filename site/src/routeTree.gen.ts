@@ -44,6 +44,8 @@ import { Route as DiagRouteImport } from './routes/diag'
 import { Route as Bridge2RouteImport } from './routes/bridge2'
 import { Route as BridgeRouteImport } from './routes/bridge'
 import { Route as AppRouteImport } from './routes/app'
+import { Route as Advertise2RouteImport } from './routes/advertise2'
+import { Route as AdvertiseRouteImport } from './routes/advertise'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as XHandleRouteImport } from './routes/x.$handle'
 import { Route as UHandleRouteImport } from './routes/u.$handle'
@@ -69,7 +71,11 @@ import { Route as ApiPadMetaRouteImport } from './routes/api/pad-meta'
 import { Route as ApiLocksRouteImport } from './routes/api/locks'
 import { Route as ApiHelpRouteImport } from './routes/api/help'
 import { Route as ApiHealRouteImport } from './routes/api/heal'
+import { Route as ApiAdsSubmitRouteImport } from './routes/api/ads-submit'
+import { Route as ApiAdsReviewRouteImport } from './routes/api/ads-review'
+import { Route as ApiAdsRouteImport } from './routes/api/ads'
 import { Route as ApiPadLogoCaRouteImport } from './routes/api/pad-logo.$ca'
+import { Route as ApiAdsImgIdRouteImport } from './routes/api/ads-img.$id'
 import { Route as ApiLogoIpfsCidRouteImport } from './routes/api/logo.ipfs.$cid'
 
 const Wallets2Route = Wallets2RouteImport.update({
@@ -247,6 +253,16 @@ const AppRoute = AppRouteImport.update({
   path: '/app',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Advertise2Route = Advertise2RouteImport.update({
+  id: '/advertise2',
+  path: '/advertise2',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdvertiseRoute = AdvertiseRouteImport.update({
+  id: '/advertise',
+  path: '/advertise',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -372,9 +388,29 @@ const ApiHealRoute = ApiHealRouteImport.update({
   path: '/api/heal',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAdsSubmitRoute = ApiAdsSubmitRouteImport.update({
+  id: '/api/ads-submit',
+  path: '/api/ads-submit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAdsReviewRoute = ApiAdsReviewRouteImport.update({
+  id: '/api/ads-review',
+  path: '/api/ads-review',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAdsRoute = ApiAdsRouteImport.update({
+  id: '/api/ads',
+  path: '/api/ads',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPadLogoCaRoute = ApiPadLogoCaRouteImport.update({
   id: '/api/pad-logo/$ca',
   path: '/api/pad-logo/$ca',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAdsImgIdRoute = ApiAdsImgIdRouteImport.update({
+  id: '/api/ads-img/$id',
+  path: '/api/ads-img/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiLogoIpfsCidRoute = ApiLogoIpfsCidRouteImport.update({
@@ -385,6 +421,8 @@ const ApiLogoIpfsCidRoute = ApiLogoIpfsCidRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/advertise': typeof AdvertiseRoute
+  '/advertise2': typeof Advertise2Route
   '/app': typeof AppRoute
   '/bridge': typeof BridgeRoute
   '/bridge2': typeof Bridge2Route
@@ -420,6 +458,9 @@ export interface FileRoutesByFullPath {
   '/trade2': typeof Trade2Route
   '/wallets': typeof WalletsRoute
   '/wallets2': typeof Wallets2Route
+  '/api/ads': typeof ApiAdsRoute
+  '/api/ads-review': typeof ApiAdsReviewRoute
+  '/api/ads-submit': typeof ApiAdsSubmitRoute
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
   '/api/locks': typeof ApiLocksRoute
@@ -444,11 +485,14 @@ export interface FileRoutesByFullPath {
   '/token2/$ca': typeof Token2CaRoute
   '/u/$handle': typeof UHandleRoute
   '/x/$handle': typeof XHandleRoute
+  '/api/ads-img/$id': typeof ApiAdsImgIdRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
   '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/advertise': typeof AdvertiseRoute
+  '/advertise2': typeof Advertise2Route
   '/app': typeof AppRoute
   '/bridge': typeof BridgeRoute
   '/bridge2': typeof Bridge2Route
@@ -484,6 +528,9 @@ export interface FileRoutesByTo {
   '/trade2': typeof Trade2Route
   '/wallets': typeof WalletsRoute
   '/wallets2': typeof Wallets2Route
+  '/api/ads': typeof ApiAdsRoute
+  '/api/ads-review': typeof ApiAdsReviewRoute
+  '/api/ads-submit': typeof ApiAdsSubmitRoute
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
   '/api/locks': typeof ApiLocksRoute
@@ -508,12 +555,15 @@ export interface FileRoutesByTo {
   '/token2/$ca': typeof Token2CaRoute
   '/u/$handle': typeof UHandleRoute
   '/x/$handle': typeof XHandleRoute
+  '/api/ads-img/$id': typeof ApiAdsImgIdRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
   '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/advertise': typeof AdvertiseRoute
+  '/advertise2': typeof Advertise2Route
   '/app': typeof AppRoute
   '/bridge': typeof BridgeRoute
   '/bridge2': typeof Bridge2Route
@@ -549,6 +599,9 @@ export interface FileRoutesById {
   '/trade2': typeof Trade2Route
   '/wallets': typeof WalletsRoute
   '/wallets2': typeof Wallets2Route
+  '/api/ads': typeof ApiAdsRoute
+  '/api/ads-review': typeof ApiAdsReviewRoute
+  '/api/ads-submit': typeof ApiAdsSubmitRoute
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
   '/api/locks': typeof ApiLocksRoute
@@ -573,6 +626,7 @@ export interface FileRoutesById {
   '/token2/$ca': typeof Token2CaRoute
   '/u/$handle': typeof UHandleRoute
   '/x/$handle': typeof XHandleRoute
+  '/api/ads-img/$id': typeof ApiAdsImgIdRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
   '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
 }
@@ -580,6 +634,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/advertise'
+    | '/advertise2'
     | '/app'
     | '/bridge'
     | '/bridge2'
@@ -615,6 +671,9 @@ export interface FileRouteTypes {
     | '/trade2'
     | '/wallets'
     | '/wallets2'
+    | '/api/ads'
+    | '/api/ads-review'
+    | '/api/ads-submit'
     | '/api/heal'
     | '/api/help'
     | '/api/locks'
@@ -639,11 +698,14 @@ export interface FileRouteTypes {
     | '/token2/$ca'
     | '/u/$handle'
     | '/x/$handle'
+    | '/api/ads-img/$id'
     | '/api/pad-logo/$ca'
     | '/api/logo/ipfs/$cid'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/advertise'
+    | '/advertise2'
     | '/app'
     | '/bridge'
     | '/bridge2'
@@ -679,6 +741,9 @@ export interface FileRouteTypes {
     | '/trade2'
     | '/wallets'
     | '/wallets2'
+    | '/api/ads'
+    | '/api/ads-review'
+    | '/api/ads-submit'
     | '/api/heal'
     | '/api/help'
     | '/api/locks'
@@ -703,11 +768,14 @@ export interface FileRouteTypes {
     | '/token2/$ca'
     | '/u/$handle'
     | '/x/$handle'
+    | '/api/ads-img/$id'
     | '/api/pad-logo/$ca'
     | '/api/logo/ipfs/$cid'
   id:
     | '__root__'
     | '/'
+    | '/advertise'
+    | '/advertise2'
     | '/app'
     | '/bridge'
     | '/bridge2'
@@ -743,6 +811,9 @@ export interface FileRouteTypes {
     | '/trade2'
     | '/wallets'
     | '/wallets2'
+    | '/api/ads'
+    | '/api/ads-review'
+    | '/api/ads-submit'
     | '/api/heal'
     | '/api/help'
     | '/api/locks'
@@ -767,12 +838,15 @@ export interface FileRouteTypes {
     | '/token2/$ca'
     | '/u/$handle'
     | '/x/$handle'
+    | '/api/ads-img/$id'
     | '/api/pad-logo/$ca'
     | '/api/logo/ipfs/$cid'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdvertiseRoute: typeof AdvertiseRoute
+  Advertise2Route: typeof Advertise2Route
   AppRoute: typeof AppRoute
   BridgeRoute: typeof BridgeRoute
   Bridge2Route: typeof Bridge2Route
@@ -808,6 +882,9 @@ export interface RootRouteChildren {
   Trade2Route: typeof Trade2Route
   WalletsRoute: typeof WalletsRoute
   Wallets2Route: typeof Wallets2Route
+  ApiAdsRoute: typeof ApiAdsRoute
+  ApiAdsReviewRoute: typeof ApiAdsReviewRoute
+  ApiAdsSubmitRoute: typeof ApiAdsSubmitRoute
   ApiHealRoute: typeof ApiHealRoute
   ApiHelpRoute: typeof ApiHelpRoute
   ApiLocksRoute: typeof ApiLocksRoute
@@ -832,6 +909,7 @@ export interface RootRouteChildren {
   Token2CaRoute: typeof Token2CaRoute
   UHandleRoute: typeof UHandleRoute
   XHandleRoute: typeof XHandleRoute
+  ApiAdsImgIdRoute: typeof ApiAdsImgIdRoute
   ApiPadLogoCaRoute: typeof ApiPadLogoCaRoute
   ApiLogoIpfsCidRoute: typeof ApiLogoIpfsCidRoute
 }
@@ -1083,6 +1161,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/advertise2': {
+      id: '/advertise2'
+      path: '/advertise2'
+      fullPath: '/advertise2'
+      preLoaderRoute: typeof Advertise2RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/advertise': {
+      id: '/advertise'
+      path: '/advertise'
+      fullPath: '/advertise'
+      preLoaderRoute: typeof AdvertiseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -1258,11 +1350,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ads-submit': {
+      id: '/api/ads-submit'
+      path: '/api/ads-submit'
+      fullPath: '/api/ads-submit'
+      preLoaderRoute: typeof ApiAdsSubmitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ads-review': {
+      id: '/api/ads-review'
+      path: '/api/ads-review'
+      fullPath: '/api/ads-review'
+      preLoaderRoute: typeof ApiAdsReviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ads': {
+      id: '/api/ads'
+      path: '/api/ads'
+      fullPath: '/api/ads'
+      preLoaderRoute: typeof ApiAdsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/pad-logo/$ca': {
       id: '/api/pad-logo/$ca'
       path: '/api/pad-logo/$ca'
       fullPath: '/api/pad-logo/$ca'
       preLoaderRoute: typeof ApiPadLogoCaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ads-img/$id': {
+      id: '/api/ads-img/$id'
+      path: '/api/ads-img/$id'
+      fullPath: '/api/ads-img/$id'
+      preLoaderRoute: typeof ApiAdsImgIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/logo/ipfs/$cid': {
@@ -1277,6 +1397,8 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdvertiseRoute: AdvertiseRoute,
+  Advertise2Route: Advertise2Route,
   AppRoute: AppRoute,
   BridgeRoute: BridgeRoute,
   Bridge2Route: Bridge2Route,
@@ -1312,6 +1434,9 @@ const rootRouteChildren: RootRouteChildren = {
   Trade2Route: Trade2Route,
   WalletsRoute: WalletsRoute,
   Wallets2Route: Wallets2Route,
+  ApiAdsRoute: ApiAdsRoute,
+  ApiAdsReviewRoute: ApiAdsReviewRoute,
+  ApiAdsSubmitRoute: ApiAdsSubmitRoute,
   ApiHealRoute: ApiHealRoute,
   ApiHelpRoute: ApiHelpRoute,
   ApiLocksRoute: ApiLocksRoute,
@@ -1336,6 +1461,7 @@ const rootRouteChildren: RootRouteChildren = {
   Token2CaRoute: Token2CaRoute,
   UHandleRoute: UHandleRoute,
   XHandleRoute: XHandleRoute,
+  ApiAdsImgIdRoute: ApiAdsImgIdRoute,
   ApiPadLogoCaRoute: ApiPadLogoCaRoute,
   ApiLogoIpfsCidRoute: ApiLogoIpfsCidRoute,
 }
