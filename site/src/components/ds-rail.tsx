@@ -26,6 +26,7 @@ const MORE: [string, string, string][] = [
   ["wallet", "Wallets", "/wallets2"],
   ["gift", "Rewards", "/rewards2"],
   ["rocket", "Launchpad", "/launchpad2"],
+  ["lock", "Locker", "/locker2"],
   ["link", "Pay", "/pay2"],
   ["bridge", "Bridge", "/bridge2"],
   ["trophy", "Traders", "/leaderboard2"],
@@ -50,6 +51,7 @@ function Icon({ kind }: { kind: string }) {
       {kind === "eye" && <><path {...p} d="M1.6 8S3.9 4.2 8 4.2 14.4 8 14.4 8 12.1 11.8 8 11.8 1.6 8 1.6 8z" /><circle {...p} cx="8" cy="8" r="1.7" /></>}
       {kind === "chart" && <><path {...p} d="M2 13h12" /><path {...p} d="M4 11V7M7.5 11V4M11 11V8.5M14 11V5.5" /></>}
       {kind === "gift" && <><rect {...p} height="7" rx="1" width="12" x="2" y="6" /><path {...p} d="M8 6v7M2 9h12" /><path {...p} d="M8 6S6.5 2.8 5 3.6 6.4 6 8 6s3.4-1.6 2-2.4S8 6 8 6z" /></>}
+      {kind === "lock" && <><rect {...p} height="6.5" rx="1.2" width="9" x="3.5" y="7" /><path {...p} d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></>}
       {kind === "rocket" && <><path {...p} d="M8 1.5s3.2 1.8 3.2 5.4c0 2-1 3.7-1.6 4.4H6.4C5.8 10.6 4.8 8.9 4.8 6.9 4.8 3.3 8 1.5 8 1.5z" /><path {...p} d="M6.4 11.3L5 14l2-1 1 1.5 1-1.5 2 1-1.4-2.7" /></>}
       {kind === "link" && <><path {...p} d="M6.8 9.2a2.6 2.6 0 010-3.7l2-2a2.6 2.6 0 013.7 3.7l-1 1" /><path {...p} d="M9.2 6.8a2.6 2.6 0 010 3.7l-2 2a2.6 2.6 0 01-3.7-3.7l1-1" /></>}
       {kind === "bridge" && <><path {...p} d="M1.5 11h13" /><path {...p} d="M3 11V8.5a5 5 0 0110 0V11" /><path {...p} d="M5.6 11V9.6M10.4 11V9.6M8 11V9" /></>}

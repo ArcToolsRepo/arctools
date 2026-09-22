@@ -29,19 +29,28 @@ function Locker() {
     <main className="arc-site" style={{ minHeight: "100dvh" }}>
       <ArcNav active="/locker" />
       <section className="arc-section" style={{ maxWidth: 1100, paddingTop: 112 }}>
+        <LockerContent />
+      </section>
+    </main>
+  );
+}
+
+/** the whole page body — shared by /locker (classic shell) and /locker2 (Terminal v2 shell) */
+export function LockerContent() {
+  return (
+    <>
         <p className="arc-eyebrow">ARCLOCKER</p>
         <h1 className="arc-h2" style={{ fontSize: 30 }}>Lock tokens, LP and Uniswap positions</h1>
         <p className="arc-body" style={{ maxWidth: 760 }}>
           Time-lock project tokens or team allocations, Uniswap V2-style LP tokens, and Uniswap V3 or v4 position NFTs. The unlock date can only move later;
-          there is no admin key, pause or rescue — nobody, including us, can release a lock early. V3 positions keep earning: swap fees can be collected while the principal stays locked.
+          there is no admin key over your assets — nobody, including us, can release a lock early. The only emergency path returns an asset to its lock owner, after a public 48-hour notice on-chain. V3 positions keep earning: swap fees can be collected while the principal stays locked.
           Every lock shows on the token&apos;s page (&quot;LP locked until …&quot;). Optional linear vesting for token locks.
         </p>
         <Body />
         <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, marginTop: 28 }}>
           Contract <a href={`https://arc-scan.org/address/${ARC_LOCKER}`} rel="noreferrer" style={{ color: "var(--arc-cobalt)" }} target="_blank">{ARC_LOCKER}</a> · source on GitHub (ArcToolsRepo/arctools) · fee goes to the ARCT buyback treasury.
         </p>
-      </section>
-    </main>
+    </>
   );
 }
 

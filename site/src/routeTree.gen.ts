@@ -29,6 +29,7 @@ import { Route as Portfolio2RouteImport } from './routes/portfolio2'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as Pay2RouteImport } from './routes/pay2'
 import { Route as PayRouteImport } from './routes/pay'
+import { Route as Locker2RouteImport } from './routes/locker2'
 import { Route as LockerRouteImport } from './routes/locker'
 import { Route as Leaderboard2RouteImport } from './routes/leaderboard2'
 import { Route as LeaderboardRouteImport } from './routes/leaderboard'
@@ -169,6 +170,11 @@ const Pay2Route = Pay2RouteImport.update({
 const PayRoute = PayRouteImport.update({
   id: '/pay',
   path: '/pay',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Locker2Route = Locker2RouteImport.update({
+  id: '/locker2',
+  path: '/locker2',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LockerRoute = LockerRouteImport.update({
@@ -393,6 +399,7 @@ export interface FileRoutesByFullPath {
   '/leaderboard': typeof LeaderboardRoute
   '/leaderboard2': typeof Leaderboard2Route
   '/locker': typeof LockerRoute
+  '/locker2': typeof Locker2Route
   '/pay': typeof PayRoute
   '/pay2': typeof Pay2Route
   '/portfolio': typeof PortfolioRoute
@@ -456,6 +463,7 @@ export interface FileRoutesByTo {
   '/leaderboard': typeof LeaderboardRoute
   '/leaderboard2': typeof Leaderboard2Route
   '/locker': typeof LockerRoute
+  '/locker2': typeof Locker2Route
   '/pay': typeof PayRoute
   '/pay2': typeof Pay2Route
   '/portfolio': typeof PortfolioRoute
@@ -520,6 +528,7 @@ export interface FileRoutesById {
   '/leaderboard': typeof LeaderboardRoute
   '/leaderboard2': typeof Leaderboard2Route
   '/locker': typeof LockerRoute
+  '/locker2': typeof Locker2Route
   '/pay': typeof PayRoute
   '/pay2': typeof Pay2Route
   '/portfolio': typeof PortfolioRoute
@@ -585,6 +594,7 @@ export interface FileRouteTypes {
     | '/leaderboard'
     | '/leaderboard2'
     | '/locker'
+    | '/locker2'
     | '/pay'
     | '/pay2'
     | '/portfolio'
@@ -648,6 +658,7 @@ export interface FileRouteTypes {
     | '/leaderboard'
     | '/leaderboard2'
     | '/locker'
+    | '/locker2'
     | '/pay'
     | '/pay2'
     | '/portfolio'
@@ -711,6 +722,7 @@ export interface FileRouteTypes {
     | '/leaderboard'
     | '/leaderboard2'
     | '/locker'
+    | '/locker2'
     | '/pay'
     | '/pay2'
     | '/portfolio'
@@ -775,6 +787,7 @@ export interface RootRouteChildren {
   LeaderboardRoute: typeof LeaderboardRoute
   Leaderboard2Route: typeof Leaderboard2Route
   LockerRoute: typeof LockerRoute
+  Locker2Route: typeof Locker2Route
   PayRoute: typeof PayRoute
   Pay2Route: typeof Pay2Route
   PortfolioRoute: typeof PortfolioRoute
@@ -963,6 +976,13 @@ declare module '@tanstack/react-router' {
       path: '/pay'
       fullPath: '/pay'
       preLoaderRoute: typeof PayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/locker2': {
+      id: '/locker2'
+      path: '/locker2'
+      fullPath: '/locker2'
+      preLoaderRoute: typeof Locker2RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/locker': {
@@ -1271,6 +1291,7 @@ const rootRouteChildren: RootRouteChildren = {
   LeaderboardRoute: LeaderboardRoute,
   Leaderboard2Route: Leaderboard2Route,
   LockerRoute: LockerRoute,
+  Locker2Route: Locker2Route,
   PayRoute: PayRoute,
   Pay2Route: Pay2Route,
   PortfolioRoute: PortfolioRoute,
