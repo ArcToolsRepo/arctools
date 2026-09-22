@@ -21,6 +21,13 @@ export const onrampLink = createServerFn({ method: "POST" })
     return moonpayLink({ ...data, ip });
   });
 
+export const onrampQuote = createServerFn({ method: "POST" })
+  .inputValidator((d: { fiat: string; amount: number }) => d)
+  .handler(async ({ data }) => (await import("@/lib/onramp.server")).moonpayQuote(data));
+export const onrampTxs = createServerFn({ method: "POST" })
+  .inputValidator((d: { wallet: string }) => d)
+  .handler(async ({ data }) => (await import("@/lib/onramp.server")).moonpayTransactions(data.wallet));
+
 /** /buy and /buy2: card → USDC on Arc (MoonPay, delivered to the user's own wallet) → one-click swap to ARCT (aggregator). */
 export function BuyContent({ v2 = false }: { v2?: boolean }) {
   const [addr, setAddr] = useState<string | null>(null);
@@ -75,6 +82,16 @@ export function BuyContent({ v2 = false }: { v2?: boolean }) {
 function CardStep({ addr }: { addr: string }) {
   const [amount, setAmount] = useState(50); const [fiat, setFiat] = useState("usd");
   const [busy, setBusy] = useState(false); const [note, setNote] = useState<string | null>(null);
+  const [q, setQ] = useState<Awaited<ReturnType<typeof onrampQuote>> | null>(null);
+  useEffect(() => {
+    let alive = true; const h = setTimeout(() => { onrampQuote({ data: { fiat, amount } }).then((r) => { if (alive) setQ(r); }).catch(() => null); }, 400);
+    return () => { alive = false; clearTimeout(h); };
+  }, [fiat, amount]);
+  const [txs, setTxs] = useState<Awaited<ReturnType<typeof onrampTxs>> | null>(null);
+  useEffect(() => {
+    let alive = true; const pull = () => onrampTxs({ data: { wallet: addr } }).then((r) => { if (alive) setTxs(r); }).catch(() => null);
+    pull(); const t = setInterval(pull, 20_000); return () => { alive = false; clearInterval(t); };
+  }, [addr]);
   const go = async () => {
     setBusy(true); setNote(null);
     try {
@@ -95,8 +112,27 @@ function CardStep({ addr }: { addr: string }) {
         </select>
       </div>
       <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, margin: 0 }}>Delivered as USDC on Arc to <span style={{ color: "var(--arc-ink)" }}>{addr}</span>. Minimum 20, MoonPay ID check on first purchase.</p>
+      {q?.configured && q.usdc != null && (
+        <div className="arc-mono" style={{ border: "1px solid var(--arc-line)", borderRadius: 10, display: "grid", fontSize: 12, gap: 4, padding: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "var(--arc-muted)" }}>You receive</span><span style={{ color: "#22c580" }}>≈ {q.usdc.toFixed(2)} USDC on Arc</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "var(--arc-muted)" }}>MoonPay fee</span><span>{(q.fee ?? 0).toFixed(2)} {fiat.toUpperCase()}{q.networkFee ? ` + ${q.networkFee.toFixed(2)} network` : ""}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "var(--arc-muted)" }}>Card limits</span><span>{q.min != null ? `${q.min}–${q.max} ${fiat.toUpperCase()}` : "—"}</span></div>
+        </div>
+      )}
+      {q?.configured && q.reason && <p className="arc-mono" style={{ color: "#ffb054", fontSize: 12, margin: 0 }}>{q.reason}</p>}
       <button className="arc-cta" disabled={busy || amount < 20} onClick={() => void go()} type="button">{busy ? "…" : `Buy ${amount} ${fiat.toUpperCase()} of USDC with card`}</button>
       {note && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12, margin: 0 }}>{note}</p>}
+      {txs?.configured && txs.txs.length > 0 && (
+        <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
+          <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0, textTransform: "uppercase" }}>Your card purchases</p>
+          {txs.txs.slice(0, 5).map((x) => (
+            <div className="arc-mono" key={x.id} style={{ display: "flex", fontSize: 12, gap: 10, justifyContent: "space-between" }}>
+              <span>{x.fiat} {x.fiatCode.toUpperCase()} → {x.usdc != null ? `${x.usdc.toFixed(2)} USDC` : "…"}</span>
+              <span style={{ color: x.status === "completed" ? "#22c580" : x.status === "failed" ? "#ff6a6a" : "#ffb054" }}>{x.status}{x.failureReason ? ` · ${x.failureReason}` : ""}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

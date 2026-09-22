@@ -35,3 +35,44 @@ export async function moonpayLink(input: { wallet: string; fiat: string; amount:
   const signature = await hmacB64(env.MOONPAY_SK, search);
   return { configured: true, env: mode, url: `${HOSTS[mode]}${search}&signature=${encodeURIComponent(signature)}` };
 }
+
+const API = "https://api.moonpay.com";
+type Env = { MOONPAY_PK?: string; MOONPAY_SK?: string; MOONPAY_ENV?: string };
+const keys = () => bindings() as unknown as Env;
+
+export type OnrampQuote = { configured: boolean; usdc?: number; fee?: number; networkFee?: number; total?: number; rate?: number; min?: number; max?: number; reason?: string };
+
+/** live buy quote for the card method — what the widget will show, fetched with the publishable key */
+export async function moonpayQuote(input: { fiat: string; amount: number }): Promise<OnrampQuote> {
+  const env = keys();
+  if (!env.MOONPAY_PK) return { configured: false, reason: "MoonPay keys not set yet" };
+  const fiat = /^[a-z]{3}$/.test(input.fiat) ? input.fiat : "usd"; const amount = Math.max(1, Math.round(input.amount || 50));
+  try {
+    const [q, l] = await Promise.all([
+      fetch(`${API}/v3/currencies/usdc_arc/buy_quote?apiKey=${env.MOONPAY_PK}&baseCurrencyCode=${fiat}&baseCurrencyAmount=${amount}&paymentMethod=credit_debit_card`).then((r) => r.json() as Promise<Record<string, number | string>>),
+      fetch(`${API}/v3/currencies/usdc_arc/limits?apiKey=${env.MOONPAY_PK}&baseCurrencyCode=${fiat}&paymentMethod=credit_debit_card`).then((r) => r.json() as Promise<{ baseCurrency?: { minBuyAmount?: number; maxBuyAmount?: number } }>).catch(() => ({} as { baseCurrency?: { minBuyAmount?: number; maxBuyAmount?: number } })),
+    ]);
+    if (typeof q.quoteCurrencyAmount !== "number") return { configured: true, reason: String(q.message ?? "no quote") };
+    return { configured: true, usdc: q.quoteCurrencyAmount, fee: Number(q.feeAmount ?? 0), networkFee: Number(q.networkFeeAmount ?? 0), total: Number(q.totalAmount ?? amount), rate: Number(q.quoteCurrencyPrice ?? 0), min: l.baseCurrency?.minBuyAmount, max: l.baseCurrency?.maxBuyAmount };
+  } catch (e) { return { configured: true, reason: String((e as Error).message ?? e) }; }
+}
+
+export type OnrampTx = { id: string; status: string; fiat: number; fiatCode: string; usdc: number | null; created: string; updated: string; failureReason: string | null; txHash: string | null };
+
+/** the buyer's recent MoonPay transactions for this wallet — secret key, server-side only. Replaces a webhook: the page polls this. */
+export async function moonpayTransactions(wallet: string): Promise<{ configured: boolean; txs: OnrampTx[]; reason?: string }> {
+  const env = keys();
+  if (!env.MOONPAY_SK) return { configured: false, txs: [] };
+  if (!/^0x[0-9a-fA-F]{40}$/.test(wallet)) return { configured: true, txs: [], reason: "bad wallet" };
+  try {
+    const r = await fetch(`${API}/v1/transactions?walletAddress=${wallet}&limit=10`, { headers: { Authorization: `Api-Key ${env.MOONPAY_SK}` } });
+    const j = await r.json() as unknown;
+    const rows = Array.isArray(j) ? j : ((j as { data?: unknown[] }).data ?? []);
+    if (!r.ok) return { configured: true, txs: [], reason: `moonpay ${r.status}` };
+    return { configured: true, txs: (rows as Record<string, unknown>[]).map((t) => ({
+      id: String(t.id), status: String(t.status), fiat: Number(t.baseCurrencyAmount ?? 0), fiatCode: String((t.baseCurrency as { code?: string } | undefined)?.code ?? t.baseCurrencyCode ?? ""),
+      usdc: typeof t.quoteCurrencyAmount === "number" ? t.quoteCurrencyAmount : null, created: String(t.createdAt ?? ""), updated: String(t.updatedAt ?? ""),
+      failureReason: (t.failureReason as string | null) ?? null, txHash: (t.cryptoTransactionId as string | null) ?? null,
+    })) };
+  } catch (e) { return { configured: true, txs: [], reason: String((e as Error).message ?? e) }; }
+}
