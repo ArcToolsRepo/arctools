@@ -39,7 +39,7 @@ SELECTORS = {  # name → 4-byte selector, computed (six of the hand-typed const
 IMG_EXT = re.compile(r"\.(png|jpe?g|webp|gif|svg|avif)(\?|$)", re.I)
 URL_RE = re.compile(r"(https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]{8,300})")
 IPFS_RE = re.compile(r"(?:ipfs://|/ipfs/)(Qm[1-9A-HJ-NP-Za-km-z]{44}|ba[a-z2-7]{50,})(/[A-Za-z0-9._%-]+)*")
-CDN_HINT = ("hopium.gg", "static.minara.ai", "arguspad", "tollylabs", "tolly", "radardex", "klik", "ubi.fun", "lift.fun", "ellipse", "sashimi", "eve.fun",
+CDN_HINT = ("mypinata.cloud", "ipfs.io/ipfs", "/ipfs/", "hopium.gg", "static.minara.ai", "arguspad", "tollylabs", "tolly", "radardex", "klik", "ubi.fun", "lift.fun", "ellipse", "sashimi", "eve.fun",
             "pinata", "ipfs", "arweave", "cloudfront", "imgur", "pump", "supabase", "storage.googleapis", "vercel", "r2.dev", "cdn")
 PAD_PAGES = {  # launchpad → token page pattern (og:image)
     "argus": "https://arguspad.io/token/{t}", "arguspad": "https://arguspad.io/token/{t}",
@@ -85,10 +85,24 @@ def _decode_string(hexres: str | None) -> str | None:
 
 
 def _ipfs_to_http(u: str) -> str:
+    # an http(s) URL that already points at a gateway (pinata, nft.storage, a project's own gateway) is kept as-is:
+    # rewriting it to ipfs.io lost every foci.family logo (their Pinata CIDs are not served by the public gateway)
+    if u.startswith("http"):
+        return u
     m = IPFS_RE.search(u)
     if m:
         return GATEWAYS[0] + m.group(1) + (m.group(2) or "")
     return u
+
+def _ipfs_alternatives(u: str) -> list[str]:
+    """the URL itself first, then the same CID on the public gateways"""
+    out = [_ipfs_to_http(u)]
+    m = IPFS_RE.search(u)
+    if m:
+        for g in GATEWAYS:
+            alt = g + m.group(1) + (m.group(2) or "")
+            if alt not in out: out.append(alt)
+    return out
 
 
 _host_sem: dict[str, asyncio.Semaphore] = {}
@@ -185,10 +199,11 @@ async def try_contract(s: aiohttp.ClientSession, token: str) -> str | None:
         if v:
             strings.append(v)
     for v in strings:
+        for cand in _ipfs_alternatives(v):
+            if IMG_EXT.search(cand) or (cand.startswith("http") and any(h in cand for h in CDN_HINT)):
+                if await _verify(s, cand):
+                    return cand
         cand = _ipfs_to_http(v)
-        if IMG_EXT.search(cand) or (cand.startswith("http") and any(h in cand for h in CDN_HINT)):
-            if await _verify(s, cand):
-                return cand
         if cand.startswith(("http", "data:application/json")) or IPFS_RE.search(v):
             img = await _from_json_meta(s, v)
             if img and await _verify(s, img):
