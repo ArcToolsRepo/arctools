@@ -11,6 +11,7 @@ import { getPrefs, setPrefs, toast, useStore, getWatch, loadRisk, getRisk } from
 import { Header, Icon, Logo } from "../components/ui";
 import Archy from "./Archy";
 import { Launch } from "./Launch";
+import Locker from "./Locker";
 import { Pay as PayNative, Referrals as RefNative, Bridge as BridgeNative, Trades, Traders } from "./Native";
 import { openUrl, buzzOk } from "../lib/native";
 import { Unlock } from "./Wallet";
@@ -20,6 +21,7 @@ export default function Sub({ route }: { route: Route }) {
     case "insiders": return <Insiders />;
     case "alerts": return <Alerts />;
     case "launchpad": return <Launch />;
+    case "locker": return <Locker />;
     case "pay": return <PayNative />;
     case "referrals": return <RefNative />;
     case "bridge": return <BridgeNative />;
@@ -202,7 +204,7 @@ function Settings() {
       </div>
       <div className="label">About</div>
       <UpdateCard />
-      <div className="card muted" style={{ fontSize: 12.5 }}>ArcOne v2.5 · powered by ArcTools · arctools.fun · Fees fund ARCT buybacks that burn in the same transaction. Your key never leaves this phone. Internal review only — no third-party audit.</div>
+      <div className="card muted" style={{ fontSize: 12.5 }}>ArcOne v2.6 · powered by ArcTools · arctools.fun · Fees fund ARCT buybacks that burn in the same transaction. Your key never leaves this phone. Internal review only — no third-party audit.</div>
     </>
   );
 }

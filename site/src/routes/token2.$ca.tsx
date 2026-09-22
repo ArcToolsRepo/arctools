@@ -3,6 +3,7 @@ import { BOT_API, BOT_ORIGIN } from "@/lib/bot-api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArcNav } from "@/components/arc-nav";
+import { LockBadge } from "@/components/lock-badge";
 import { DsRail } from "@/components/ds-rail";
 import { usePrefs } from "@/lib/i18n";
 import { SocialCheck } from "@/components/social-check";
@@ -908,6 +909,7 @@ function TokenPage() {
             <MarkerLegend data={eventsData} visible={markersVisible} />
         {/* ---------- tabs ---------- */}
         <div style={{ border: "1px solid var(--arc-line)", marginTop: 14 }}>
+          <LockBadge token={ca} />
           <div style={{ borderBottom: "1px solid var(--arc-line)", display: "flex", gap: 2, padding: "0 8px" }}>
             {(["trades", "positions", "holders", "bubbles", "traders", "dev", "info"] as const).map((t) => (
               <button className="arc-mono" key={t} onClick={() => setTab(t)} style={{ background: "transparent", border: "none", borderBottom: tab === t ? "2px solid var(--arc-cobalt)" : "2px solid transparent", color: tab === t ? "var(--arc-cobalt)" : "var(--arc-muted)", cursor: "pointer", fontSize: 12, padding: "10px 12px", textTransform: "uppercase" }} type="button">{({ trades: "Trades", positions: "My position", holders: `Holders${holderCount ? ` ${holderCount}` : ""}`, bubbles: "Bubble map", traders: "Top traders", dev: "Dev tokens", info: "Info" } as const)[t]}</button>

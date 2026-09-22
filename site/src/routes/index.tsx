@@ -186,6 +186,7 @@ function Index() {
             ["Profile", "Equity, holdings with average entry and realized PnL, trade history, deposits.", "/profile", "Profile"],
             ["Portfolio", "Any Arc wallet valued live in USDC, every token priced in one pass.", "/portfolio", "Check"],
             ["ArcToolsPad", "Launch a token in one transaction: taxes, reward token, socials, logo, LP burned.", "/launchpad", "Launch"],
+            ["ArcLocker", "Time-lock tokens, V2 LP and Uniswap V3 / v4 positions. No admin key, extend-only. 50 USDC per lock.", "/locker", "Lock"],
             ["ARCT rewards", "Stake $ARCT: a share of every ArcToolsPad fee plus 5% of every launched supply.", "/rewards", "Stake"],
             ["Bridge", "Circle CCTP v2 from Ethereum, Base or Arbitrum straight to Arc. 2% fee inside the mint.", "/bridge", "Bridge"],
             ["Sniper bot", "Maestro-style buy panels, launch triggers, copy-trade, multi-wallet. 1% per trade.", "https://t.me/ArcSniper_bot", "Open bot"],

@@ -29,6 +29,7 @@ import { Route as Portfolio2RouteImport } from './routes/portfolio2'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as Pay2RouteImport } from './routes/pay2'
 import { Route as PayRouteImport } from './routes/pay'
+import { Route as LockerRouteImport } from './routes/locker'
 import { Route as Leaderboard2RouteImport } from './routes/leaderboard2'
 import { Route as LeaderboardRouteImport } from './routes/leaderboard'
 import { Route as Launchpad2RouteImport } from './routes/launchpad2'
@@ -63,6 +64,7 @@ import { Route as ApiRefCreditRouteImport } from './routes/api/ref-credit'
 import { Route as ApiPadlistRouteImport } from './routes/api/padlist'
 import { Route as ApiPadcountsRouteImport } from './routes/api/padcounts'
 import { Route as ApiPadMetaRouteImport } from './routes/api/pad-meta'
+import { Route as ApiLocksRouteImport } from './routes/api/locks'
 import { Route as ApiHelpRouteImport } from './routes/api/help'
 import { Route as ApiHealRouteImport } from './routes/api/heal'
 import { Route as ApiPadLogoCaRouteImport } from './routes/api/pad-logo.$ca'
@@ -166,6 +168,11 @@ const Pay2Route = Pay2RouteImport.update({
 const PayRoute = PayRouteImport.update({
   id: '/pay',
   path: '/pay',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LockerRoute = LockerRouteImport.update({
+  id: '/locker',
+  path: '/locker',
   getParentRoute: () => rootRouteImport,
 } as any)
 const Leaderboard2Route = Leaderboard2RouteImport.update({
@@ -338,6 +345,11 @@ const ApiPadMetaRoute = ApiPadMetaRouteImport.update({
   path: '/api/pad-meta',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiLocksRoute = ApiLocksRouteImport.update({
+  id: '/api/locks',
+  path: '/api/locks',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiHelpRoute = ApiHelpRouteImport.update({
   id: '/api/help',
   path: '/api/help',
@@ -374,6 +386,7 @@ export interface FileRoutesByFullPath {
   '/launchpad2': typeof Launchpad2Route
   '/leaderboard': typeof LeaderboardRoute
   '/leaderboard2': typeof Leaderboard2Route
+  '/locker': typeof LockerRoute
   '/pay': typeof PayRoute
   '/pay2': typeof Pay2Route
   '/portfolio': typeof PortfolioRoute
@@ -396,6 +409,7 @@ export interface FileRoutesByFullPath {
   '/wallets2': typeof Wallets2Route
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
+  '/api/locks': typeof ApiLocksRoute
   '/api/pad-meta': typeof ApiPadMetaRoute
   '/api/padcounts': typeof ApiPadcountsRoute
   '/api/padlist': typeof ApiPadlistRoute
@@ -434,6 +448,7 @@ export interface FileRoutesByTo {
   '/launchpad2': typeof Launchpad2Route
   '/leaderboard': typeof LeaderboardRoute
   '/leaderboard2': typeof Leaderboard2Route
+  '/locker': typeof LockerRoute
   '/pay': typeof PayRoute
   '/pay2': typeof Pay2Route
   '/portfolio': typeof PortfolioRoute
@@ -456,6 +471,7 @@ export interface FileRoutesByTo {
   '/wallets2': typeof Wallets2Route
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
+  '/api/locks': typeof ApiLocksRoute
   '/api/pad-meta': typeof ApiPadMetaRoute
   '/api/padcounts': typeof ApiPadcountsRoute
   '/api/padlist': typeof ApiPadlistRoute
@@ -495,6 +511,7 @@ export interface FileRoutesById {
   '/launchpad2': typeof Launchpad2Route
   '/leaderboard': typeof LeaderboardRoute
   '/leaderboard2': typeof Leaderboard2Route
+  '/locker': typeof LockerRoute
   '/pay': typeof PayRoute
   '/pay2': typeof Pay2Route
   '/portfolio': typeof PortfolioRoute
@@ -517,6 +534,7 @@ export interface FileRoutesById {
   '/wallets2': typeof Wallets2Route
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
+  '/api/locks': typeof ApiLocksRoute
   '/api/pad-meta': typeof ApiPadMetaRoute
   '/api/padcounts': typeof ApiPadcountsRoute
   '/api/padlist': typeof ApiPadlistRoute
@@ -557,6 +575,7 @@ export interface FileRouteTypes {
     | '/launchpad2'
     | '/leaderboard'
     | '/leaderboard2'
+    | '/locker'
     | '/pay'
     | '/pay2'
     | '/portfolio'
@@ -579,6 +598,7 @@ export interface FileRouteTypes {
     | '/wallets2'
     | '/api/heal'
     | '/api/help'
+    | '/api/locks'
     | '/api/pad-meta'
     | '/api/padcounts'
     | '/api/padlist'
@@ -617,6 +637,7 @@ export interface FileRouteTypes {
     | '/launchpad2'
     | '/leaderboard'
     | '/leaderboard2'
+    | '/locker'
     | '/pay'
     | '/pay2'
     | '/portfolio'
@@ -639,6 +660,7 @@ export interface FileRouteTypes {
     | '/wallets2'
     | '/api/heal'
     | '/api/help'
+    | '/api/locks'
     | '/api/pad-meta'
     | '/api/padcounts'
     | '/api/padlist'
@@ -677,6 +699,7 @@ export interface FileRouteTypes {
     | '/launchpad2'
     | '/leaderboard'
     | '/leaderboard2'
+    | '/locker'
     | '/pay'
     | '/pay2'
     | '/portfolio'
@@ -699,6 +722,7 @@ export interface FileRouteTypes {
     | '/wallets2'
     | '/api/heal'
     | '/api/help'
+    | '/api/locks'
     | '/api/pad-meta'
     | '/api/padcounts'
     | '/api/padlist'
@@ -738,6 +762,7 @@ export interface RootRouteChildren {
   Launchpad2Route: typeof Launchpad2Route
   LeaderboardRoute: typeof LeaderboardRoute
   Leaderboard2Route: typeof Leaderboard2Route
+  LockerRoute: typeof LockerRoute
   PayRoute: typeof PayRoute
   Pay2Route: typeof Pay2Route
   PortfolioRoute: typeof PortfolioRoute
@@ -760,6 +785,7 @@ export interface RootRouteChildren {
   Wallets2Route: typeof Wallets2Route
   ApiHealRoute: typeof ApiHealRoute
   ApiHelpRoute: typeof ApiHelpRoute
+  ApiLocksRoute: typeof ApiLocksRoute
   ApiPadMetaRoute: typeof ApiPadMetaRoute
   ApiPadcountsRoute: typeof ApiPadcountsRoute
   ApiPadlistRoute: typeof ApiPadlistRoute
@@ -924,6 +950,13 @@ declare module '@tanstack/react-router' {
       path: '/pay'
       fullPath: '/pay'
       preLoaderRoute: typeof PayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/locker': {
+      id: '/locker'
+      path: '/locker'
+      fullPath: '/locker'
+      preLoaderRoute: typeof LockerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/leaderboard2': {
@@ -1164,6 +1197,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPadMetaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/locks': {
+      id: '/api/locks'
+      path: '/api/locks'
+      fullPath: '/api/locks'
+      preLoaderRoute: typeof ApiLocksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/help': {
       id: '/api/help'
       path: '/api/help'
@@ -1210,6 +1250,7 @@ const rootRouteChildren: RootRouteChildren = {
   Launchpad2Route: Launchpad2Route,
   LeaderboardRoute: LeaderboardRoute,
   Leaderboard2Route: Leaderboard2Route,
+  LockerRoute: LockerRoute,
   PayRoute: PayRoute,
   Pay2Route: Pay2Route,
   PortfolioRoute: PortfolioRoute,
@@ -1232,6 +1273,7 @@ const rootRouteChildren: RootRouteChildren = {
   Wallets2Route: Wallets2Route,
   ApiHealRoute: ApiHealRoute,
   ApiHelpRoute: ApiHelpRoute,
+  ApiLocksRoute: ApiLocksRoute,
   ApiPadMetaRoute: ApiPadMetaRoute,
   ApiPadcountsRoute: ApiPadcountsRoute,
   ApiPadlistRoute: ApiPadlistRoute,

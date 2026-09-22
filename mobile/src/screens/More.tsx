@@ -7,7 +7,7 @@ import { APP_VERSION } from "../App";
 
 const ITEMS: [string, string, keyof typeof Icon][] = [
   ["/archy", "Ask Archy", "eye"], ["/trades", "Live trades", "bolt"], ["/traders", "Top traders", "users"], ["/insiders", "Insiders", "eye"],
-  ["/alerts", "Alerts", "bell"], ["/launchpad", "Launch", "rocket"], ["/pay", "Pay links", "link"],
+  ["/alerts", "Alerts", "bell"], ["/launchpad", "Launch", "rocket"], ["/locker", "Locker", "lock"], ["/pay", "Pay links", "link"],
   ["/referrals", "Referrals", "gift"], ["/bridge", "Bridge", "bridge"], ["/rewards", "ARCT", "flame"],
   ["/history", "History", "chart"], ["/profile", "Profile", "user"], ["/settings", "Settings", "gear"],
 ];

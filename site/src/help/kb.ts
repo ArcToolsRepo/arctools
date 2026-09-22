@@ -124,12 +124,17 @@ export const KB: Article[] = [
   {
     id: "buyback", title: "ARCT buyback and burn", url: "/rewards",
     keywords: ["buyback", "burn", "burned", "treasury", "keeper", "deflation", "spalanie", "выкуп", "recompra", "回购"],
-    body: `Fees collected by ArcTools do not sit anywhere: a keeper (part of @ArcToolsBuyBot) periodically spends the treasury's USDC on ARCT through ArcAggregator and sends the tokens straight to the burn address 0x…dEaD in the same transaction — it never holds ARCT. Every run is a public tx; /rewards shows the burn counter (tokens burned, % of supply) and the buyback history (runs, USDC spent). The first buyback burned 35,354 ARCT for 10.70 USDC. Fees that feed it: 0.5% swaps, 1.5% quick buys, 1% sniper, 1% pad trades, 2% bridge, 2% pay links.`,
+    body: `Fees collected by ArcTools do not sit anywhere: a keeper (part of @ArcToolsBuyBot) periodically spends the treasury's USDC on ARCT through ArcAggregator and sends the tokens straight to the burn address 0x…dEaD in the same transaction — it never holds ARCT. Every run is a public tx; /rewards shows the burn counter (tokens burned, % of supply) and the buyback history (runs, USDC spent). The first buyback burned 35,354 ARCT for 10.70 USDC. Fees that feed it: 0.5% swaps, 1.5% quick buys, 1% sniper, 1% pad trades, 2% bridge, 50 USDC per new lock in ArcLocker, 2% pay links.`,
   },
   {
     id: "pay-links", title: "Pay links (send USDC with a link)", url: "/pay",
     keywords: ["pay link", "pay links", "arcclaim", "claim", "send usdc link", "gift", "link", "wyślij link", "ссылка", "enlace de pago", "支付链接"],
     body: `/pay (site) or Pay links (app): lock USDC in the ArcClaim contract 0x9f3eEfD8b4158C09BF134fa6C032745a7D781BE6 and share one link — the receiver needs no wallet in advance; they claim to any address from the site, the app or @ArcSniper_bot (/start claim_…). Fee 2% on collection. Links expire after 7 days and refund themselves to the sender; nothing is pooled — every link is its own on-chain record. The claim key lives only in the link, so treat the link like cash.`,
+  },
+  {
+    id: "locker", title: "ArcLocker (lock tokens, LP, Uniswap V3 / v4 positions)", url: "/locker",
+    keywords: ["locker", "lock", "lp lock", "liquidity lock", "team lock", "vesting", "unlock", "locked liquidity", "v3 position", "v4 position", "nft lock", "arclocker", "blokada", "лок", "bloqueo"],
+    body: `/locker (site) or Locker (app, under More). Contract ArcLocker 0x02d21F3449d1aEB9Adb5A866EEe39D380aEd374a on Arc. Locks: ERC-20 tokens (project/team allocations, Uniswap V2-style LP tokens) with an optional linear vesting after the unlock date; ERC-721 positions: Uniswap V3 NonfungiblePositionManager NFTs and Uniswap v4 Positions NFTs (or any NFT). The unlock date can only be extended, never shortened; there is no admin key, pause, upgrade or rescue function — nobody (including ArcTools) can release a lock early. The lock owner can extend, transfer the lock to another wallet, withdraw after unlock (vested part for vesting locks), and for V3 positions collect the swap fees while the principal stays locked (v4 positions are fully locked). Fee: 50 USDC per new lock, one-time, paid in native USDC to the treasury (ARCT buyback & burn); extending, collecting and withdrawing are free; project wallets listed by the owner are exempt. Token pages show an ARCLOCKER strip: "LP locked · X% of pool until <date>" (share computed from the position's liquidity vs the pool's active liquidity for V3) and token-lock counts. Flow: approve → lock (two transactions). Find a position id in your wallet's NFT tab.`,
   },
   {
     id: "sell-simulation", title: "Sell simulation (honeypot check)", url: "/trade",
