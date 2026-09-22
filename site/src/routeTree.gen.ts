@@ -73,6 +73,7 @@ import { Route as ApiHelpRouteImport } from './routes/api/help'
 import { Route as ApiHealRouteImport } from './routes/api/heal'
 import { Route as ApiAdsSubmitRouteImport } from './routes/api/ads-submit'
 import { Route as ApiAdsReviewRouteImport } from './routes/api/ads-review'
+import { Route as ApiAdsNotifyRouteImport } from './routes/api/ads-notify'
 import { Route as ApiAdsRouteImport } from './routes/api/ads'
 import { Route as ApiPadLogoCaRouteImport } from './routes/api/pad-logo.$ca'
 import { Route as ApiAdsImgIdRouteImport } from './routes/api/ads-img.$id'
@@ -398,6 +399,11 @@ const ApiAdsReviewRoute = ApiAdsReviewRouteImport.update({
   path: '/api/ads-review',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAdsNotifyRoute = ApiAdsNotifyRouteImport.update({
+  id: '/api/ads-notify',
+  path: '/api/ads-notify',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAdsRoute = ApiAdsRouteImport.update({
   id: '/api/ads',
   path: '/api/ads',
@@ -459,6 +465,7 @@ export interface FileRoutesByFullPath {
   '/wallets': typeof WalletsRoute
   '/wallets2': typeof Wallets2Route
   '/api/ads': typeof ApiAdsRoute
+  '/api/ads-notify': typeof ApiAdsNotifyRoute
   '/api/ads-review': typeof ApiAdsReviewRoute
   '/api/ads-submit': typeof ApiAdsSubmitRoute
   '/api/heal': typeof ApiHealRoute
@@ -529,6 +536,7 @@ export interface FileRoutesByTo {
   '/wallets': typeof WalletsRoute
   '/wallets2': typeof Wallets2Route
   '/api/ads': typeof ApiAdsRoute
+  '/api/ads-notify': typeof ApiAdsNotifyRoute
   '/api/ads-review': typeof ApiAdsReviewRoute
   '/api/ads-submit': typeof ApiAdsSubmitRoute
   '/api/heal': typeof ApiHealRoute
@@ -600,6 +608,7 @@ export interface FileRoutesById {
   '/wallets': typeof WalletsRoute
   '/wallets2': typeof Wallets2Route
   '/api/ads': typeof ApiAdsRoute
+  '/api/ads-notify': typeof ApiAdsNotifyRoute
   '/api/ads-review': typeof ApiAdsReviewRoute
   '/api/ads-submit': typeof ApiAdsSubmitRoute
   '/api/heal': typeof ApiHealRoute
@@ -672,6 +681,7 @@ export interface FileRouteTypes {
     | '/wallets'
     | '/wallets2'
     | '/api/ads'
+    | '/api/ads-notify'
     | '/api/ads-review'
     | '/api/ads-submit'
     | '/api/heal'
@@ -742,6 +752,7 @@ export interface FileRouteTypes {
     | '/wallets'
     | '/wallets2'
     | '/api/ads'
+    | '/api/ads-notify'
     | '/api/ads-review'
     | '/api/ads-submit'
     | '/api/heal'
@@ -812,6 +823,7 @@ export interface FileRouteTypes {
     | '/wallets'
     | '/wallets2'
     | '/api/ads'
+    | '/api/ads-notify'
     | '/api/ads-review'
     | '/api/ads-submit'
     | '/api/heal'
@@ -883,6 +895,7 @@ export interface RootRouteChildren {
   WalletsRoute: typeof WalletsRoute
   Wallets2Route: typeof Wallets2Route
   ApiAdsRoute: typeof ApiAdsRoute
+  ApiAdsNotifyRoute: typeof ApiAdsNotifyRoute
   ApiAdsReviewRoute: typeof ApiAdsReviewRoute
   ApiAdsSubmitRoute: typeof ApiAdsSubmitRoute
   ApiHealRoute: typeof ApiHealRoute
@@ -1364,6 +1377,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAdsReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ads-notify': {
+      id: '/api/ads-notify'
+      path: '/api/ads-notify'
+      fullPath: '/api/ads-notify'
+      preLoaderRoute: typeof ApiAdsNotifyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ads': {
       id: '/api/ads'
       path: '/api/ads'
@@ -1435,6 +1455,7 @@ const rootRouteChildren: RootRouteChildren = {
   WalletsRoute: WalletsRoute,
   Wallets2Route: Wallets2Route,
   ApiAdsRoute: ApiAdsRoute,
+  ApiAdsNotifyRoute: ApiAdsNotifyRoute,
   ApiAdsReviewRoute: ApiAdsReviewRoute,
   ApiAdsSubmitRoute: ApiAdsSubmitRoute,
   ApiHealRoute: ApiHealRoute,

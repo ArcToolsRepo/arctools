@@ -5,6 +5,20 @@ import { AD_ARCT_USD, AD_DAYS, AD_H, AD_SLOTS, AD_USDC, AD_W, ARCT, BOT, TRANSFE
 /** the E2E wallet used by scripts/e2e_*.ts — real transactions, symbolic fee, so a release can be checked without spending 250 USDC */
 const TEST_WALLETS = new Set(["0x731ea5b6a768f8e0c47a977d3abf484e54adc620"]);
 
+/** one Telegram message to the admin chat; returns "tg:ok" or the error text (kept on the row for diagnosis) */
+export async function notifyAdmin(text: string, keyboard?: { text: string; url: string }[][]): Promise<string> {
+  const env = bindings();
+  if (!env.TG_ALERT_TOKEN || !env.TG_ADMIN_ID) return "tg:not configured";
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${env.TG_ALERT_TOKEN}/sendMessage`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: env.TG_ADMIN_ID, text, disable_web_page_preview: false, ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}) }),
+    });
+    const j = await r.json() as { ok?: boolean; description?: string };
+    return j.ok ? "tg:ok" : `tg:${j.description ?? r.status}`;
+  } catch (e) { return `tg:${String((e as Error).message ?? e)}`; }
+}
+
 let ready = false;
 async function db() {
   const d = bindings().DB;
@@ -146,14 +160,12 @@ export async function submitAd(data: SubmitIn) {
       const [ka, kr] = await Promise.all([reviewKey(id, "approve"), reviewKey(id, "reject")]);
       const paidTxt = data.payToken === "ARCT" ? `${(Number(pay.amount) / 1e18).toLocaleString()} ARCT` : `${Number(pay.amount) / 1e6} USDC`;
       const text = `📢 New banner #${id} awaiting review\n\n${title}\n${url}\nfrom ${wallet}\npaid ${paidTxt} · tx ${data.tx.slice(0, 12)}…\n\nPreview: https://arctools.fun/api/ads-img/${id}?preview=1`;
-      await fetch(`https://api.telegram.org/bot${env.TG_ALERT_TOKEN}/sendMessage`, {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ chat_id: env.TG_ADMIN_ID, text, disable_web_page_preview: false, reply_markup: { inline_keyboard: [[
-          { text: "✅ Approve", url: `https://arctools.fun/api/ads-review?id=${id}&do=approve&k=${ka}` },
-          { text: "❌ Reject", url: `https://arctools.fun/api/ads-review?id=${id}&do=reject&k=${kr}` },
-        ]] } }),
-      }).catch(() => null);
-    }
+      const tg = await notifyAdmin(text, [[
+        { text: "✅ Approve", url: `https://arctools.fun/api/ads-review?id=${id}&do=approve&k=${ka}` },
+        { text: "❌ Reject", url: `https://arctools.fun/api/ads-review?id=${id}&do=reject&k=${kr}` },
+      ]]);
+      await d.prepare("UPDATE ads SET note = ? WHERE id = ?").bind(tg, id).run();   // "tg:ok" or the Telegram error — visible to the admin in D1
+    } else await d.prepare("UPDATE ads SET note = 'tg:not configured' WHERE id = ?").bind(id).run();
     return { ok: true as const, id };
 }
 
@@ -168,4 +180,24 @@ export async function mineAds(data: { wallet: string }) {
   const d = await db();
   const r = await d.prepare("SELECT id,wallet,title,url,pay_token,pay_amount,pay_tx,status,created_at,starts_at,ends_at,note FROM ads WHERE wallet = ? ORDER BY id DESC LIMIT 20").bind(data.wallet.toLowerCase()).all<Ad>();
   return r.results ?? [];
+}
+
+/** pending banners whose admin notice failed (bot blocked, network) get it re-sent, at most once an hour each.
+ *  Called from the public feed handler, so it runs as long as anyone looks at the Terminal. */
+let lastRetry = 0;
+export async function retryNotices(): Promise<void> {
+  const t = now();
+  if (t - lastRetry < 3600) return;
+  lastRetry = t;
+  const d = await db();
+  const rows = await d.prepare("SELECT id,title,url,wallet,pay_token,pay_amount FROM ads WHERE status='pending' AND (note IS NULL OR note != 'tg:ok') LIMIT 5").all<{ id: number; title: string; url: string; wallet: string; pay_token: string; pay_amount: string }>();
+  for (const a of rows.results ?? []) {
+    const [ka, kr] = await Promise.all([reviewKey(a.id, "approve"), reviewKey(a.id, "reject")]);
+    const paidTxt = a.pay_token === "ARCT" ? `${(Number(a.pay_amount) / 1e18).toLocaleString()} ARCT` : `${Number(a.pay_amount) / 1e6} USDC`;
+    const r = await notifyAdmin(`📢 Banner #${a.id} awaiting review (notice re-sent)\n\n${a.title}\n${a.url}\nfrom ${a.wallet}\npaid ${paidTxt}\n\nPreview: https://arctools.fun/api/ads-img/${a.id}`, [[
+      { text: "✅ Approve", url: `https://arctools.fun/api/ads-review?id=${a.id}&do=approve&k=${ka}` },
+      { text: "❌ Reject", url: `https://arctools.fun/api/ads-review?id=${a.id}&do=reject&k=${kr}` },
+    ]]);
+    await d.prepare("UPDATE ads SET note = ? WHERE id = ?").bind(r, a.id).run();
+  }
 }
