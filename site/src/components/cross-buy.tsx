@@ -126,13 +126,17 @@ export function CrossBuy({ token, symbol, onClose }: { token: string; symbol: st
   );
 }
 
-/** Small entry under the swap panel header on token pages. */
+/** Entry at the top of the swap panel on token pages. */
 export function CrossBuyLink({ token, symbol }: { token: string; symbol: string }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button className="arc-mono" onClick={() => setOpen(true)} style={{ background: "transparent", border: "1px dashed var(--arc-line)", borderRadius: 4, color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, marginBottom: 10, padding: "5px 9px", width: "100%" }} type="button">
-        ⛓ Pay from another chain — ETH / USDC on Base, Arbitrum, Ethereum, OP, BNB, Polygon → {symbol} on Arc in seconds
+      <button className="arc-mono" onClick={() => setOpen(true)} style={{ alignItems: "center", background: "linear-gradient(90deg, rgba(46,124,255,0.22), rgba(34,197,128,0.16))", border: "1px solid var(--arc-cobalt, #2e7cff)", borderRadius: 6, color: "var(--arc-ink)", cursor: "pointer", display: "flex", gap: 10, marginBottom: 12, padding: "9px 12px", textAlign: "left", width: "100%" }} type="button">
+        <span style={{ fontSize: 20, lineHeight: 1 }}>⛓</span>
+        <span style={{ display: "grid", gap: 2 }}>
+          <b style={{ fontSize: 13 }}>Buy {symbol} from another chain</b>
+          <span style={{ color: "var(--arc-muted)", fontSize: 11 }}>ETH or USDC on Base · Arbitrum · Ethereum · OP · BNB · Polygon — one signature, token on Arc in seconds</span>
+        </span>
       </button>
       {open && <CrossBuy onClose={() => setOpen(false)} symbol={symbol} token={token} />}
     </>
