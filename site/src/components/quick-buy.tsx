@@ -5,6 +5,8 @@ import { creditRef } from "@/lib/arc-ref";
 import { routeSwap } from "@/lib/arc-route";
 import { ARC_AGGREGATOR, encodeAggregatorSwap } from "@/lib/arc-wallet";
 
+import { CrossBuy } from "./cross-buy";
+
 const KEY = "arctools_quickbuy";
 export function quickAmount(): number {
   try { return Number(localStorage.getItem(KEY) ?? "5") || 5; } catch { return 5; }
@@ -19,6 +21,7 @@ export function QuickBuy({ token, symbol, compact = false }: { token: string; sy
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [amt, setAmt] = useState(5);
+  const [cross, setCross] = useState(false);
   useEffect(() => {
     setReady(isUnlocked()); setAmt(quickAmount());
     const off = onHotChange(() => setReady(isUnlocked())); return () => { off(); };
@@ -47,6 +50,7 @@ export function QuickBuy({ token, symbol, compact = false }: { token: string; sy
   };
   const label = msg ? msg.text : busy ? "…" : ready ? `⚡ ${amt}` : hasWallet() ? "⚡ unlock" : "⚡ buy";
   return (
+    <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", gap: 3 }}>
     <button
       className="arc-mono"
       disabled={busy}
@@ -57,5 +61,16 @@ export function QuickBuy({ token, symbol, compact = false }: { token: string; sy
     >
       {label}
     </button>
+    <button
+      className="arc-mono"
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCross(true); }}
+      style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-muted)", cursor: "pointer", fontSize: compact ? 11 : 12, padding: compact ? "3px 5px" : "5px 7px" }}
+      title={`Buy ${symbol} with ETH / USDC from Base, Arbitrum, Ethereum, OP, BNB or Polygon — one signature, token on Arc in seconds`}
+      type="button"
+    >
+      ⛓
+    </button>
+    {cross && <CrossBuy onClose={() => setCross(false)} symbol={symbol} token={token} />}
+    </span>
   );
 }

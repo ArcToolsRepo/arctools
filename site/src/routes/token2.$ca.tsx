@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { CrossBuyLink } from "@/components/cross-buy";
 import { BOT_API, BOT_ORIGIN } from "@/lib/bot-api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -1046,6 +1047,7 @@ function TokenPage() {
 
           {/* ---------- swap panel ---------- */}
           <aside className="arc-swap-panel" style={{ border: "1px solid var(--arc-line)", padding: 14 }}>
+            <CrossBuyLink symbol={info.symbol ?? "token"} token={ca} />
             {/* stats moved into the tile grid above */}
             {info.venue === "pad" && info.padMode === "curve" && info.targetQuote ? (
               <div style={{ marginTop: 14 }}>

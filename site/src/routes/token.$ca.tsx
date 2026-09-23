@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { CrossBuyLink } from "@/components/cross-buy";
 import { BOT_API, BOT_ORIGIN } from "@/lib/bot-api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -886,6 +887,7 @@ function TokenPage() {
 
           {/* ---------- swap panel ---------- */}
           <aside className="arc-swap-panel" style={{ border: "1px solid var(--arc-line)", padding: 14 }}>
+            <CrossBuyLink symbol={info.symbol ?? "token"} token={ca} />
             <div className="arc-token__stats">
               <Cell k="MCAP" v={mcap !== null ? money(mcap, 0) : "—"} />
               <Cell k="LIQ" v={money(liquidity, 0)} />
