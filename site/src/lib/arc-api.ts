@@ -458,6 +458,7 @@ const V4_HOOK_NAMES: Record<string, string> = {
   "0x47e7936ae9891e61c5123db720593c05de7120cc": "faze.fun",
   "0x173c4bdd5cf95a935d2b5636c573c5f4df062044": "peach.ag",
   "0xf847790b6fa5da300bb3f56f10d743e71e98e044": "foci.family",
+  "0x21bdc377265e2a26ba336f24381e67e768253044": "wonk.fun",
   "0x9d1a376de8525a2cd622b5c2ce99984f8432e044": "solonpad.fun",
   "0xf73a3f56c533f7f1146fbc97806f07efa66ce0cc": "Klik",
   "0xc75076a17c1ba3dd949773f9036efa4a840020cc": "Hopium",

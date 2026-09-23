@@ -46,7 +46,11 @@ PAD_PAGES = {  # launchpad → token page pattern (og:image)
     "klik": "https://klik.finance/token/{t}", "ubi": "https://ubi.fun/token/{t}", "tolly": "https://tolly.fun/token/{t}",
     "minara": "https://minara.fun/token/{t}", "lift": "https://lift.fun/token/{t}", "sashimi": "https://sashimi.fun/token/{t}",
     "eve": "https://www.eve.fun/token/{t}", "dyor": "https://dyorswap.finance/token/{t}", "long": "https://long.supply/token/{t}",
+    "wonk": "https://wonk.fun/token/{t}", "wonk.fun": "https://wonk.fun/token/{t}",
 }
+# launchpads whose og:image is a composed card (name + symbol + the logo in a light square): we crop the square and serve it ourselves
+OG_CROP_PADS = {"wonk", "wonk.fun"}
+BOT_PUBLIC = "https://bot-production-4200.up.railway.app"
 stats = {"checked": 0, "found": 0, "by": {}}
 
 
@@ -309,11 +313,54 @@ async def try_pad_page(s: aiohttp.ClientSession, token: str, launchpad: str | No
         re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', html, re.I)
     if m:
         u = m.group(1)
+        if (launchpad or "").lower() in OG_CROP_PADS and token[2:10].lower() in u.lower():
+            png = await og_crop(s, u)                     # the composed card → just the logo square
+            if png:
+                await db.execute(text("INSERT INTO logo_blobs (token, png, ts) VALUES (:t, :p, :s) ON CONFLICT (token) DO UPDATE SET png = EXCLUDED.png, ts = EXCLUDED.ts").bindparams(t=token.lower(), p=png, s=int(time.time())))
+                return f"{BOT_PUBLIC}/api/logo/crop/{token.lower()}.png"
+            return None
         # generic site banners are not a token logo: require the token address or an obvious per-token path
         if token[2:10].lower() in u.lower() or "/token" in u or "logo" in u or "ipfs" in u:
             if await _verify(s, u):
                 return u
     return None
+
+
+async def og_crop(s: aiohttp.ClientSession, url: str) -> bytes | None:
+    """download a composed og card and cut out the light logo square on its right half (wonk.fun layout); 256×256 PNG"""
+    try:
+        async with s.get(url, headers=UA, timeout=aiohttp.ClientTimeout(total=12)) as r:
+            if r.status != 200:
+                return None
+            raw = await r.read()
+        from PIL import Image
+        import io
+        im = Image.open(io.BytesIO(raw)).convert("RGB"); w, h = im.size
+        px = im.load(); xs = []; ys = []
+        for y in range(0, h, 2):
+            for xx in range(w // 2, w, 2):
+                r_, g_, b_ = px[xx, y]
+                if r_ > 195 and g_ > 195 and b_ > 195 and abs(r_ - b_) < 20:
+                    xs.append(xx); ys.append(y)
+        if len(xs) < 500:
+            return None
+        x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+        if (x1 - x0) < 80 or abs((x1 - x0) - (y1 - y0)) > 0.25 * (x1 - x0):   # not a square → not the layout we know
+            return None
+        inset = int((x1 - x0) * 0.06)
+        crop = im.crop((x0 + inset, y0 + inset, x1 - inset, y1 - inset)).resize((256, 256), Image.LANCZOS)
+        out = io.BytesIO(); crop.save(out, "PNG", optimize=True); return out.getvalue()
+    except Exception:  # noqa
+        return None
+
+
+async def api_logo_crop(req):
+    """GET /api/logo/crop/<token>.png — a logo we cut out of a launchpad's og card"""
+    token = req.match_info["token"].lower().removesuffix(".png")
+    row = await db.fetchone(text("SELECT png FROM logo_blobs WHERE token = :t").bindparams(t=token))
+    if not row:
+        raise web.HTTPNotFound()
+    return web.Response(body=bytes(row["png"]), content_type="image/png", headers={"Cache-Control": "public, max-age=86400, immutable", "Access-Control-Allow-Origin": "*"})
 
 
 async def try_x_avatar(s: aiohttp.ClientSession, x_handle: str | None) -> str | None:
@@ -351,7 +398,8 @@ async def resolve(s: aiohttp.ClientSession, token: str, launchpad: str | None, x
 
 
 async def init():
-    for stmt in ("ALTER TABLE social_tokens ADD COLUMN IF NOT EXISTS logo VARCHAR(300)",
+    for stmt in ("CREATE TABLE IF NOT EXISTS logo_blobs (token VARCHAR(50) PRIMARY KEY, png BYTEA, ts BIGINT)",
+                 "ALTER TABLE social_tokens ADD COLUMN IF NOT EXISTS logo VARCHAR(300)",
                  "ALTER TABLE social_tokens ADD COLUMN IF NOT EXISTS logo_checked BIGINT",
                  "ALTER TABLE social_tokens ADD COLUMN IF NOT EXISTS logo_src VARCHAR(16)"):
         try:
@@ -513,5 +561,6 @@ async def api_logo_stats(_req):
 
 
 def register(app):
+    app.router.add_get("/api/logo/crop/{token}", api_logo_crop)
     app.router.add_get("/api/logo-stats", api_logo_stats)
     app.router.add_get("/api/logo-recheck", api_logo_recheck)
