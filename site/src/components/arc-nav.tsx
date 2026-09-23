@@ -56,7 +56,7 @@ export function ArcNav({ active }: { active?: string }) {
   ] as const;
   const groups: { label: string; items: readonly (readonly [string, string])[] }[] = [
     { items: [["/scan", "Scanner"], ["/insiders", "Insiders"], ["/leaderboard", "Traders"], ["/intel", "Intel"], ["/api-docs", "API"]], label: "Discover" },
-    { items: [["/launchpad", "Launchpad"], ["/locker", "Locker"], ["/advertise", "Advertise"], ["/rewards", "Rewards"], ["/referrals", "Referrals"], ["/pay", "Pay"]], label: "Earn" },
+    { items: [["/launchpad", "Launchpad"], ["/locker", "Locker"], ["/market", "Market"], ["/advertise", "Advertise"], ["/rewards", "Rewards"], ["/referrals", "Referrals"], ["/pay", "Pay"]], label: "Earn" },
     { items: [["/app", "Android app"]], label: "App" },
     { items: [["/profile", "Profile"], ["/wallets", "Wallets"], ["/bridge", "Bridge"]], label: "Account" },
   ];

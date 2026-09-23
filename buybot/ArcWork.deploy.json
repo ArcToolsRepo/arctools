@@ -1,0 +1,16 @@
+{
+  "address": "0x74Dfc2012B71a377cCDaAE7b7Acd8Df3Cf1A5706",
+  "admin": "0x408c3d3Fd36fdF84888f343417787D8710E76fE8",
+  "arbiter": "0x408c3d3Fd36fdF84888f343417787D8710E76fE8",
+  "treasury": "0xb35c471b31D636B96f95b84E7A27D69B63235C0D",
+  "arct": "0x1EA1e4f9A9975F1f6e9c0a9f6e8Ada7a66E6de52",
+  "feeBps": 200,
+  "tierFeeBps": 100,
+  "arctTier": "250000",
+  "acceptWindowH": 72,
+  "cancelGraceD": 3,
+  "block": 22311657,
+  "deployed_at": 1790148412,
+  "compiler": "0.8.26",
+  "test_instance": "0x2634f3EddD971f904084D71DF5Aa7797D68e4655"
+}

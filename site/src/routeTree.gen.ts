@@ -31,6 +31,8 @@ import { Route as Portfolio2RouteImport } from './routes/portfolio2'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as Pay2RouteImport } from './routes/pay2'
 import { Route as PayRouteImport } from './routes/pay'
+import { Route as Market2RouteImport } from './routes/market2'
+import { Route as MarketRouteImport } from './routes/market'
 import { Route as Locker2RouteImport } from './routes/locker2'
 import { Route as LockerRouteImport } from './routes/locker'
 import { Route as Leaderboard2RouteImport } from './routes/leaderboard2'
@@ -81,6 +83,8 @@ import { Route as ApiAdsSubmitRouteImport } from './routes/api/ads-submit'
 import { Route as ApiAdsReviewRouteImport } from './routes/api/ads-review'
 import { Route as ApiAdsNotifyRouteImport } from './routes/api/ads-notify'
 import { Route as ApiAdsRouteImport } from './routes/api/ads'
+import { Route as MarketOrderIdRouteImport } from './routes/market_.order.$id'
+import { Route as MarketGigIdRouteImport } from './routes/market_.gig.$id'
 import { Route as ApiX402EndpointRouteImport } from './routes/api/x402.$endpoint'
 import { Route as ApiPadLogoCaRouteImport } from './routes/api/pad-logo.$ca'
 import { Route as ApiAdsImgIdRouteImport } from './routes/api/ads-img.$id'
@@ -194,6 +198,16 @@ const Pay2Route = Pay2RouteImport.update({
 const PayRoute = PayRouteImport.update({
   id: '/pay',
   path: '/pay',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Market2Route = Market2RouteImport.update({
+  id: '/market2',
+  path: '/market2',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MarketRoute = MarketRouteImport.update({
+  id: '/market',
+  path: '/market',
   getParentRoute: () => rootRouteImport,
 } as any)
 const Locker2Route = Locker2RouteImport.update({
@@ -446,6 +460,16 @@ const ApiAdsRoute = ApiAdsRouteImport.update({
   path: '/api/ads',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MarketOrderIdRoute = MarketOrderIdRouteImport.update({
+  id: '/market_/order/$id',
+  path: '/market/order/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MarketGigIdRoute = MarketGigIdRouteImport.update({
+  id: '/market_/gig/$id',
+  path: '/market/gig/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiX402EndpointRoute = ApiX402EndpointRouteImport.update({
   id: '/api/x402/$endpoint',
   path: '/api/x402/$endpoint',
@@ -490,6 +514,8 @@ export interface FileRoutesByFullPath {
   '/leaderboard2': typeof Leaderboard2Route
   '/locker': typeof LockerRoute
   '/locker2': typeof Locker2Route
+  '/market': typeof MarketRoute
+  '/market2': typeof Market2Route
   '/pay': typeof PayRoute
   '/pay2': typeof Pay2Route
   '/portfolio': typeof PortfolioRoute
@@ -543,6 +569,8 @@ export interface FileRoutesByFullPath {
   '/api/ads-img/$id': typeof ApiAdsImgIdRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
   '/api/x402/$endpoint': typeof ApiX402EndpointRoute
+  '/market/gig/$id': typeof MarketGigIdRoute
+  '/market/order/$id': typeof MarketOrderIdRoute
   '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
 }
 export interface FileRoutesByTo {
@@ -568,6 +596,8 @@ export interface FileRoutesByTo {
   '/leaderboard2': typeof Leaderboard2Route
   '/locker': typeof LockerRoute
   '/locker2': typeof Locker2Route
+  '/market': typeof MarketRoute
+  '/market2': typeof Market2Route
   '/pay': typeof PayRoute
   '/pay2': typeof Pay2Route
   '/portfolio': typeof PortfolioRoute
@@ -621,6 +651,8 @@ export interface FileRoutesByTo {
   '/api/ads-img/$id': typeof ApiAdsImgIdRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
   '/api/x402/$endpoint': typeof ApiX402EndpointRoute
+  '/market/gig/$id': typeof MarketGigIdRoute
+  '/market/order/$id': typeof MarketOrderIdRoute
   '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
 }
 export interface FileRoutesById {
@@ -647,6 +679,8 @@ export interface FileRoutesById {
   '/leaderboard2': typeof Leaderboard2Route
   '/locker': typeof LockerRoute
   '/locker2': typeof Locker2Route
+  '/market': typeof MarketRoute
+  '/market2': typeof Market2Route
   '/pay': typeof PayRoute
   '/pay2': typeof Pay2Route
   '/portfolio': typeof PortfolioRoute
@@ -700,6 +734,8 @@ export interface FileRoutesById {
   '/api/ads-img/$id': typeof ApiAdsImgIdRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
   '/api/x402/$endpoint': typeof ApiX402EndpointRoute
+  '/market_/gig/$id': typeof MarketGigIdRoute
+  '/market_/order/$id': typeof MarketOrderIdRoute
   '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
 }
 export interface FileRouteTypes {
@@ -727,6 +763,8 @@ export interface FileRouteTypes {
     | '/leaderboard2'
     | '/locker'
     | '/locker2'
+    | '/market'
+    | '/market2'
     | '/pay'
     | '/pay2'
     | '/portfolio'
@@ -780,6 +818,8 @@ export interface FileRouteTypes {
     | '/api/ads-img/$id'
     | '/api/pad-logo/$ca'
     | '/api/x402/$endpoint'
+    | '/market/gig/$id'
+    | '/market/order/$id'
     | '/api/logo/ipfs/$cid'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -805,6 +845,8 @@ export interface FileRouteTypes {
     | '/leaderboard2'
     | '/locker'
     | '/locker2'
+    | '/market'
+    | '/market2'
     | '/pay'
     | '/pay2'
     | '/portfolio'
@@ -858,6 +900,8 @@ export interface FileRouteTypes {
     | '/api/ads-img/$id'
     | '/api/pad-logo/$ca'
     | '/api/x402/$endpoint'
+    | '/market/gig/$id'
+    | '/market/order/$id'
     | '/api/logo/ipfs/$cid'
   id:
     | '__root__'
@@ -883,6 +927,8 @@ export interface FileRouteTypes {
     | '/leaderboard2'
     | '/locker'
     | '/locker2'
+    | '/market'
+    | '/market2'
     | '/pay'
     | '/pay2'
     | '/portfolio'
@@ -936,6 +982,8 @@ export interface FileRouteTypes {
     | '/api/ads-img/$id'
     | '/api/pad-logo/$ca'
     | '/api/x402/$endpoint'
+    | '/market_/gig/$id'
+    | '/market_/order/$id'
     | '/api/logo/ipfs/$cid'
   fileRoutesById: FileRoutesById
 }
@@ -962,6 +1010,8 @@ export interface RootRouteChildren {
   Leaderboard2Route: typeof Leaderboard2Route
   LockerRoute: typeof LockerRoute
   Locker2Route: typeof Locker2Route
+  MarketRoute: typeof MarketRoute
+  Market2Route: typeof Market2Route
   PayRoute: typeof PayRoute
   Pay2Route: typeof Pay2Route
   PortfolioRoute: typeof PortfolioRoute
@@ -1015,6 +1065,8 @@ export interface RootRouteChildren {
   ApiAdsImgIdRoute: typeof ApiAdsImgIdRoute
   ApiPadLogoCaRoute: typeof ApiPadLogoCaRoute
   ApiX402EndpointRoute: typeof ApiX402EndpointRoute
+  MarketGigIdRoute: typeof MarketGigIdRoute
+  MarketOrderIdRoute: typeof MarketOrderIdRoute
   ApiLogoIpfsCidRoute: typeof ApiLogoIpfsCidRoute
 }
 
@@ -1172,6 +1224,20 @@ declare module '@tanstack/react-router' {
       path: '/pay'
       fullPath: '/pay'
       preLoaderRoute: typeof PayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/market2': {
+      id: '/market2'
+      path: '/market2'
+      fullPath: '/market2'
+      preLoaderRoute: typeof Market2RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/market': {
+      id: '/market'
+      path: '/market'
+      fullPath: '/market'
+      preLoaderRoute: typeof MarketRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/locker2': {
@@ -1524,6 +1590,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAdsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/market_/order/$id': {
+      id: '/market_/order/$id'
+      path: '/market/order/$id'
+      fullPath: '/market/order/$id'
+      preLoaderRoute: typeof MarketOrderIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/market_/gig/$id': {
+      id: '/market_/gig/$id'
+      path: '/market/gig/$id'
+      fullPath: '/market/gig/$id'
+      preLoaderRoute: typeof MarketGigIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/x402/$endpoint': {
       id: '/api/x402/$endpoint'
       path: '/api/x402/$endpoint'
@@ -1578,6 +1658,8 @@ const rootRouteChildren: RootRouteChildren = {
   Leaderboard2Route: Leaderboard2Route,
   LockerRoute: LockerRoute,
   Locker2Route: Locker2Route,
+  MarketRoute: MarketRoute,
+  Market2Route: Market2Route,
   PayRoute: PayRoute,
   Pay2Route: Pay2Route,
   PortfolioRoute: PortfolioRoute,
@@ -1631,6 +1713,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAdsImgIdRoute: ApiAdsImgIdRoute,
   ApiPadLogoCaRoute: ApiPadLogoCaRoute,
   ApiX402EndpointRoute: ApiX402EndpointRoute,
+  MarketGigIdRoute: MarketGigIdRoute,
+  MarketOrderIdRoute: MarketOrderIdRoute,
   ApiLogoIpfsCidRoute: ApiLogoIpfsCidRoute,
 }
 export const routeTree = rootRouteImport

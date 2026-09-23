@@ -2746,6 +2746,8 @@ async def start_api():
     _predict.register(app)
     from . import x402 as _x402
     _x402.register(app)
+    from . import work as _work
+    _work.register(app)
     _liq.register_risk(app)
     from . import referrals as _ref
     _ref.register(app)
