@@ -1,0 +1,161 @@
+{
+ "plan": [
+  {
+   "id": "intro",
+   "kind": "robot",
+   "robot": "intro",
+   "title": "ArcTools",
+   "sub": "The trading and launch stack for Arc",
+   "vo": "This is ArcTools. One stack for trading, launching and building on Arc, the USDC-native chain by Circle. Here is everything it does today, in two and a half minutes.",
+   "vo_dur": 10.527347,
+   "dur": 11.977
+  },
+  {
+   "id": "terminal",
+   "kind": "screen",
+   "url": "https://arctools.fun/trade2",
+   "title": "Terminal",
+   "sub": "Live pairs from 25 launchpads, quick buy, charts",
+   "vo": "The Terminal streams every new pair on Arc from twenty-five launchpads: trending, new pairs, top volume, with live charts, risk flags and one-click Quick Buy.",
+   "vo_dur": 11.075918,
+   "dur": 12.526
+  },
+  {
+   "id": "sniper",
+   "kind": "screen",
+   "url": "https://arctools.fun/",
+   "title": "Sniper bot",
+   "sub": "@ArcSniper_bot: snipe, positions, auto-rules, copy-trade",
+   "vo": "The Sniper bot on Telegram buys at any cost the second a token goes live. Positions, PnL cards, auto-snipe rules, copy trading, deployer-dump guard and a referral program paying twenty-five percent.",
+   "vo_dur": 13.714286,
+   "dur": 15.164
+  },
+  {
+   "id": "buybot",
+   "kind": "screen",
+   "url": "https://arctools.fun/intel",
+   "title": "Buy bot & Insider index",
+   "sub": "Group alerts, @ARCTrends, whale and cluster intelligence",
+   "vo": "The Buy bot posts every buy into your group and ranks tokens on ARCTrends. Behind it, the Arc Insider index tracks whales, insider clusters and dev wallets in real time.",
+   "vo_dur": 11.31102,
+   "dur": 12.761
+  },
+  {
+   "id": "launchpad",
+   "kind": "screen",
+   "url": "https://arctools.fun/launchpad",
+   "title": "ArcToolsPad",
+   "sub": "Launch a token in one minute, bonding curve to Uniswap",
+   "vo": "ArcToolsPad launches a token in one minute. Bonding curve, then automatic graduation to Uniswap. Thirty USDC for an instant launch, one percent on every trade.",
+   "vo_dur": 11.650612,
+   "dur": 13.101
+  },
+  {
+   "id": "locker",
+   "kind": "screen",
+   "url": "https://arctools.fun/locker2",
+   "title": "ArcLocker",
+   "sub": "Lock LP or team tokens, public proof pages",
+   "vo": "ArcLocker locks liquidity or team tokens with a public proof page. No admin key over your assets. Fifty USDC per lock.",
+   "vo_dur": 9.717551,
+   "dur": 11.168
+  },
+  {
+   "id": "predict",
+   "kind": "screen",
+   "url": "https://arctools.fun/predict2",
+   "title": "ArcPredict",
+   "sub": "BTC, ETH, SOL up-or-down rounds every two minutes",
+   "vo": "ArcPredict: Bitcoin, Ethereum and Solana, up or down, every two minutes. Winners split the pool, prices come from four exchanges and land on-chain.",
+   "vo_dur": 10.762449,
+   "dur": 12.212
+  },
+  {
+   "id": "market",
+   "kind": "screen",
+   "url": "https://arctools.fun/market2",
+   "title": "ArcTools Market",
+   "sub": "Hire for your token, USDC escrow, on-chain reviews",
+   "vo": "The Market: hire for your token and pay only when it is delivered. USDC waits in escrow, disputes are split with a public note, reviews live on-chain.",
+   "vo_dur": 10.527347,
+   "dur": 11.977
+  },
+  {
+   "id": "bridge",
+   "kind": "screen",
+   "url": "https://arctools.fun/bridge",
+   "title": "Bridge, Swap, Buy with card",
+   "sub": "CCTP bridge, aggregator swaps, MoonPay on-ramp to ARCT",
+   "vo": "Move money in: bridge USDC with CCTP, swap through the aggregator at half a percent, or buy ARCT straight from a card.",
+   "vo_dur": 10.919184,
+   "dur": 12.369
+  },
+  {
+   "id": "pay",
+   "kind": "screen",
+   "url": "https://arctools.fun/pay",
+   "title": "ArcClaim & ArcOrders",
+   "sub": "USDC pay links, limit orders and stop-losses",
+   "vo": "Send USDC as a link with ArcClaim. Set limit orders and stop-losses with ArcOrders, executed on-chain.",
+   "vo_dur": 7.627755,
+   "dur": 9.078
+  },
+  {
+   "id": "api",
+   "kind": "screen",
+   "url": "https://arctools.fun/api-docs2",
+   "title": "x402 API",
+   "sub": "Pay-per-call token data, from 0.005 USDC",
+   "vo": "Developers get the same data through the x402 API: pay per call in USDC, no keys, no subscriptions, running natively on Arc.",
+   "vo_dur": 11.075918,
+   "dur": 12.526
+  },
+  {
+   "id": "app",
+   "kind": "screen",
+   "url": "https://arctools.fun/app",
+   "title": "ArcOne Android",
+   "sub": "Trading wallet, Terminal, Predict and Market in your pocket",
+   "vo": "All of it fits in ArcOne, the Android app: wallet, Terminal, Predict and Market, updated straight from the site.",
+   "vo_dur": 6.347755,
+   "dur": 7.798
+  },
+  {
+   "id": "arct",
+   "kind": "screen",
+   "url": "https://arctools.fun/rewards",
+   "title": "ARCT",
+   "sub": "Every fee buys back and burns ARCT",
+   "vo": "Every fee across the stack flows to one treasury that buys back and burns ARCT. Over fifty-eight million tokens are gone already, and the counter is public.",
+   "vo_dur": 11.154286,
+   "dur": 12.604
+  },
+  {
+   "id": "outro",
+   "kind": "robot",
+   "robot": "outro",
+   "title": "arctools.fun",
+   "sub": "Built on Arc. Running today.",
+   "vo": "ArcTools. Built on Arc, running today. Start at arctools dot fun.",
+   "vo_dur": 5.642449,
+   "dur": 8.042
+  }
+ ],
+ "starts": [
+  0.0,
+  11.477,
+  23.503,
+  38.167,
+  50.428,
+  63.028999999999996,
+  73.697,
+  85.409,
+  96.88600000000001,
+  108.75500000000001,
+  117.33300000000001,
+  129.359,
+  136.657,
+  148.76100000000002
+ ],
+ "total": 156.80300000000003
+}

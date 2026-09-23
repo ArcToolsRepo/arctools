@@ -1,35 +1,36 @@
 [Script Info]
 ScriptType: v4.00+
-PlayResX: 1280
-PlayResY: 720
+PlayResX: 1920
+PlayResY: 1080
 WrapStyle: 2
-ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,Metropolis,30,&H00FFFFFF,&H00FFFFFF,&H00000000,&H8C000000,0,0,0,0,100,100,0.3,0,3,10,0,2,60,60,30,1
+Style: Cap,Roboto,44,&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,-1,0,0,0,100,100,0,0,3,14,0,2,200,200,52,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:00:00.00,0:00:03.09,Cap,,0,0,0,,Meet ArcTools, the trading terminal for Arc,
-Dialogue: 0,0:00:03.70,0:00:05.13,Cap,,0,0,0,,Circle's USDC native chain.
-Dialogue: 0,0:00:05.44,0:00:07.93,Cap,,0,0,0,,The terminal puts every launchpad in one table,
-Dialogue: 0,0:00:08.18,0:00:10.33,Cap,,0,0,0,,new pairs, trending, insider picks.
-Dialogue: 0,0:00:11.16,0:00:13.03,Cap,,0,0,0,,Set a quick buy amount once and fire
-Dialogue: 0,0:00:12.78,0:00:14.83,Cap,,0,0,0,,with one click, signed by a trading wallet
-Dialogue: 0,0:00:14.58,0:00:15.85,Cap,,0,0,0,,that never leaves your browser.
-Dialogue: 0,0:00:16.04,0:00:17.83,Cap,,0,0,0,,Every token page has a live chart,
-Dialogue: 0,0:00:18.02,0:00:21.27,Cap,,0,0,0,,trades, holders, and one swap that routes across Uniswap,
-Dialogue: 0,0:00:21.46,0:00:24.73,Cap,,0,0,0,,V3, V4, bonding curves and Warp, always the best
-Dialogue: 0,0:00:24.48,0:00:24.89,Cap,,0,0,0,,fill.
-Dialogue: 0,0:00:25.22,0:00:27.37,Cap,,0,0,0,,Insiders ranks the top 100 wallets by 30
-Dialogue: 0,0:00:27.12,0:00:29.29,Cap,,0,0,0,,-day profit and streams their moves to Telegram.
-Dialogue: 0,0:00:29.04,0:00:32.41,Cap,,0,0,0,,Intel shows whales, fresh capital, bridge flows, and
-Dialogue: 0,0:00:32.16,0:00:33.55,Cap,,0,0,0,,lets you build your own alert rules.
-Dialogue: 0,0:00:34.04,0:00:36.15,Cap,,0,0,0,,The feed lists every launch from 10 venues,
-Dialogue: 0,0:00:36.24,0:00:37.29,Cap,,0,0,0,,seconds after deploy.
-Dialogue: 0,0:00:37.56,0:00:39.25,Cap,,0,0,0,,Launch your own token on ArcToolsPad,
-Dialogue: 0,0:00:39.42,0:00:41.39,Cap,,0,0,0,,stake ARCT to earn from every trade and
-Dialogue: 0,0:00:41.14,0:00:44.25,Cap,,0,0,0,,bridge USDC in with Circle CCTP, and when you're
-Dialogue: 0,0:00:44.00,0:00:46.19,Cap,,0,0,0,,away, the Telegram sniper fires for you.
-Dialogue: 0,0:00:46.66,0:00:49.11,Cap,,0,0,0,,ArcTools.fun — trade the whole chain.
+Dialogue: 0,0:00:00.45,0:00:07.61,Cap,,0,0,0,,This is ArcTools. One stack for trading, launching and\Nbuilding on Arc, the USDC-native chain by Circle. Here is
+Dialogue: 0,0:00:07.66,0:00:10.93,Cap,,0,0,0,,everything it does today, in two and a half minutes.
+Dialogue: 0,0:00:11.93,0:00:19.94,Cap,,0,0,0,,The Terminal streams every new pair on Arc from twenty-five\Nlaunchpads: trending, new pairs, top volume, with live
+Dialogue: 0,0:00:19.99,0:00:22.95,Cap,,0,0,0,,charts, risk flags and one-click Quick Buy.
+Dialogue: 0,0:00:23.95,0:00:31.76,Cap,,0,0,0,,The Sniper bot on Telegram buys at any cost the second a\Ntoken goes live. Positions, PnL cards, auto-snipe rules,
+Dialogue: 0,0:00:31.81,0:00:37.62,Cap,,0,0,0,,copy trading, deployer-dump guard and a referral program\Npaying twenty-five percent.
+Dialogue: 0,0:00:38.62,0:00:46.26,Cap,,0,0,0,,The Buy bot posts every buy into your group and ranks tokens\Non ARCTrends. Behind it, the Arc Insider index tracks
+Dialogue: 0,0:00:46.31,0:00:49.88,Cap,,0,0,0,,whales, insider clusters and dev wallets in real time.
+Dialogue: 0,0:00:50.88,0:00:59.33,Cap,,0,0,0,,ArcToolsPad launches a token in one minute. Bonding curve,\Nthen automatic graduation to Uniswap. Thirty USDC for an
+Dialogue: 0,0:00:59.38,0:01:02.48,Cap,,0,0,0,,instant launch, one percent on every trade.
+Dialogue: 0,0:01:03.48,0:01:13.15,Cap,,0,0,0,,ArcLocker locks liquidity or team tokens with a public proof\Npage. No admin key over your assets. Fifty USDC per lock.
+Dialogue: 0,0:01:14.15,0:01:22.81,Cap,,0,0,0,,ArcPredict: Bitcoin, Ethereum and Solana, up or down, every\Ntwo minutes. Winners split the pool, prices come from four
+Dialogue: 0,0:01:22.86,0:01:24.86,Cap,,0,0,0,,exchanges and land on-chain.
+Dialogue: 0,0:01:25.86,0:01:33.88,Cap,,0,0,0,,The Market: hire for your token and pay only when it is\Ndelivered. USDC waits in escrow, disputes are split with a
+Dialogue: 0,0:01:33.93,0:01:36.34,Cap,,0,0,0,,public note, reviews live on-chain.
+Dialogue: 0,0:01:37.34,0:01:47.74,Cap,,0,0,0,,Move money in: bridge USDC with CCTP, swap through the\Naggregator at half a percent, or buy ARCT straight from a
+Dialogue: 0,0:01:47.79,0:01:48.21,Cap,,0,0,0,,card.
+Dialogue: 0,0:01:49.21,0:01:56.78,Cap,,0,0,0,,Send USDC as a link with ArcClaim. Set limit orders and\Nstop-losses with ArcOrders, executed on-chain.
+Dialogue: 0,0:01:57.78,0:02:08.45,Cap,,0,0,0,,Developers get the same data through the x402 API: pay per\Ncall in USDC, no keys, no subscriptions, running natively on
+Dialogue: 0,0:02:08.50,0:02:08.81,Cap,,0,0,0,,Arc.
+Dialogue: 0,0:02:09.81,0:02:16.11,Cap,,0,0,0,,All of it fits in ArcOne, the Android app: wallet, Terminal,\NPredict and Market, updated straight from the site.
+Dialogue: 0,0:02:17.11,0:02:25.35,Cap,,0,0,0,,Every fee across the stack flows to one treasury that buys\Nback and burns ARCT. Over fifty-eight million tokens are
+Dialogue: 0,0:02:25.40,0:02:28.21,Cap,,0,0,0,,gone already, and the counter is public.
+Dialogue: 0,0:02:29.21,0:02:34.80,Cap,,0,0,0,,ArcTools. Built on Arc, running today. Start at arctools dot\Nfun.
