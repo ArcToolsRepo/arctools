@@ -13,6 +13,7 @@ import { ARC_AGGREGATOR, connectWallet, encodeAggregatorSwap, ethCall, getStored
 import { hasWallet, hotAddress, hotCall, hotSend, hotWait } from "@/lib/arc-hotwallet";
 import { TokenLogo } from "@/components/token-logo";
 import { QuickBuy } from "@/components/quick-buy";
+import { CrossBuy } from "@/components/cross-buy";
 import { TradeToasts } from "@/components/trade-toasts";
 import { ArcFeed } from "@/components/arc-feed";
 import { ChainSearch } from "@/components/chain-search";
@@ -635,10 +636,14 @@ function Trade() {
                     <span style={{ color: "var(--arc-muted)", fontSize: 11, marginLeft: 8 }}>{tableRows.length} {tr_("tokens · page")} {page}/{pages}</span>
                   </div>
   );
+  const [cross, setCross] = useState<{ token: string; symbol: string } | null>(null);
   const BuyBtn = ({ token, symbol }: { token: string; symbol: string }) => (
+    <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", gap: 3 }}>
     <button className="arc-mono" disabled={busy === token} onClick={() => void buy(token, symbol)} style={{ background: busy === token ? "transparent" : "var(--arc-up)", border: "1px solid var(--arc-up)", borderRadius: 4, color: busy === token ? "var(--arc-up)" : "#06130b", cursor: "pointer", fontSize: 12, fontWeight: 700, padding: "5px 10px", whiteSpace: "nowrap" }} type="button">
       {busy === token ? "…" : <>⚡ {buyAmt}<span className="arc-buyunit"> USDC</span></>}
     </button>
+      <button className="arc-mono" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCross({ token, symbol }); }} style={{ background: "transparent", border: "1px solid var(--arc-line)", borderRadius: 4, color: "var(--arc-muted)", cursor: "pointer", fontSize: 11, padding: "3px 5px" }} title={`Buy ${symbol} with ETH / USDC from Base, Arbitrum, Ethereum, OP, BNB or Polygon — one signature, token on Arc in seconds`} type="button">⛓</button>
+    </span>
   );
   const Logo = ({ t }: { t: { logo?: string | null; symbol: string } }) => (
     <span style={{ alignItems: "center", background: "#0e1118", border: "1px solid var(--arc-line)", borderRadius: 6, display: "inline-flex", height: 30, justifyContent: "center", marginRight: 8, overflow: "hidden", verticalAlign: "middle", width: 30 }}>
@@ -860,6 +865,7 @@ function Trade() {
   return (
     <main className="arc-dsp">
       <DsRail active={padF !== "all" ? padF : null} />
+      {cross && <CrossBuy onClose={() => setCross(null)} symbol={cross.symbol} token={cross.token} />}
       <section className="arc-dsp__body">
         <DsChainStrip />
         {/* the four steps belong next to the wallet they describe, not buried under the table */}
