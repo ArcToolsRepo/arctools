@@ -14,6 +14,7 @@ import { Launch } from "./Launch";
 import Locker from "./Locker";
 import Predict from "./Predict";
 import Market from "./Market";
+import Cross from "./Cross";
 import { Pay as PayNative, Referrals as RefNative, Bridge as BridgeNative, Trades, Traders } from "./Native";
 import { openUrl, buzzOk } from "../lib/native";
 import { Unlock } from "./Wallet";
@@ -26,6 +27,7 @@ export default function Sub({ route }: { route: Route }) {
     case "locker": return <Locker />;
     case "predict": return <Predict />;
     case "market": return <Market />;
+    case "cross": return <Cross sym={route.sym} token={route.token} />;
     case "pay": return <PayNative />;
     case "referrals": return <RefNative />;
     case "bridge": return <BridgeNative />;
@@ -208,7 +210,7 @@ function Settings() {
       </div>
       <div className="label">About</div>
       <UpdateCard />
-      <div className="card muted" style={{ fontSize: 12.5 }}>ArcOne v2.9 · powered by ArcTools · arctools.fun · Fees fund ARCT buybacks that burn in the same transaction. Your key never leaves this phone. Internal review only — no third-party audit.</div>
+      <div className="card muted" style={{ fontSize: 12.5 }}>ArcOne v3.0 · powered by ArcTools · arctools.fun · Fees fund ARCT buybacks that burn in the same transaction. Your key never leaves this phone. Internal review only — no third-party audit.</div>
     </>
   );
 }

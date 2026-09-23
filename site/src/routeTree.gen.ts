@@ -79,6 +79,7 @@ import { Route as ApiPadMetaRouteImport } from './routes/api/pad-meta'
 import { Route as ApiLocksRouteImport } from './routes/api/locks'
 import { Route as ApiHelpRouteImport } from './routes/api/help'
 import { Route as ApiHealRouteImport } from './routes/api/heal'
+import { Route as ApiCrossQuoteRouteImport } from './routes/api/cross-quote'
 import { Route as ApiAdsSubmitRouteImport } from './routes/api/ads-submit'
 import { Route as ApiAdsReviewRouteImport } from './routes/api/ads-review'
 import { Route as ApiAdsNotifyRouteImport } from './routes/api/ads-notify'
@@ -440,6 +441,11 @@ const ApiHealRoute = ApiHealRouteImport.update({
   path: '/api/heal',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCrossQuoteRoute = ApiCrossQuoteRouteImport.update({
+  id: '/api/cross-quote',
+  path: '/api/cross-quote',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAdsSubmitRoute = ApiAdsSubmitRouteImport.update({
   id: '/api/ads-submit',
   path: '/api/ads-submit',
@@ -542,6 +548,7 @@ export interface FileRoutesByFullPath {
   '/api/ads-notify': typeof ApiAdsNotifyRoute
   '/api/ads-review': typeof ApiAdsReviewRoute
   '/api/ads-submit': typeof ApiAdsSubmitRoute
+  '/api/cross-quote': typeof ApiCrossQuoteRoute
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
   '/api/locks': typeof ApiLocksRoute
@@ -624,6 +631,7 @@ export interface FileRoutesByTo {
   '/api/ads-notify': typeof ApiAdsNotifyRoute
   '/api/ads-review': typeof ApiAdsReviewRoute
   '/api/ads-submit': typeof ApiAdsSubmitRoute
+  '/api/cross-quote': typeof ApiCrossQuoteRoute
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
   '/api/locks': typeof ApiLocksRoute
@@ -707,6 +715,7 @@ export interface FileRoutesById {
   '/api/ads-notify': typeof ApiAdsNotifyRoute
   '/api/ads-review': typeof ApiAdsReviewRoute
   '/api/ads-submit': typeof ApiAdsSubmitRoute
+  '/api/cross-quote': typeof ApiCrossQuoteRoute
   '/api/heal': typeof ApiHealRoute
   '/api/help': typeof ApiHelpRoute
   '/api/locks': typeof ApiLocksRoute
@@ -791,6 +800,7 @@ export interface FileRouteTypes {
     | '/api/ads-notify'
     | '/api/ads-review'
     | '/api/ads-submit'
+    | '/api/cross-quote'
     | '/api/heal'
     | '/api/help'
     | '/api/locks'
@@ -873,6 +883,7 @@ export interface FileRouteTypes {
     | '/api/ads-notify'
     | '/api/ads-review'
     | '/api/ads-submit'
+    | '/api/cross-quote'
     | '/api/heal'
     | '/api/help'
     | '/api/locks'
@@ -955,6 +966,7 @@ export interface FileRouteTypes {
     | '/api/ads-notify'
     | '/api/ads-review'
     | '/api/ads-submit'
+    | '/api/cross-quote'
     | '/api/heal'
     | '/api/help'
     | '/api/locks'
@@ -1038,6 +1050,7 @@ export interface RootRouteChildren {
   ApiAdsNotifyRoute: typeof ApiAdsNotifyRoute
   ApiAdsReviewRoute: typeof ApiAdsReviewRoute
   ApiAdsSubmitRoute: typeof ApiAdsSubmitRoute
+  ApiCrossQuoteRoute: typeof ApiCrossQuoteRoute
   ApiHealRoute: typeof ApiHealRoute
   ApiHelpRoute: typeof ApiHelpRoute
   ApiLocksRoute: typeof ApiLocksRoute
@@ -1562,6 +1575,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cross-quote': {
+      id: '/api/cross-quote'
+      path: '/api/cross-quote'
+      fullPath: '/api/cross-quote'
+      preLoaderRoute: typeof ApiCrossQuoteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ads-submit': {
       id: '/api/ads-submit'
       path: '/api/ads-submit'
@@ -1686,6 +1706,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAdsNotifyRoute: ApiAdsNotifyRoute,
   ApiAdsReviewRoute: ApiAdsReviewRoute,
   ApiAdsSubmitRoute: ApiAdsSubmitRoute,
+  ApiCrossQuoteRoute: ApiCrossQuoteRoute,
   ApiHealRoute: ApiHealRoute,
   ApiHelpRoute: ApiHelpRoute,
   ApiLocksRoute: ApiLocksRoute,

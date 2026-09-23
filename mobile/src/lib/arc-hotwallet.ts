@@ -241,6 +241,25 @@ export async function hotSend(tx: HotTx): Promise<string> {
   throw lastErr ?? new Error("broadcast failed");
 }
 
+/** Same key, another EVM chain (legacy type-0 tx): used by "Buy from another chain" to pay Relay on Base / Arbitrum / … */
+export async function hotSendOn(chainId: bigint, rpcUrl: string, tx: HotTx): Promise<string> {
+  if (!_key || !_addr) throw new Error("Wallet locked.");
+  armLock();
+  const from = _addr;
+  const [nonceHex, gasPriceHex] = await Promise.all([rpc("eth_getTransactionCount", [from, "pending"], rpcUrl), rpc("eth_gasPrice", [], rpcUrl)]);
+  let gas = tx.gasLimit;
+  if (!gas) {
+    const est = await rpc("eth_estimateGas", [{ from, to: tx.to, data: tx.data ?? "0x", value: "0x" + (tx.value ?? 0n).toString(16) }], rpcUrl).catch((e: Error) => { throw new Error("Simulation failed: " + e.message); });
+    gas = (BigInt(est) * 130n) / 100n + 10_000n;
+  }
+  const gasPrice = (BigInt(gasPriceHex) * 150n) / 100n + 1n;   // L2 base fees move fast; a legacy tx cannot bump itself
+  const fields = [toMinBytes(BigInt(nonceHex)), toMinBytes(gasPrice), toMinBytes(gas), unhex(tx.to), toMinBytes(tx.value ?? 0n), unhex(tx.data ?? "0x"), toMinBytes(chainId), new Uint8Array([]), new Uint8Array([])];
+  const sig = await secp.signAsync(keccak_256(rlpEncode(fields)), _key, { lowS: true });
+  const v = chainId * 2n + 35n + BigInt(sig.recovery);
+  return rpc("eth_sendRawTransaction", [hex(rlpEncode([fields[0], fields[1], fields[2], fields[3], fields[4], fields[5], toMinBytes(v), toMinBytes(sig.r), toMinBytes(sig.s)]))], rpcUrl);
+}
+export async function balanceOn(rpcUrl: string, addr: string): Promise<bigint> { return BigInt(await rpc("eth_getBalance", [addr, "latest"], rpcUrl)); }
+
 /** EIP-191 personal_sign with the trading wallet (used to prove ownership for referral claims). */
 export async function hotSignMessage(message: string): Promise<string> {
   if (!_key || !_addr) throw new Error("Wallet locked.");

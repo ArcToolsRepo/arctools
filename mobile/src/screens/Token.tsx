@@ -185,6 +185,7 @@ export default function Token({ ca }: { ca: string }) {
       <div className="tradebar">
         <button className="btn primary" onClick={() => setSheet("buy")}>Buy</button>
         <button className="btn danger" onClick={() => setSheet("sell")}>Sell</button>
+        <button className="btn" onClick={() => go(`/cross/${ca}?sym=${encodeURIComponent(sym)}`)} title="Pay with ETH / USDC on Base, Arbitrum, Ethereum, OP, BNB or Polygon" style={{ flex: "0 0 auto", padding: "0 14px" }}>⛓</button>
       </div>
       <BuySheet ca={sheet ? ca : null} side={sheet ?? "buy"} onClose={() => setSheet(null)} />
     </div>
