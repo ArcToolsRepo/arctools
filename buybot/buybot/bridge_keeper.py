@@ -45,9 +45,9 @@ RECEIVE_SEL = "0x" + keccak(text="bridgeReceive(bytes,bytes)")[:4].hex()
 
 # public RPCs that answer without a key; each entry is tried in order
 SOURCES: dict[int, dict] = {
-    0: {"name": "Ethereum", "rpcs": ["https://eth.merkle.io", "https://ethereum-rpc.publicnode.com"], "span": 600},
-    3: {"name": "Arbitrum", "rpcs": ["https://arbitrum-one.publicnode.com", "https://arb1.arbitrum.io/rpc"], "span": 20000},
-    6: {"name": "Base", "rpcs": ["https://base.publicnode.com", "https://mainnet.base.org"], "span": 4000},
+    0: {"name": "Ethereum", "rpcs": ["https://eth.merkle.io", "https://ethereum-rpc.publicnode.com"], "span": 600, "block_time": 12.0},
+    3: {"name": "Arbitrum", "rpcs": ["https://arbitrum-one.publicnode.com", "https://arb1.arbitrum.io/rpc"], "span": 20000, "block_time": 0.25},
+    6: {"name": "Base", "rpcs": ["https://base.publicnode.com", "https://mainnet.base.org"], "span": 4000, "block_time": 2.0},
 }
 
 
@@ -72,6 +72,10 @@ async def init() -> None:
         PRIMARY KEY (src_domain, tx))"""))
     await db.execute(text("CREATE INDEX IF NOT EXISTS bridge_pending_open ON bridge_pending (done_ts)"))
     await db.execute(text("CREATE TABLE IF NOT EXISTS bridge_cursor (src_domain INTEGER PRIMARY KEY, block BIGINT)"))
+    try:
+        await db.execute(text("ALTER TABLE bridge_cursor ADD COLUMN IF NOT EXISTS backfilled SMALLINT DEFAULT 0"))
+    except Exception:  # noqa
+        pass
 
 
 def _words(data: str) -> list[str]:
@@ -86,9 +90,12 @@ async def scan_source(s: aiohttp.ClientSession, domain: int) -> int:
     if not head:
         return 0
     head = int(head, 16)
-    row = await db.fetchone(text("SELECT block FROM bridge_cursor WHERE src_domain = :d").bindparams(d=domain))
+    row = await db.fetchone(text("SELECT block, backfilled FROM bridge_cursor WHERE src_domain = :d").bindparams(d=domain))
     frm = int(row["block"]) + 1 if row and row["block"] else head - cfg["span"]
     frm = max(frm, head - cfg["span"] * 6)                     # never walk back more than a few windows
+    if not row or not row.get("backfilled"):
+        # first run after the parser fix: the old reading never matched a burn, so walk 14 days back once
+        frm = head - int(14 * 86400 / cfg["block_time"])
     found = 0
     while frm <= head:
         to = min(head, frm + cfg["span"])
@@ -100,11 +107,15 @@ async def scan_source(s: aiohttp.ClientSession, domain: int) -> int:
             w = _words(lg.get("data") or "")
             if len(w) < 7:
                 continue
-            # data layout: amount, destinationDomain, mintRecipient, burnToken, destinationCaller, maxFee, ...
+            # CCTP v2 DepositForBurn(address indexed burnToken, uint256 amount, address indexed depositor,
+            #   bytes32 mintRecipient, uint32 destinationDomain, bytes32 destinationTokenMessenger,
+            #   bytes32 destinationCaller, uint256 maxFee, uint32 indexed minFinalityThreshold, bytes hookData)
+            # → data words: amount, mintRecipient, destinationDomain, destTokenMessenger, destinationCaller, maxFee, hookData…
+            # (the old reading had domain and recipient swapped, so no burn ever matched and nothing was finished)
             try:
                 amount = int(w[0], 16) / 1e6
-                dest = int(w[1], 16)
-                recipient = "0x" + w[2][-40:]
+                dest = int(w[2], 16)
+                recipient = "0x" + lg["topics"][2][-40:]          # depositor = who the proxy pays on Arc (messageSender)
                 caller = "0x" + w[4][-40:]
             except Exception:  # noqa
                 continue
@@ -115,13 +126,14 @@ async def scan_source(s: aiohttp.ClientSession, domain: int) -> int:
                 "ON CONFLICT (src_domain, tx) DO NOTHING"
             ).bindparams(d=domain, t=lg["transactionHash"].lower(), a=amount, r=recipient.lower(), n=int(time.time())))
             found += 1
-        await db.execute(text("INSERT INTO bridge_cursor (src_domain, block) VALUES (:d, :b) "
-                              "ON CONFLICT (src_domain) DO UPDATE SET block = EXCLUDED.block").bindparams(d=domain, b=to))
+        await db.execute(text("INSERT INTO bridge_cursor (src_domain, block, backfilled) VALUES (:d, :b, 1) "
+                              "ON CONFLICT (src_domain) DO UPDATE SET block = EXCLUDED.block, backfilled = 1").bindparams(d=domain, b=to))
         frm = to + 1
+        await asyncio.sleep(0.4)                                 # public RPCs throttle bursts of getLogs
     return found
 
 
-async def _attestation(s: aiohttp.ClientSession, domain: int, tx: str) -> tuple[str, str] | None:
+async def _attestation(s: aiohttp.ClientSession, domain: int, tx: str) -> tuple[str, str, str] | None:
     try:
         async with s.get(f"{IRIS}/{domain}", params={"transactionHash": tx},
                          timeout=aiohttp.ClientTimeout(total=20)) as r:
@@ -132,8 +144,28 @@ async def _attestation(s: aiohttp.ClientSession, domain: int, tx: str) -> tuple[
         return None
     for m in (j.get("messages") or []):
         if m.get("status") == "complete" and m.get("message") and m.get("attestation"):
-            return m["message"], m["attestation"]
+            return m["message"], m["attestation"], m.get("eventNonce") or ""
     return None
+
+
+USED_SEL = "0x" + keccak(text="usedNonces(bytes32)")[:4].hex()
+TRANSMITTER = "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64"   # MessageTransmitterV2 on Arc
+
+
+async def _minted(s: aiohttp.ClientSession, nonce: str) -> bool | None:
+    if not nonce:
+        return None
+    r = await _rpc(s, ARC_RPC, "eth_call", [{"to": TRANSMITTER, "data": USED_SEL + nonce[2:].rjust(64, "0")}, "latest"])
+    return None if not r else int(r, 16) != 0
+
+
+async def _reattest(s: aiohttp.ClientSession, nonce: str) -> bool:
+    """A fast-transfer message (maxFee > 0) expires after a while; Circle re-signs it on request. Free, idempotent."""
+    try:
+        async with s.post(f"https://iris-api.circle.com/v2/reattest/{nonce}", json={}, timeout=aiohttp.ClientTimeout(total=20)) as r:
+            return r.status == 200
+    except Exception:  # noqa
+        return False
 
 
 def _encode_receive(message: str, attestation: str) -> str:
@@ -152,14 +184,21 @@ async def complete_one(s: aiohttp.ClientSession, row: dict) -> bool:
     got = await _attestation(s, int(row["src_domain"]), row["tx"])
     if not got:
         return False
-    message, attestation = got
+    message, attestation, ev_nonce = got
+    if await _minted(s, ev_nonce):                              # the browser (or someone) already finished it
+        await db.execute(text("UPDATE bridge_pending SET done_ts = :n, note = 'already minted' WHERE src_domain = :d AND tx = :t")
+                         .bindparams(d=row["src_domain"], t=row["tx"], n=int(time.time())))
+        return False
     data = _encode_receive(message, attestation)
     acct = Account.from_key(KEY)
     nonce = int(await _rpc(s, ARC_RPC, "eth_getTransactionCount", [acct.address, "pending"]) or "0x0", 16)
     gas = await _rpc(s, ARC_RPC, "eth_estimateGas", [{"from": acct.address, "to": PROXY, "data": data}])
-    if not gas:                                                 # already used, or the message is not for us
+    if not gas:
+        # not minted, yet the call reverts → almost always "Message expired and must be re-signed": ask Circle for a
+        # fresh signature and retry next cycle
+        ok = await _reattest(s, ev_nonce) if ev_nonce else False
         await db.execute(text("UPDATE bridge_pending SET attempts = attempts + 1, note = :n WHERE src_domain = :d AND tx = :t")
-                         .bindparams(d=row["src_domain"], t=row["tx"], n="estimateGas refused (likely already minted)"))
+                         .bindparams(d=row["src_domain"], t=row["tx"], n="estimateGas refused; re-attestation " + ("requested" if ok else "failed")))
         return False
     price = int(await _rpc(s, ARC_RPC, "eth_gasPrice", []) or "0x0", 16) or 10 ** 9
     tx = {"chainId": 5042, "data": data, "gas": int(int(gas, 16) * 1.3), "gasPrice": price,
@@ -186,7 +225,7 @@ async def keeper_loop() -> None:
     await asyncio.sleep(45)
     while True:
         try:
-            async with aiohttp.ClientSession() as s:
+            async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) ArcTools-bridge-keeper/1.0", "Accept": "application/json"}) as s:
                 for domain in SOURCES:
                     try:
                         n = await scan_source(s, domain)
