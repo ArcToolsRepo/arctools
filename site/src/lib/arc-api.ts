@@ -821,7 +821,9 @@ export const tokenPage = createServerFn({ method: "POST" })
 
       // launchpad lists + descriptions collected by the buybot (Minara, RadarDex, Tolly …) — logo / socials fallback
       const botMeta = await fetch(`https://bot-production-4200.up.railway.app/api/token-meta?tokens=${lc}`, { headers: { "user-agent": "arctools-site-ssr/1.0" }, signal: AbortSignal.timeout(4000) })
-        .then((r) => r.json()).then((j: { meta?: Record<string, { logo: string | null; twitter: string | null; telegram: string | null; website: string | null }> }) => j.meta?.[lc] ?? null).catch(() => null);
+        .then((r) => r.json()).then((j: { meta?: Record<string, { logo: string | null; twitter: string | null; telegram: string | null; website: string | null; ds_enhanced?: boolean }> }) => j.meta?.[lc] ?? null).catch(() => null);
+      // owner-filled DexScreener artwork (paid "Enhanced Token Info") outranks every guessed source except our own pad upload
+      const dsLogo = botMeta?.ds_enhanced && botMeta.logo ? ipfsToHttp(String(botMeta.logo)) : "";
       return {
         createdAt: typeof meta.deployTs === "number" ? new Date(Number(meta.deployTs) * 1000).toISOString() : null,
         decimals,
@@ -838,7 +840,7 @@ export const tokenPage = createServerFn({ method: "POST" })
         stock: stockInfo,
         longPool,
         liquidityUsdc,
-        logo: padLogo || ipfsToHttp(String(meta.icon ?? "")) || listRow?.logo || (await screenerIcons().then((m) => ipfsToHttp(m.get(lc) ?? "")).catch(() => "")) || botMeta?.logo || xAvatar(padSocial.twitter || (meta.twitter as string) || botMeta?.twitter || null),
+        logo: padLogo || dsLogo || ipfsToHttp(String(meta.icon ?? "")) || listRow?.logo || (await screenerIcons().then((m) => ipfsToHttp(m.get(lc) ?? "")).catch(() => "")) || botMeta?.logo || xAvatar(padSocial.twitter || (meta.twitter as string) || botMeta?.twitter || null),
         mcapUsd,
         name,
         pool,
@@ -1856,16 +1858,19 @@ export const tokenLogos = createServerFn({ method: "POST" })
     // in social_tokens. The Terminal used to skip it entirely, which is why a token could show its logo on the
     // token page (which reads this) and a blank circle in the list.
     try {
-      const missingMeta = want.filter((t) => !out[t]);
-      for (let i = 0; i < missingMeta.length; i += 40) {   // 40 addresses keeps the request line inside aiohttp's 8 KB limit
-        const chunk = missingMeta.slice(i, i + 40).sort();
-        const j = await memo(`logometa:${chunk.map((t) => t.slice(2, 10)).join("")}`, 300_000, async () =>
+      // every wanted token, not only the blanks: a DexScreener owner-filled logo must replace a guessed one that is
+      // already sitting in memory or in a screener list (that is how TOLLY / WONK kept an X avatar after paying DS)
+      for (let i = 0; i < want.length; i += 40) {   // 40 addresses keeps the request line inside aiohttp's 8 KB limit
+        const chunk = want.slice(i, i + 40).sort();
+        const j = await memo(`logometa2:${chunk.map((t) => t.slice(2, 10)).join("")}`, 300_000, async () =>
           (await fetch(`https://bot-production-4200.up.railway.app/api/token-meta?tokens=${chunk.join(",")}`, { headers: { "user-agent": "arctools-site-ssr/1.0" }, signal: AbortSignal.timeout(8000) })
-            .then((r) => r.json())) as { meta?: Record<string, { logo?: string | null }> },
+            .then((r) => r.json())) as { meta?: Record<string, { logo?: string | null; ds_enhanced?: boolean }> },
           (v) => !!v && typeof v === "object");
         for (const [t, m] of Object.entries(j.meta ?? {})) {
           const u = ipfsToHttp(String(m?.logo ?? ""));
-          if (u) out[t.toLowerCase()] = u;
+          if (!u) continue;
+          const k = t.toLowerCase();
+          if (m?.ds_enhanced || !out[k]) out[k] = u;
         }
       }
     } catch { /* bot API busy: the other sources still apply */ }
@@ -1896,6 +1901,29 @@ export const tokenLogos = createServerFn({ method: "POST" })
       }).catch(() => "");
       if (u) out[t] = u;
     }));
+    return out;
+  });
+
+/** Owner-filled DexScreener logos only (paid "Enhanced Token Info"): the Terminal lets these replace a list icon, nothing else does. */
+export const dsLogos = createServerFn({ method: "POST" })
+  .inputValidator((input: { tokens: string[] }) => input)
+  .handler(async ({ data }): Promise<Record<string, string>> => {
+    const want = [...new Set(data.tokens.slice(0, 200).map((t) => t.toLowerCase()))].sort();
+    const out: Record<string, string> = {};
+    for (let i = 0; i < want.length; i += 40) {
+      const chunk = want.slice(i, i + 40);
+      try {
+        const j = await memo(`dslogo:${chunk.map((t) => t.slice(2, 10)).join("")}`, 300_000, async () =>
+          (await fetch(`https://bot-production-4200.up.railway.app/api/token-meta?tokens=${chunk.join(",")}`, { headers: { "user-agent": "arctools-site-ssr/1.0" }, signal: AbortSignal.timeout(8000) })
+            .then((r) => r.json())) as { meta?: Record<string, { logo?: string | null; ds_enhanced?: boolean }> },
+          (v) => !!v && typeof v === "object");
+        for (const [t, m] of Object.entries(j.meta ?? {})) {
+          if (!m?.ds_enhanced) continue;
+          const u = ipfsToHttp(String(m.logo ?? ""));
+          if (u && /dexscreener\.com/.test(u)) out[t.toLowerCase()] = u;
+        }
+      } catch { /* bot API busy: list icons stay */ }
+    }
     return out;
   });
 

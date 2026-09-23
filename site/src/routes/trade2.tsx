@@ -7,7 +7,7 @@ import { ArcNav } from "@/components/arc-nav";
 import { AdBand } from "@/components/ad-band";
 import { DsRail } from "@/components/ds-rail";
 import { usePrefs } from "@/lib/i18n";
-import { holderRisk, listAllTokens, listFirstPaint, tokenLogos, type PadToken, xAvatar } from "@/lib/arc-api";
+import { dsLogos, holderRisk, listAllTokens, listFirstPaint, tokenLogos, type PadToken, xAvatar } from "@/lib/arc-api";
 import { rememberRows } from "@/lib/lite-cache";
 import { ARC_AGGREGATOR, connectWallet, encodeAggregatorSwap, ethCall, getStoredWallet, onWalletChange, p32, sendTx, waitReceipt } from "@/lib/arc-wallet";
 import { hasWallet, hotAddress, hotCall, hotSend, hotWait } from "@/lib/arc-hotwallet";
@@ -439,6 +439,7 @@ function Trade() {
   const [favs, setFavs] = useState<Set<string>>(new Set());
   const [liq, setLiq] = useState<Map<string, number>>(new Map());
   const [logos, setLogos] = useState<Record<string, string>>({});
+  const [dsl, setDsl] = useState<Record<string, string>>({}); const dslAsked = useRef<Set<string>>(new Set());
   const [risk, setRisk] = useState<Record<string, Risk>>(((initial as { risk0?: Record<string, Risk> } | undefined)?.risk0) ?? {});
   const riskMiss = useRef<Set<string>>(new Set());   // tokens the risk index has no data for (render "—", not "…")
   const riskRef = useRef<Record<string, Risk>>(((initial as { risk0?: Record<string, Risk> } | undefined)?.risk0) ?? {});   // latest risk map for the pollers (avoids stale closures)
@@ -706,7 +707,7 @@ function Trade() {
     const seenTs = t?.createdAt ? new Date(t.createdAt).getTime() / 1000 : tr?.first_ts ?? null;
     const createdTs = born != null && seenTs != null ? Math.min(born, seenTs) : born ?? seenTs;
     return {
-      token: k, symbol: tr?.symbol ?? t?.symbol ?? short(k), name: t?.name ?? tr?.symbol ?? "", logo: t?.logo ?? logos[k] ?? xAvatar(t?.twitter) ?? null, pad: t?.pad ?? "", og: !!t?.og, stock: !!t?.stock, quoteSymbol: t?.quoteSymbol ?? null, dexes: t?.dexes ?? [],
+      token: k, symbol: tr?.symbol ?? t?.symbol ?? short(k), name: t?.name ?? tr?.symbol ?? "", logo: dsl[k] ?? t?.logo ?? logos[k] ?? xAvatar(t?.twitter) ?? null, pad: t?.pad ?? "", og: !!t?.og, stock: !!t?.stock, quoteSymbol: t?.quoteSymbol ?? null, dexes: t?.dexes ?? [],
       age: createdTs, ca: k, mcap: finN(t?.stock ? (t?.mcapUsd ?? tr?.mcap) : (tr?.mcap ?? t?.mcapUsd)), chg: Number.isFinite(Number(tr?.chg)) ? tr?.chg ?? null : null, athMcap: finN(tr?.ath_mcap),
       liq: finN(liq.get(k) ?? t?.liqUsd), vol: fin(tr?.vol ?? (tf === 0 || tab === "topvol" ? t?.volUsd : 0)), txs: fin(tr?.txs),
       curve: typeof t?.curve === "number" && t.curve >= 0 && t.curve <= 100 ? t.curve : null, buys: tr?.buys ?? 0, sells: tr?.sells ?? 0, traders: tr?.traders ?? 0,
@@ -822,6 +823,9 @@ function Trade() {
     const vis = pageRows.map((r) => r.token.toLowerCase());
     const needLogo = vis.filter((t) => !logos[t] && !byToken.get(t)?.logo);
     if (needLogo.length) void tokenLogos({ data: { tokens: needLogo } }).then((m) => setLogos((o) => ({ ...o, ...m }))).catch(() => null);
+    // owner-filled DexScreener artwork replaces a list icon (RadarDex / launchpad feeds keep the first picture forever)
+    const askDs = vis.filter((t) => !dslAsked.current.has(t)); askDs.forEach((t) => dslAsked.current.add(t));
+    if (askDs.length) void dsLogos({ data: { tokens: askDs } }).then((m) => { if (Object.keys(m).length) setDsl((o) => ({ ...o, ...m })); }).catch(() => null);
     fetchLiq(vis);
     const liqId = setInterval(() => { if (!document.hidden) fetchLiq(vis); }, 30_000);   // refill anything still missing / refresh
     // risk for EVERY visible row, in chunks of 12 so the first rows render fast; retried 3× (relay/arc-scan hiccups),

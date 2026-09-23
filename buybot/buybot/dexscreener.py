@@ -173,7 +173,10 @@ async def sweep_once(limit: int = 600) -> tuple[int, int]:
                                                ds_enhanced, ds_url, ds_checked, updated)
                     VALUES (:t, '', '', :l, :x, :g, :w, :e, :u, :n, :n)
                     ON CONFLICT (token) DO UPDATE SET
-                        logo = COALESCE(social_tokens.logo, EXCLUDED.logo),
+                        -- owner-filled DexScreener artwork beats every guessed source (X avatar, contract field, launchpad
+                        -- list); a token that upgraded its DS profile used to keep the old picture forever
+                        logo = CASE WHEN EXCLUDED.logo IS NOT NULL AND COALESCE(social_tokens.logo_src, '') NOT IN ('dexscreener', 'manual')
+                                    THEN EXCLUDED.logo ELSE COALESCE(social_tokens.logo, EXCLUDED.logo) END,
                         x_handle = COALESCE(social_tokens.x_handle, EXCLUDED.x_handle),
                         tg_handle = COALESCE(social_tokens.tg_handle, EXCLUDED.tg_handle),
                         domain = COALESCE(social_tokens.domain, EXCLUDED.domain),
@@ -185,9 +188,9 @@ async def sweep_once(limit: int = 600) -> tuple[int, int]:
                                 e=got.get("ds_enhanced") or 0, u=got.get("ds_url"), n=now))
                 # owner-filled artwork is as good as it gets: stop the other hunters from spending lookups on it
                 if logo:
-                    await db.execute(text("UPDATE social_tokens SET logo_src = COALESCE(logo_src, 'dexscreener'), "
+                    await db.execute(text("UPDATE social_tokens SET logo_src = CASE WHEN logo = :l THEN 'dexscreener' ELSE logo_src END, "
                                           "logo_checked = :far WHERE token = :t")
-                                     .bindparams(t=tok, far=now + 10 * 365 * 86400))
+                                     .bindparams(t=tok, l=logo, far=now + 10 * 365 * 86400))
             await asyncio.sleep(0.25)                  # ~240 requests/min, inside their limit
     return len(rows), found
 
@@ -198,6 +201,10 @@ async def ds_loop() -> None:
         await clean_bad_handles()   # one-off repair of handles the old last-segment parser invented
     except Exception as e:  # noqa
         log.warning("dexscreener cleanup: %s", e)
+    try:   # one-off: tokens whose owner filled DexScreener in but still wear a guessed logo are re-read first
+        await db.execute(text("UPDATE social_tokens SET ds_checked = 0 WHERE ds_enhanced = 1 AND COALESCE(logo_src, '') NOT IN ('dexscreener', 'manual')"))
+    except Exception as e:  # noqa
+        log.warning("dexscreener reopen: %s", e)
     await asyncio.sleep(70)
     while True:
         try:
