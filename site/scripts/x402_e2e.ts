@@ -1,0 +1,22 @@
+/** x402 client for ArcTools — signs an EIP-3009 authorization with a private key and calls a paid endpoint. Also the reference for the docs. */
+import { keccak_256 } from "@noble/hashes/sha3.js";
+import * as secp from "@noble/secp256k1";
+const KEY = process.env.AGENT_KEY!.replace(/^0x/, ""); const EP = process.argv[2] ?? "token-stats"; const TOKEN = process.argv[3] ?? "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52";
+const hex = (b: Uint8Array) => "0x" + Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+const fromHex = (h: string) => Uint8Array.from((h.replace(/^0x/, "").match(/.{2}/g) ?? []).map((x) => parseInt(x, 16)));
+const kt = (s: string) => keccak_256(new TextEncoder().encode(s)); const pad = (h: string) => h.replace(/^0x/, "").toLowerCase().padStart(64, "0"); const num = (v: string | bigint) => BigInt(v).toString(16).padStart(64, "0");
+const addr = hex(keccak_256(secp.getPublicKey(KEY, false).slice(1)).slice(12));
+const url = `https://arctools.fun/api/x402/${EP}?token=${TOKEN}`;
+const r1 = await fetch(url); console.log("1) unpaid →", r1.status);
+const ch = JSON.parse(atob(r1.headers.get("PAYMENT-REQUIRED")!)); const acc = ch.accepts[0]; console.log("   price", Number(acc.maxAmountRequired) / 1e6, "USDC →", acc.payTo, "on", acc.network);
+const now = Math.floor(Date.now() / 1000);
+const a = { from: addr, to: acc.payTo, value: acc.maxAmountRequired, validAfter: String(now - 60), validBefore: String(now + acc.maxTimeoutSeconds), nonce: hex(crypto.getRandomValues(new Uint8Array(32))) };
+const domain = keccak_256(fromHex(hex(kt("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")) + hex(kt(acc.extra.name)).slice(2) + hex(kt(acc.extra.version)).slice(2) + num(5042n) + pad(acc.asset)));
+const struct = keccak_256(fromHex(hex(kt("TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)")) + pad(a.from) + pad(a.to) + num(a.value) + num(a.validAfter) + num(a.validBefore) + pad(a.nonce)));
+const digest = keccak_256(new Uint8Array([0x19, 0x01, ...domain, ...struct]));
+const rs = await secp.signAsync(digest, KEY, { lowS: true }); const sig = hex(rs.toBytes()) + (27 + rs.recovery).toString(16);
+const payment = { x402Version: 1, scheme: "exact", network: acc.network, payload: { signature: sig, authorization: a } };
+const t0 = Date.now(); const r2 = await fetch(url, { headers: { "X-PAYMENT": btoa(JSON.stringify(payment)) } });
+console.log("2) paid →", r2.status, "in", Date.now() - t0, "ms; X-PAYMENT-RESPONSE:", JSON.parse(atob(r2.headers.get("X-PAYMENT-RESPONSE") ?? btoa("{}"))));
+const body = await r2.json(); console.log("   body keys:", Object.keys(body).slice(0, 12), "| x402:", body.x402);
+const r3 = await fetch(url, { headers: { "X-PAYMENT": btoa(JSON.stringify(payment)) } }); console.log("3) replay same payment →", r3.status, JSON.parse(atob(r3.headers.get("X-PAYMENT-RESPONSE") ?? btoa("{}"))));

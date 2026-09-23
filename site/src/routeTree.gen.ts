@@ -48,6 +48,8 @@ import { Route as BuyRouteImport } from './routes/buy'
 import { Route as Bridge2RouteImport } from './routes/bridge2'
 import { Route as BridgeRouteImport } from './routes/bridge'
 import { Route as AppRouteImport } from './routes/app'
+import { Route as ApiDocs2RouteImport } from './routes/api-docs2'
+import { Route as ApiDocsRouteImport } from './routes/api-docs'
 import { Route as Advertise2RouteImport } from './routes/advertise2'
 import { Route as AdvertiseRouteImport } from './routes/advertise'
 import { Route as IndexRouteImport } from './routes/index'
@@ -79,6 +81,7 @@ import { Route as ApiAdsSubmitRouteImport } from './routes/api/ads-submit'
 import { Route as ApiAdsReviewRouteImport } from './routes/api/ads-review'
 import { Route as ApiAdsNotifyRouteImport } from './routes/api/ads-notify'
 import { Route as ApiAdsRouteImport } from './routes/api/ads'
+import { Route as ApiX402EndpointRouteImport } from './routes/api/x402.$endpoint'
 import { Route as ApiPadLogoCaRouteImport } from './routes/api/pad-logo.$ca'
 import { Route as ApiAdsImgIdRouteImport } from './routes/api/ads-img.$id'
 import { Route as ApiLogoIpfsCidRouteImport } from './routes/api/logo.ipfs.$cid'
@@ -278,6 +281,16 @@ const AppRoute = AppRouteImport.update({
   path: '/app',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDocs2Route = ApiDocs2RouteImport.update({
+  id: '/api-docs2',
+  path: '/api-docs2',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDocsRoute = ApiDocsRouteImport.update({
+  id: '/api-docs',
+  path: '/api-docs',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const Advertise2Route = Advertise2RouteImport.update({
   id: '/advertise2',
   path: '/advertise2',
@@ -433,6 +446,11 @@ const ApiAdsRoute = ApiAdsRouteImport.update({
   path: '/api/ads',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiX402EndpointRoute = ApiX402EndpointRouteImport.update({
+  id: '/api/x402/$endpoint',
+  path: '/api/x402/$endpoint',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPadLogoCaRoute = ApiPadLogoCaRouteImport.update({
   id: '/api/pad-logo/$ca',
   path: '/api/pad-logo/$ca',
@@ -453,6 +471,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/advertise': typeof AdvertiseRoute
   '/advertise2': typeof Advertise2Route
+  '/api-docs': typeof ApiDocsRoute
+  '/api-docs2': typeof ApiDocs2Route
   '/app': typeof AppRoute
   '/bridge': typeof BridgeRoute
   '/bridge2': typeof Bridge2Route
@@ -522,12 +542,15 @@ export interface FileRoutesByFullPath {
   '/x/$handle': typeof XHandleRoute
   '/api/ads-img/$id': typeof ApiAdsImgIdRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
+  '/api/x402/$endpoint': typeof ApiX402EndpointRoute
   '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/advertise': typeof AdvertiseRoute
   '/advertise2': typeof Advertise2Route
+  '/api-docs': typeof ApiDocsRoute
+  '/api-docs2': typeof ApiDocs2Route
   '/app': typeof AppRoute
   '/bridge': typeof BridgeRoute
   '/bridge2': typeof Bridge2Route
@@ -597,6 +620,7 @@ export interface FileRoutesByTo {
   '/x/$handle': typeof XHandleRoute
   '/api/ads-img/$id': typeof ApiAdsImgIdRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
+  '/api/x402/$endpoint': typeof ApiX402EndpointRoute
   '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
 }
 export interface FileRoutesById {
@@ -604,6 +628,8 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/advertise': typeof AdvertiseRoute
   '/advertise2': typeof Advertise2Route
+  '/api-docs': typeof ApiDocsRoute
+  '/api-docs2': typeof ApiDocs2Route
   '/app': typeof AppRoute
   '/bridge': typeof BridgeRoute
   '/bridge2': typeof Bridge2Route
@@ -673,6 +699,7 @@ export interface FileRoutesById {
   '/x/$handle': typeof XHandleRoute
   '/api/ads-img/$id': typeof ApiAdsImgIdRoute
   '/api/pad-logo/$ca': typeof ApiPadLogoCaRoute
+  '/api/x402/$endpoint': typeof ApiX402EndpointRoute
   '/api/logo/ipfs/$cid': typeof ApiLogoIpfsCidRoute
 }
 export interface FileRouteTypes {
@@ -681,6 +708,8 @@ export interface FileRouteTypes {
     | '/'
     | '/advertise'
     | '/advertise2'
+    | '/api-docs'
+    | '/api-docs2'
     | '/app'
     | '/bridge'
     | '/bridge2'
@@ -750,12 +779,15 @@ export interface FileRouteTypes {
     | '/x/$handle'
     | '/api/ads-img/$id'
     | '/api/pad-logo/$ca'
+    | '/api/x402/$endpoint'
     | '/api/logo/ipfs/$cid'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/advertise'
     | '/advertise2'
+    | '/api-docs'
+    | '/api-docs2'
     | '/app'
     | '/bridge'
     | '/bridge2'
@@ -825,12 +857,15 @@ export interface FileRouteTypes {
     | '/x/$handle'
     | '/api/ads-img/$id'
     | '/api/pad-logo/$ca'
+    | '/api/x402/$endpoint'
     | '/api/logo/ipfs/$cid'
   id:
     | '__root__'
     | '/'
     | '/advertise'
     | '/advertise2'
+    | '/api-docs'
+    | '/api-docs2'
     | '/app'
     | '/bridge'
     | '/bridge2'
@@ -900,6 +935,7 @@ export interface FileRouteTypes {
     | '/x/$handle'
     | '/api/ads-img/$id'
     | '/api/pad-logo/$ca'
+    | '/api/x402/$endpoint'
     | '/api/logo/ipfs/$cid'
   fileRoutesById: FileRoutesById
 }
@@ -907,6 +943,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdvertiseRoute: typeof AdvertiseRoute
   Advertise2Route: typeof Advertise2Route
+  ApiDocsRoute: typeof ApiDocsRoute
+  ApiDocs2Route: typeof ApiDocs2Route
   AppRoute: typeof AppRoute
   BridgeRoute: typeof BridgeRoute
   Bridge2Route: typeof Bridge2Route
@@ -976,6 +1014,7 @@ export interface RootRouteChildren {
   XHandleRoute: typeof XHandleRoute
   ApiAdsImgIdRoute: typeof ApiAdsImgIdRoute
   ApiPadLogoCaRoute: typeof ApiPadLogoCaRoute
+  ApiX402EndpointRoute: typeof ApiX402EndpointRoute
   ApiLogoIpfsCidRoute: typeof ApiLogoIpfsCidRoute
 }
 
@@ -1254,6 +1293,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api-docs2': {
+      id: '/api-docs2'
+      path: '/api-docs2'
+      fullPath: '/api-docs2'
+      preLoaderRoute: typeof ApiDocs2RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api-docs': {
+      id: '/api-docs'
+      path: '/api-docs'
+      fullPath: '/api-docs'
+      preLoaderRoute: typeof ApiDocsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/advertise2': {
       id: '/advertise2'
       path: '/advertise2'
@@ -1471,6 +1524,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAdsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/x402/$endpoint': {
+      id: '/api/x402/$endpoint'
+      path: '/api/x402/$endpoint'
+      fullPath: '/api/x402/$endpoint'
+      preLoaderRoute: typeof ApiX402EndpointRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/pad-logo/$ca': {
       id: '/api/pad-logo/$ca'
       path: '/api/pad-logo/$ca'
@@ -1499,6 +1559,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdvertiseRoute: AdvertiseRoute,
   Advertise2Route: Advertise2Route,
+  ApiDocsRoute: ApiDocsRoute,
+  ApiDocs2Route: ApiDocs2Route,
   AppRoute: AppRoute,
   BridgeRoute: BridgeRoute,
   Bridge2Route: Bridge2Route,
@@ -1568,6 +1630,7 @@ const rootRouteChildren: RootRouteChildren = {
   XHandleRoute: XHandleRoute,
   ApiAdsImgIdRoute: ApiAdsImgIdRoute,
   ApiPadLogoCaRoute: ApiPadLogoCaRoute,
+  ApiX402EndpointRoute: ApiX402EndpointRoute,
   ApiLogoIpfsCidRoute: ApiLogoIpfsCidRoute,
 }
 export const routeTree = rootRouteImport

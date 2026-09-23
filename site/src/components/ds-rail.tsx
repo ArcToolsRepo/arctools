@@ -35,6 +35,7 @@ const MORE: [string, string, string][] = [
   ["trophy", "Traders", "/leaderboard2"],
   ["scan", "Scanner", "/scan2"],
   ["radar", "Intel", "/intel2"],
+  ["code", "API", "/api-docs2"],
   ["users", "Referrals", "/referrals2"],
   ["user", "Profile", "/profile2"],
 ];
@@ -57,6 +58,7 @@ function Icon({ kind }: { kind: string }) {
       {kind === "megaphone" && <><path {...p} d="M2.5 6.5v3l7 2.5V4z" /><path {...p} d="M9.5 5.5a2.5 2.5 0 0 1 0 5" /><path {...p} d="M4.5 9.7l1 3.3h1.6" /></>}
       {kind === "card" && <><rect {...p} height="9" rx="1.5" width="12" x="2" y="3.5" /><path {...p} d="M2 6.5h12" /><path {...p} d="M4.5 10h3" /></>}
       {kind === "updown" && <><path {...p} d="M4.5 12V4" /><path {...p} d="M2.5 6l2-2 2 2" /><path {...p} d="M11.5 4v8" /><path {...p} d="M9.5 10l2 2 2-2" /></>}
+      {kind === "code" && <><path {...p} d="M5.5 4.5L2 8l3.5 3.5" /><path {...p} d="M10.5 4.5L14 8l-3.5 3.5" /></>}
       {kind === "lock" && <><rect {...p} height="6.5" rx="1.2" width="9" x="3.5" y="7" /><path {...p} d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></>}
       {kind === "rocket" && <><path {...p} d="M8 1.5s3.2 1.8 3.2 5.4c0 2-1 3.7-1.6 4.4H6.4C5.8 10.6 4.8 8.9 4.8 6.9 4.8 3.3 8 1.5 8 1.5z" /><path {...p} d="M6.4 11.3L5 14l2-1 1 1.5 1-1.5 2 1-1.4-2.7" /></>}
       {kind === "link" && <><path {...p} d="M6.8 9.2a2.6 2.6 0 010-3.7l2-2a2.6 2.6 0 013.7 3.7l-1 1" /><path {...p} d="M9.2 6.8a2.6 2.6 0 010 3.7l-2 2a2.6 2.6 0 01-3.7-3.7l1-1" /></>}

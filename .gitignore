@@ -21,3 +21,6 @@ sniper/.openrouter_key
 .relay_key
 .hb_auth
 .predict_operator_key
+
+.x402_relayer_key
+.x402_settle_auth

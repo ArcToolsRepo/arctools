@@ -2744,6 +2744,8 @@ async def start_api():
     _logos.register(app)
     from . import predict as _predict
     _predict.register(app)
+    from . import x402 as _x402
+    _x402.register(app)
     _liq.register_risk(app)
     from . import referrals as _ref
     _ref.register(app)
