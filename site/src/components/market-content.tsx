@@ -260,10 +260,28 @@ function Sell({ addr, send, say, onDone }: { addr: string | null; send: (d: stri
   const [cat, setCat] = useState(0); const [price, setPrice] = useState("50"); const [days, setDays] = useState("3");
   const [title, setTitle] = useState(""); const [desc, setDesc] = useState(""); const [samples, setSamples] = useState(""); const [contact, setContact] = useState(""); const [tg, setTg] = useState("");
   const [mine, setMine] = useState<Gig[]>([]); const [busy, setBusy] = useState<string | null>(null); const [image, setImage] = useState("");
+  const [imgBusy, setImgBusy] = useState(false); const [editing, setEditing] = useState<number | null>(null);
   const onFile = (f: File | undefined) => {
-    if (!f) return; const img = new Image(); const u = URL.createObjectURL(f);
-    img.onload = () => { const c = document.createElement("canvas"); c.width = 800; c.height = 450; const g = c.getContext("2d")!; const s = Math.max(800 / img.width, 450 / img.height); g.drawImage(img, (800 - img.width * s) / 2, (450 - img.height * s) / 2, img.width * s, img.height * s); let out = c.toDataURL("image/webp", 0.85); if (out.length > 380_000) out = c.toDataURL("image/webp", 0.6); setImage(out); URL.revokeObjectURL(u); };
+    if (!f) return; setImgBusy(true); const img = new Image(); const u = URL.createObjectURL(f);
+    const fail = (why: string) => { setImgBusy(false); URL.revokeObjectURL(u); say(false, why); };
+    img.onerror = () => fail("This image could not be read — use PNG, JPEG or WebP.");
+    img.onload = () => {
+      try {
+        const c = document.createElement("canvas"); c.width = 800; c.height = 450; const g = c.getContext("2d")!; const s = Math.max(800 / img.width, 450 / img.height); g.drawImage(img, (800 - img.width * s) / 2, (450 - img.height * s) / 2, img.width * s, img.height * s);
+        let out = c.toDataURL("image/webp", 0.85); if (!out.startsWith("data:image/webp")) out = c.toDataURL("image/jpeg", 0.85); // Safari/Firefox without WebP canvas export
+        if (out.length > 380_000) out = out.startsWith("data:image/webp") ? c.toDataURL("image/webp", 0.6) : c.toDataURL("image/jpeg", 0.6);
+        setImage(out); setImgBusy(false); URL.revokeObjectURL(u);
+      } catch (e) { fail(String((e as Error).message ?? e)); }
+    };
     img.src = u;
+  };
+  const startEdit = (g: Gig) => { setEditing(g.id); setTitle(g.meta?.title ?? ""); setDesc(g.meta?.description ?? ""); setSamples((g.meta?.samples ?? []).join(" ")); setContact(g.meta?.contact ?? ""); setTg(g.meta?.tg ?? ""); setCat(g.category); setPrice(fmtUsdc(g.price, 0).replace(/,/g, "")); setDays(String(g.deliveryDays)); setImage(""); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const saveEdit = async () => {
+    if (editing == null) return;
+    if (title.trim().length < 3 || desc.trim().length < 20) { say(false, "Title ≥ 3 and description ≥ 20 characters"); return; }
+    setBusy("Publishing (signature)…");
+    try { await publishMeta(editing); say(true, image ? `Gig #${editing} updated — cover is live.` : `Gig #${editing} updated.`); setEditing(null); setImage(""); reload(); } catch (e) { say(false, String((e as Error).message ?? e)); }
+    setBusy(null);
   };
   const reload = useCallback(() => { if (addr) fetchGigs({ seller: addr, active: false }).then((d) => setMine(d.gigs)).catch(() => null); }, [addr]);
   useEffect(() => { reload(); }, [reload]);
@@ -314,7 +332,14 @@ function Sell({ addr, send, say, onDone }: { addr: string | null; send: (d: stri
               <input onChange={(e) => setContact(e.target.value)} placeholder="Contact shown on the gig (e.g. Telegram @you)" style={input} value={contact} />
               <input onChange={(e) => setTg(e.target.value)} placeholder="Telegram handle for order alerts (start @ArcToolsBuyBot first)" style={input} value={tg} />
             </div>
-            <button className="arc-cta" disabled={!!busy} onClick={() => void create()} type="button">{busy ?? "Create gig (on-chain) and publish"}</button>
+            {imgBusy && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>Processing image…</p>}
+            {editing != null ? (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="arc-cta" disabled={!!busy || imgBusy} onClick={() => void saveEdit()} type="button">{busy ?? `Update gig #${editing} (signature, no gas)`}</button>
+                <button onClick={() => { setEditing(null); setImage(""); }} style={chip(false)} type="button">Cancel</button>
+              </div>
+            ) : <button className="arc-cta" disabled={!!busy || imgBusy} onClick={() => void create()} type="button">{busy ?? "Create gig (on-chain) and publish"}</button>}
+            {editing != null && <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>Editing the description and cover only. Price and delivery days live on-chain — change them with Pause/Activate below or a new gig.</p>}
             <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>Listing is free. 2 % of each completed order goes to the ARCT buyback (1 % if you hold 250k ARCT). You can pause or reprice the gig any time; reviews stay.</p>
           </div>
         )}
@@ -328,7 +353,10 @@ function Sell({ addr, send, say, onDone }: { addr: string | null; send: (d: stri
               <span>{fmtUsdc(g.price, 0)} USDC · {g.deliveryDays} d · {g.sold} sold · <Stars n={g.rating} /></span>
               <button onClick={() => { setBusy("…"); send(enc.updateGig(g.id, !g.active, BigInt(g.price), g.deliveryDays, g.uri)).then(() => { say(true, g.active ? "Paused" : "Active"); reload(); }).catch((e) => say(false, String(e))).finally(() => setBusy(null)); }} style={chip(false)} type="button">{g.active ? "Pause" : "Activate"}</button>
             </div>
-            {!g.meta && <button onClick={() => { setTitle(title || `Gig #${g.id}`); publishMeta(g.id).then(() => { say(true, "Description published"); reload(); }).catch((e) => say(false, String((e as Error).message ?? e))); }} style={{ ...chip(false), marginTop: 6 }} type="button">Publish the description from the form →</button>}
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <button onClick={() => startEdit(g)} style={chip(editing === g.id)} type="button">{g.meta ? (g.meta.image ? "Edit / change cover" : "Edit / add cover") : "Write the description"}</button>
+              {!g.meta && <button onClick={() => { setTitle(title || `Gig #${g.id}`); publishMeta(g.id).then(() => { say(true, "Description published"); reload(); }).catch((e) => say(false, String((e as Error).message ?? e))); }} style={chip(false)} type="button">Publish the form as is →</button>}
+            </div>
           </div>
         ))}
       </div>

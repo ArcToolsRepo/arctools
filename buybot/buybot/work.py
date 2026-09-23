@@ -39,6 +39,7 @@ CATEGORIES = ["Logo & banner", "Website / landing", "Telegram / Discord setup", 
 STATUS = ["none", "paid", "delivered", "completed", "refunded", "disputed", "resolved"]
 ADMIN_TG = os.getenv("ADMIN_TG_ID", "8351095206")
 bot = None   # aiogram Bot, set by main
+ALERT_TOKEN = os.environ.get("ALERT_BOT_TOKEN", "")   # @ArcSniper_bot: the admin already has a DM with it (same channel as watchdog / banner review)
 
 _w3 = Web3(Web3.HTTPProvider(NODE_RPC, request_kwargs={"timeout": 20}))
 _c = _w3.eth.contract(address=Web3.to_checksum_address(ADDR), abi=ABI) if ADDR and ABI else None
@@ -158,6 +159,17 @@ async def api_order(req: web.Request) -> web.Response:
     o["events"] = [{"name": e["name"], "ts": int(e["ts"]), "actor": e["actor"], "data": e["data"]} for e in ev]
     return web.json_response(o, headers={**CORS, "Cache-Control": "no-store"})
 
+def _normalize_cover(data_url: str) -> str:
+    import base64, io
+    from PIL import Image
+    raw = base64.b64decode(data_url.split(",", 1)[1]); im = Image.open(io.BytesIO(raw)); im.load(); im = im.convert("RGB")
+    W, H = 800, 450; sc = max(W / im.width, H / im.height); im = im.resize((max(W, round(im.width * sc)), max(H, round(im.height * sc))), Image.LANCZOS)
+    x = (im.width - W) // 2; y = (im.height - H) // 2; im = im.crop((x, y, x + W, y + H))
+    for q in (85, 70, 55):
+        buf = io.BytesIO(); im.save(buf, "WEBP", quality=q); out = "data:image/webp;base64," + base64.b64encode(buf.getvalue()).decode()
+        if len(out) <= 300_000: return out
+    return out
+
 async def api_meta_post(req: web.Request) -> web.Response:
     """seller signs `arcwork-meta:<gigId>:<sha of the JSON body without sig>` with the gig's seller key (EIP-191)"""
     try: j = await req.json()
@@ -169,8 +181,11 @@ async def api_meta_post(req: web.Request) -> web.Response:
     tags = [str(t)[:24] for t in (j.get("tags") or [])][:8]; tg = re.sub(r"[^A-Za-z0-9_]", "", str(j.get("tg", "")))[:64]
     if len(title) < 3 or len(desc) < 20: return web.json_response({"ok": False, "reason": "title ≥ 3 and description ≥ 20 chars"}, status=400, headers=CORS)
     image = str(j.get("image") or "")
-    if image and (not re.match(r"^data:image/(png|webp|jpeg);base64,[A-Za-z0-9+/=]+$", image) or len(image) > 400_000): return web.json_response({"ok": False, "reason": "image must be a PNG/WebP/JPEG data URL under 300 KB"}, status=400, headers=CORS)
+    if image and (not re.match(r"^data:image/[a-z+.-]+;base64,[A-Za-z0-9+/=]+$", image) or len(image) > 3_000_000): return web.json_response({"ok": False, "reason": "image must be an image data URL under 2 MB"}, status=400, headers=CORS)
     payload = json.dumps({"gigId": gid, "title": title, "description": desc, "samples": samples, "contact": contact, "tags": tags, "tg": tg, "image": image}, separators=(",", ":"), sort_keys=True)
+    if image:   # signature covers the original; storage gets a normalised 800x450 WebP (any browser / format works)
+        try: image = await asyncio.get_event_loop().run_in_executor(None, _normalize_cover, image)
+        except Exception as e: return web.json_response({"ok": False, "reason": f"image could not be decoded ({str(e)[:60]})"}, status=400, headers=CORS)
     msg = f"arcwork-meta:{gid}:{Web3.keccak(text=payload).hex()}"
     try: signer = Account.recover_message(encode_defunct(text=msg), signature=j.get("sig", "")).lower()
     except Exception: return web.json_response({"ok": False, "reason": "bad signature"}, status=400, headers=CORS)
@@ -225,6 +240,16 @@ async def api_stats(req: web.Request) -> web.Response:
 
 # ───────────────────────── event loop (notifications + log) ─────────────────────────
 async def _tg(chat_id, text_: str):
+    """admin → @ArcSniper_bot (raw HTTP, like watchdog); sellers → @ArcToolsBuyBot (aiogram, only if they started it)"""
+    if str(chat_id) == str(ADMIN_TG) and ALERT_TOKEN:
+        try:
+            import aiohttp
+            async with aiohttp.ClientSession() as cs:
+                r = await cs.post(f"https://api.telegram.org/bot{ALERT_TOKEN}/sendMessage", json={"chat_id": ADMIN_TG, "text": text_, "disable_web_page_preview": True}, timeout=aiohttp.ClientTimeout(total=20))
+                if r.status != 200: log.warning("work admin tg %s: %s", r.status, (await r.text())[:200])
+                else: _state["notified"] += 1
+        except Exception as e: log.warning("work admin tg: %s", e)
+        return
     if not bot: return
     try: await bot.send_message(chat_id, text_, disable_web_page_preview=True)
     except Exception as e: log.warning("work tg %s: %s", chat_id, e)
@@ -265,16 +290,33 @@ async def _handle(lg) -> None:
     _cache["gigs"] = (0, [])
     # notifications
     meta = await all_meta()
+    o = await one_order(int(oid)) if oid is not None else None
+    g = meta.get(int(o["gigId"]), {}) if o else meta.get(int(gid), {}) if gid is not None else {}
+    title = g.get("title") or (f"gig #{o['gigId']}" if o else f"gig #{gid}")
+    link = f"https://arctools.fun/market/order/{oid}" if oid is not None else f"https://arctools.fun/market/gig/{gid}"
+    seller_tg = f"@{g['tg']}" if g.get("tg") else None
+    usd_ = (int(o["amount"]) / 1e18) if o else 0
     if name == "OrderPaid":
-        g = meta.get(int(a["gigId"]), {}); title = g.get("title") or f"gig #{a['gigId']}"
-        txt = f"🛒 ArcWork: new order #{a['id']} — {title}\n{int(a['amount'])/1e18:.2f} USDC in escrow · buyer {a['buyer'][:10]}… · deadline {time.strftime('%d %b %H:%M', time.gmtime(int(a['deadline'])))} UTC\nhttps://arctools.fun/market/order/{a['id']}"
+        txt = f"🛒 ArcWork: new order #{oid} — {title}\n{usd_:.2f} USDC in escrow · buyer {a['buyer'][:10]}… · deadline {time.strftime('%d %b %H:%M', time.gmtime(int(a['deadline'])))} UTC\nBrief: {(o or {}).get('brief','')[:400]}\n{link}"
         await _tg(ADMIN_TG, txt)
-        if g.get("tg"): await _tg(f"@{g['tg']}", txt)   # works only if the seller started the bot; failures are logged, not fatal
-        _state["notified"] += 1
-    elif name == "OrderDisputed":
-        await _tg(ADMIN_TG, f"⚖️ ArcWork: order #{a['id']} DISPUTED by {a['by'][:10]}…\nReason: {a.get('reason','')[:300]}\nResolve: https://arctools.fun/market/order/{a['id']}")
+        if seller_tg: await _tg(seller_tg, txt)   # works only if the seller started the bot; failures are logged, not fatal
     elif name == "OrderDelivered":
-        await _tg(ADMIN_TG, f"📦 ArcWork: order #{a['id']} delivered — buyer has 72 h to accept.")
+        await _tg(ADMIN_TG, f"📦 ArcWork: order #{oid} ({title}) delivered — buyer has 72 h to accept.\nDelivery: {(o or {}).get('delivery','')[:300]}\n{link}")
+    elif name == "OrderCompleted":
+        await _tg(ADMIN_TG, f"✅ ArcWork: order #{oid} ({title}) accepted — {usd_:.2f} USDC released to seller {(o or {}).get('seller','')[:10]}…\n{link}")
+        if seller_tg: await _tg(seller_tg, f"✅ Order #{oid} accepted — {usd_:.2f} USDC released to you (minus fee). {link}")
+    elif name == "OrderRefunded":
+        await _tg(ADMIN_TG, f"↩️ ArcWork: order #{oid} ({title}) refunded ({usd_:.2f} USDC back to buyer) by {str(actor)[:10]}…\n{link}")
+    elif name == "OrderDisputed":
+        await _tg(ADMIN_TG, f"⚖️ ArcWork: order #{oid} ({title}) DISPUTED by {a['by'][:10]}…\nReason: {a.get('reason','')[:300]}\nResolve: {link}")
+        if seller_tg: await _tg(seller_tg, f"⚖️ Order #{oid} disputed: {a.get('reason','')[:300]}\n{link}")
+    elif name == "OrderResolved":
+        await _tg(ADMIN_TG, f"⚖️ ArcWork: order #{oid} resolved — buyer {int(a.get('buyerBps',0))/100:.0f} %.\n{link}")
+    elif name == "Reviewed":
+        await _tg(ADMIN_TG, f"⭐ ArcWork: order #{oid} ({title}) reviewed {int(a['stars'])}/5 by {(o or {}).get('buyer','')[:10]}…\n{a.get('text','')[:300]}\n{link}")
+        if seller_tg: await _tg(seller_tg, f"⭐ New {int(a['stars'])}/5 review on {title}: {a.get('text','')[:300]}")
+    elif name == "GigCreated":
+        await _tg(ADMIN_TG, f"🆕 ArcWork: gig #{gid} created by {str(a.get('seller',''))[:10]}… — {int(a.get('price',0))/1e18:.0f} USDC · {a.get('deliveryDays','?')} d\n{link}")
 
 def register(app: web.Application) -> None:
     app.router.add_get("/api/work/gigs", api_gigs)

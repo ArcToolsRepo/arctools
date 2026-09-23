@@ -151,7 +151,7 @@ function Sell({ me, send, onDone }: { me: string | null; send: (d: string, v?: b
   const [busy, setBusy] = useState<string | null>(null); const [mine, setMine] = useState<Gig[]>([]);
   const reload = useCallback(() => { if (me) fetch(`${BOT}/api/work/gigs?seller=${me}&active=0`).then((r) => r.json()).then((j) => setMine(j.gigs ?? [])).catch(() => undefined); }, [me]);
   useEffect(() => { reload(); }, [reload]);
-  const onFile = (f: File | undefined) => { if (!f) return; const img = new Image(); const u = URL.createObjectURL(f); img.onload = () => { const c = document.createElement("canvas"); c.width = 800; c.height = 450; const g = c.getContext("2d")!; const s = Math.max(800 / img.width, 450 / img.height); g.drawImage(img, (800 - img.width * s) / 2, (450 - img.height * s) / 2, img.width * s, img.height * s); let out = c.toDataURL("image/webp", 0.85); if (out.length > 380_000) out = c.toDataURL("image/webp", 0.6); setImage(out); URL.revokeObjectURL(u); }; img.src = u; };
+  const onFile = (f: File | undefined) => { if (!f) return; const img = new Image(); const u = URL.createObjectURL(f); img.onload = () => { const c = document.createElement("canvas"); c.width = 800; c.height = 450; const g = c.getContext("2d")!; const s = Math.max(800 / img.width, 450 / img.height); g.drawImage(img, (800 - img.width * s) / 2, (450 - img.height * s) / 2, img.width * s, img.height * s); let out = c.toDataURL("image/webp", 0.85); if (!out.startsWith("data:image/webp")) out = c.toDataURL("image/jpeg", 0.85); if (out.length > 380_000) out = out.startsWith("data:image/webp") ? c.toDataURL("image/webp", 0.6) : c.toDataURL("image/jpeg", 0.6); setImage(out); URL.revokeObjectURL(u); }; img.src = u; };
   const publish = async (gigId: number) => {
     const body = { gigId, title: title.trim(), description: desc.trim(), samples: [] as string[], contact: contact.trim(), tags: [] as string[], tg: "", image };
     const { message } = await fetch(`${BOT}/api/work/meta-message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
@@ -171,6 +171,9 @@ function Sell({ me, send, onDone }: { me: string | null; send: (d: string, v?: b
     } catch (e) { toast(String((e as Error).message ?? e), "err"); }
     setBusy(null);
   };
+  const [editing, setEditing] = useState<number | null>(null);
+  const startEdit = (g: Gig) => { setEditing(g.id); setTitle(g.meta?.title ?? ""); setDesc(g.meta?.description ?? ""); setContact(g.meta?.contact ?? ""); setCat(g.category); setImage(""); };
+  const saveEdit = async () => { if (editing == null) return; if (title.trim().length < 3 || desc.trim().length < 20) { toast("Title ≥ 3, description ≥ 20 chars", "err"); return; } setBusy("Publishing (signature)…"); try { await publish(editing); toast(`Gig #${editing} updated`, "ok"); setEditing(null); setImage(""); reload(); } catch (e) { toast(String((e as Error).message ?? e), "err"); } setBusy(null); };
   if (!me) return <div className="empty">Create or unlock a wallet to sell.</div>;
   return (
     <>
@@ -183,10 +186,10 @@ function Sell({ me, send, onDone }: { me: string | null; send: (d: string, v?: b
         <div className="field"><input onChange={(e) => setContact(e.target.value)} placeholder="Contact shown on the gig (Telegram @you)" value={contact} /></div>
         <label className="chip" style={{ display: "inline-block" }}>Cover image<input accept="image/*" onChange={(e) => onFile(e.target.files?.[0])} style={{ display: "none" }} type="file" /></label>
         {image && <img alt="" src={image} style={{ aspectRatio: "16 / 9", borderRadius: 10, display: "block", objectFit: "cover", width: "100%" }} />}
-        <button className="btn primary" disabled={!!busy} onClick={create}>{busy ?? "Create gig and publish"}</button>
+        {editing != null ? <div className="row" style={{ gap: 6 }}><button className="btn primary" disabled={!!busy} onClick={saveEdit} style={{ flex: 1 }}>{busy ?? `Update gig #${editing} (no gas)`}</button><button className="btn" onClick={() => { setEditing(null); setImage(""); }}>Cancel</button></div> : <button className="btn primary" disabled={!!busy} onClick={create}>{busy ?? "Create gig and publish"}</button>}
         <div className="muted" style={{ fontSize: 11.5 }}>Listing is free. 2 % of each completed order goes to the ARCT buyback (1 % if you hold 250k ARCT).</div>
       </div>
-      {mine.length > 0 && <div className="card"><div className="launch__label">My gigs</div>{mine.map((g) => <div className="row mono" key={g.id} style={{ justifyContent: "space-between", fontSize: 12, padding: "5px 0" }}><span>#{g.id} {g.meta?.title ?? "(no description)"} · {usd(g.price)} USDC</span><button className="chip" onClick={() => { setBusy("…"); send(enc.updateGig(g.id, !g.active, BigInt(g.price), g.deliveryDays, g.uri)).then(() => { toast(g.active ? "Paused" : "Active", "ok"); reload(); }).catch((e) => toast(String(e), "err")).finally(() => setBusy(null)); }}>{g.active ? "Pause" : "Activate"}</button></div>)}</div>}
+      {mine.length > 0 && <div className="card"><div className="launch__label">My gigs</div>{mine.map((g) => <div className="row mono" key={g.id} style={{ justifyContent: "space-between", fontSize: 12, padding: "5px 0" }}><span>#{g.id} {g.meta?.title ?? "(no description)"} · {usd(g.price)} USDC</span><button className="chip" onClick={() => startEdit(g)}>{g.meta?.image ? "Edit" : "Edit / cover"}</button><button className="chip" onClick={() => { setBusy("…"); send(enc.updateGig(g.id, !g.active, BigInt(g.price), g.deliveryDays, g.uri)).then(() => { toast(g.active ? "Paused" : "Active", "ok"); reload(); }).catch((e) => toast(String(e), "err")).finally(() => setBusy(null)); }}>{g.active ? "Pause" : "Activate"}</button></div>)}</div>}
     </>
   );
 }

@@ -2657,7 +2657,7 @@ async def start_api():
             pass
         return resp
 
-    app = web.Application()   # no gzip here: 14 ms of zlib per response on the indexer loop pushed the index 12 s behind
+    app = web.Application(client_max_size=4 * 1024 * 1024)   # 4 MB: gig covers arrive as data URLs; no gzip here: 14 ms of zlib per response on the indexer loop pushed the index 12 s behind
     from .botmetrics import api_heartbeat, api_ui_beacon
     app.router.add_post("/api/bot-heartbeat", api_heartbeat)
     app.router.add_post("/api/ui-beacon", api_ui_beacon)
