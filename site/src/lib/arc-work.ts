@@ -22,7 +22,7 @@ export const SEL = {
   review: "0xb6439cca",
 };
 
-export type GigMeta = { title: string; description: string; samples: string[]; contact: string; tags: string[]; tg: string; updated: number } | null;
+export type GigMeta = { title: string; description: string; samples: string[]; contact: string; tags: string[]; tg: string; updated: number; image?: string | null } | null;
 export type Gig = { id: number; seller: string; category: number; categoryLabel: string; price: string; deliveryDays: number; active: boolean; uri: string; sold: number; disputed: number; ratingSum: number; ratingCount: number; rating: number | null; meta: GigMeta; reviews?: { order: number; buyer: string; stars: number; text: string; ts: number }[] };
 export type SellerStats = { gigs: number; sold: number; disputed: number; rating: number | null; ratingCount: number };
 export type Order = { id: number; gigId: number; buyer: string; seller: string; amount: string; paidAt: number; deadline: number; deliveredAt: number; status: number; statusLabel: string; buyerBps: number; brief: string; delivery: string; stars: number; gig: Gig | null; events: { name: string; ts: number; actor: string; data: Record<string, unknown> }[] };

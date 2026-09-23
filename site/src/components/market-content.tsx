@@ -85,7 +85,9 @@ function Browse({ onOpen }: { onOpen: (id: number) => void }) {
           {data.gigs.map((g) => {
             const s = data.sellers[g.seller];
             return (
-              <button className="arc-body" key={g.id} onClick={() => onOpen(g.id)} style={{ ...card, cursor: "pointer", display: "grid", gap: 8, textAlign: "left" }} type="button">
+              <button className="arc-body" key={g.id} onClick={() => onOpen(g.id)} style={{ ...card, cursor: "pointer", display: "grid", gap: 8, padding: 0, overflow: "hidden", textAlign: "left" }} type="button">
+                {g.meta?.image ? <img alt="" loading="lazy" src={g.meta.image} style={{ aspectRatio: "16 / 9", display: "block", objectFit: "cover", width: "100%" }} /> : <div style={{ aspectRatio: "16 / 9", background: "linear-gradient(135deg, rgba(46,124,255,0.25), rgba(34,197,128,0.15))", display: "grid", placeItems: "center" }}><span className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 12 }}>{g.categoryLabel}</span></div>}
+                <div style={{ display: "grid", gap: 8, padding: "0 16px 16px" }}>
                 <div className="arc-mono" style={{ color: "var(--arc-muted)", display: "flex", fontSize: 11, justifyContent: "space-between", textTransform: "uppercase" }}><span>{g.categoryLabel}</span><span>{g.deliveryDays} d</span></div>
                 <div style={{ color: "var(--arc-ink)", fontSize: 16, fontWeight: 600, lineHeight: 1.3 }}>{g.meta?.title ?? `Gig #${g.id}`}</div>
                 <div style={{ color: "var(--arc-muted)", fontSize: 13, lineHeight: 1.45, maxHeight: 60, overflow: "hidden" }}>{g.meta?.description ?? g.uri}</div>
@@ -96,6 +98,7 @@ function Browse({ onOpen }: { onOpen: (id: number) => void }) {
                 <div className="arc-mono" style={{ display: "flex", fontSize: 12, gap: 8, justifyContent: "space-between" }}>
                   <a href={`/u/${g.seller}`} onClick={(e) => e.stopPropagation()} style={{ color: "var(--arc-cobalt)" }}>{g.seller === WORK_ARBITER ? "ArcTools" : short(g.seller)}</a>
                   <Stars n={s?.rating ?? null} />
+                </div>
                 </div>
               </button>
             );
@@ -125,6 +128,7 @@ function GigPage({ id, addr, send, say, onBack, onHired }: { id: number; addr: s
         <button className="arc-mono" onClick={onBack} style={{ ...chip(false), marginBottom: 12 }} type="button">← all gigs</button>
         <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11, margin: 0, textTransform: "uppercase" }}>{g.categoryLabel} · gig #{g.id}</p>
         <h2 className="arc-h2" style={{ fontSize: 24, margin: "6px 0 10px" }}>{g.meta?.title ?? `Gig #${g.id}`}</h2>
+        {g.meta?.image && <img alt="" src={g.meta.image} style={{ aspectRatio: "16 / 9", borderRadius: 10, display: "block", marginBottom: 12, objectFit: "cover", width: "100%" }} />}
         <p className="arc-body" style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{g.meta?.description ?? "The seller has not published a description yet."}</p>
         {g.meta?.samples?.length ? <p className="arc-mono" style={{ fontSize: 12 }}>Samples: {g.meta.samples.map((s, i) => <a href={s} key={s} rel="noreferrer" style={{ color: "var(--arc-cobalt)", marginRight: 8 }} target="_blank">[{i + 1}]</a>)}</p> : null}
         {g.meta?.tags?.length ? <p className="arc-mono" style={{ color: "var(--arc-muted)", fontSize: 11 }}>{g.meta.tags.map((t) => `#${t}`).join("  ")}</p> : null}
@@ -255,13 +259,18 @@ function Orders({ addr, send, say, focus }: { addr: string | null; send: (d: str
 function Sell({ addr, send, say, onDone }: { addr: string | null; send: (d: string, v?: bigint) => Promise<string>; say: (ok: boolean, t: string) => void; onDone: () => void }) {
   const [cat, setCat] = useState(0); const [price, setPrice] = useState("50"); const [days, setDays] = useState("3");
   const [title, setTitle] = useState(""); const [desc, setDesc] = useState(""); const [samples, setSamples] = useState(""); const [contact, setContact] = useState(""); const [tg, setTg] = useState("");
-  const [mine, setMine] = useState<Gig[]>([]); const [busy, setBusy] = useState<string | null>(null);
+  const [mine, setMine] = useState<Gig[]>([]); const [busy, setBusy] = useState<string | null>(null); const [image, setImage] = useState("");
+  const onFile = (f: File | undefined) => {
+    if (!f) return; const img = new Image(); const u = URL.createObjectURL(f);
+    img.onload = () => { const c = document.createElement("canvas"); c.width = 800; c.height = 450; const g = c.getContext("2d")!; const s = Math.max(800 / img.width, 450 / img.height); g.drawImage(img, (800 - img.width * s) / 2, (450 - img.height * s) / 2, img.width * s, img.height * s); let out = c.toDataURL("image/webp", 0.85); if (out.length > 380_000) out = c.toDataURL("image/webp", 0.6); setImage(out); URL.revokeObjectURL(u); };
+    img.src = u;
+  };
   const reload = useCallback(() => { if (addr) fetchGigs({ seller: addr, active: false }).then((d) => setMine(d.gigs)).catch(() => null); }, [addr]);
   useEffect(() => { reload(); }, [reload]);
   const canHot = !!addr && isUnlocked() && hotAddress()?.toLowerCase() === addr.toLowerCase();
 
   const publishMeta = async (gigId: number) => {
-    const body = { gigId, title: title.trim(), description: desc.trim(), samples: samples.split(/\s+/).filter((s) => s.startsWith("https://")), contact: contact.trim(), tags: [] as string[], tg: tg.replace(/^@/, "") };
+    const body = { gigId, title: title.trim(), description: desc.trim(), samples: samples.split(/\s+/).filter((s) => s.startsWith("https://")), contact: contact.trim(), tags: [] as string[], tg: tg.replace(/^@/, ""), image };
     const { message } = await fetch(`${BOT_API}/api/work/meta-message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
     if (!canHot) throw new Error("publishing the description needs the trading wallet (signature) — unlock it, or edit later");
     const sig = await hotSignMessage(message);
@@ -297,6 +306,10 @@ function Sell({ addr, send, say, onDone }: { addr: string | null; send: (d: stri
             <input maxLength={120} onChange={(e) => setTitle(e.target.value)} placeholder="Title — e.g. Logo + banner pack for your token (3 concepts, 2 revisions)" style={input} value={title} />
             <textarea maxLength={3000} onChange={(e) => setDesc(e.target.value)} placeholder="What exactly the buyer gets, what you need from them, revisions, formats. Be precise — this is what the arbiter reads in a dispute." rows={6} style={{ ...input, resize: "vertical" }} value={desc} />
             <input onChange={(e) => setSamples(e.target.value)} placeholder="Sample links (https://…, space-separated, up to 6)" style={input} value={samples} />
+            <label className="arc-mono" style={{ fontSize: 12 }}>Cover image (16:9, shown on the card)
+              <input accept="image/png,image/webp,image/jpeg" onChange={(e) => onFile(e.target.files?.[0])} style={{ ...input, marginTop: 4, padding: 6 }} type="file" />
+            </label>
+            {image && <img alt="cover preview" src={image} style={{ aspectRatio: "16 / 9", borderRadius: 8, display: "block", objectFit: "cover", width: "100%" }} />}
             <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
               <input onChange={(e) => setContact(e.target.value)} placeholder="Contact shown on the gig (e.g. Telegram @you)" style={input} value={contact} />
               <input onChange={(e) => setTg(e.target.value)} placeholder="Telegram handle for order alerts (start @ArcToolsBuyBot first)" style={input} value={tg} />

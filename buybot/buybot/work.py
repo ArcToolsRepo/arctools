@@ -29,6 +29,7 @@ from web3 import Web3
 from . import db
 
 log = logging.getLogger("work")
+BOT_PUBLIC = "https://bot-production-4200.up.railway.app"
 NODE_RPC = os.getenv("PRIMARY_RPC", "http://178.156.197.90:8545")
 HERE = os.path.dirname(__file__)
 DEPLOY = json.load(open(os.path.join(HERE, "..", "ArcWork.deploy.json"))) if os.path.exists(os.path.join(HERE, "..", "ArcWork.deploy.json")) else {}
@@ -51,6 +52,8 @@ ORDER_FIELDS = ("gigId", "buyer", "seller", "amount", "paidAt", "deadline", "del
 async def init() -> None:
     await db.execute(text("""CREATE TABLE IF NOT EXISTS work_meta (gig_id BIGINT PRIMARY KEY, seller VARCHAR(50), title VARCHAR(120), description TEXT, samples JSONB, contact VARCHAR(120),
         tags JSONB, tg VARCHAR(64), updated BIGINT)"""))
+    try: await db.execute(text("ALTER TABLE work_meta ADD COLUMN IF NOT EXISTS image TEXT"))
+    except Exception: pass
     await db.execute(text("CREATE TABLE IF NOT EXISTS work_events (tx VARCHAR(80), log_index INT, block BIGINT, ts BIGINT, name VARCHAR(24), order_id BIGINT, gig_id BIGINT, actor VARCHAR(50), data JSONB, PRIMARY KEY (tx, log_index))"))
     await db.execute(text("CREATE INDEX IF NOT EXISTS work_events_order ON work_events (order_id, block)"))
     await db.execute(text("CREATE TABLE IF NOT EXISTS work_reviews (order_id BIGINT PRIMARY KEY, gig_id BIGINT, buyer VARCHAR(50), stars SMALLINT, text_ TEXT, ts BIGINT)"))
@@ -89,8 +92,8 @@ async def all_meta() -> dict[int, dict]:
     ts, cached = _cache["meta"]
     if time.time() - ts < 15 and cached:
         return cached
-    rows = await db.fetchall(text("SELECT gig_id, seller, title, description, samples, contact, tags, tg, updated FROM work_meta"))
-    m = {int(r["gig_id"]): {"title": r["title"], "description": r["description"], "samples": r["samples"] or [], "contact": r["contact"], "tags": r["tags"] or [], "tg": r["tg"], "updated": int(r["updated"] or 0)} for r in rows}
+    rows = await db.fetchall(text("SELECT gig_id, seller, title, description, samples, contact, tags, tg, updated, (image IS NOT NULL AND image <> '') has_image FROM work_meta"))
+    m = {int(r["gig_id"]): {"title": r["title"], "description": r["description"], "samples": r["samples"] or [], "contact": r["contact"], "tags": r["tags"] or [], "tg": r["tg"], "updated": int(r["updated"] or 0), "image": f"{BOT_PUBLIC}/api/work/img/{int(r['gig_id'])}.png?v={int(r['updated'] or 0)}" if r["has_image"] else None} for r in rows}
     _cache["meta"] = (time.time(), m)
     return m
 
@@ -165,14 +168,17 @@ async def api_meta_post(req: web.Request) -> web.Response:
     samples = [str(s)[:300] for s in (j.get("samples") or []) if isinstance(s, str) and s.startswith("https://")][:6]
     tags = [str(t)[:24] for t in (j.get("tags") or [])][:8]; tg = re.sub(r"[^A-Za-z0-9_]", "", str(j.get("tg", "")))[:64]
     if len(title) < 3 or len(desc) < 20: return web.json_response({"ok": False, "reason": "title ≥ 3 and description ≥ 20 chars"}, status=400, headers=CORS)
-    payload = json.dumps({"gigId": gid, "title": title, "description": desc, "samples": samples, "contact": contact, "tags": tags, "tg": tg}, separators=(",", ":"), sort_keys=True)
+    image = str(j.get("image") or "")
+    if image and (not re.match(r"^data:image/(png|webp|jpeg);base64,[A-Za-z0-9+/=]+$", image) or len(image) > 400_000): return web.json_response({"ok": False, "reason": "image must be a PNG/WebP/JPEG data URL under 300 KB"}, status=400, headers=CORS)
+    payload = json.dumps({"gigId": gid, "title": title, "description": desc, "samples": samples, "contact": contact, "tags": tags, "tg": tg, "image": image}, separators=(",", ":"), sort_keys=True)
     msg = f"arcwork-meta:{gid}:{Web3.keccak(text=payload).hex()}"
     try: signer = Account.recover_message(encode_defunct(text=msg), signature=j.get("sig", "")).lower()
     except Exception: return web.json_response({"ok": False, "reason": "bad signature"}, status=400, headers=CORS)
     if signer != gigs[gid]["seller"]: return web.json_response({"ok": False, "reason": "signature is not the gig's seller", "expected_message": msg}, status=403, headers=CORS)
-    await db.execute(text("""INSERT INTO work_meta (gig_id, seller, title, description, samples, contact, tags, tg, updated) VALUES (:g,:s,:t,:d,CAST(:sa AS JSONB),:c,CAST(:tg2 AS JSONB),:tg,:u)
-        ON CONFLICT (gig_id) DO UPDATE SET title=EXCLUDED.title, description=EXCLUDED.description, samples=EXCLUDED.samples, contact=EXCLUDED.contact, tags=EXCLUDED.tags, tg=EXCLUDED.tg, updated=EXCLUDED.updated""")
-        .bindparams(g=gid, s=signer, t=title, d=desc, sa=json.dumps(samples), c=contact, tg2=json.dumps(tags), tg=tg, u=int(time.time())))
+    await db.execute(text("""INSERT INTO work_meta (gig_id, seller, title, description, samples, contact, tags, tg, updated, image) VALUES (:g,:s,:t,:d,CAST(:sa AS JSONB),:c,CAST(:tg2 AS JSONB),:tg,:u,:img)
+        ON CONFLICT (gig_id) DO UPDATE SET title=EXCLUDED.title, description=EXCLUDED.description, samples=EXCLUDED.samples, contact=EXCLUDED.contact, tags=EXCLUDED.tags, tg=EXCLUDED.tg, updated=EXCLUDED.updated,
+        image = CASE WHEN EXCLUDED.image <> '' THEN EXCLUDED.image ELSE work_meta.image END""")
+        .bindparams(g=gid, s=signer, t=title, d=desc, sa=json.dumps(samples), c=contact, tg2=json.dumps(tags), tg=tg, u=int(time.time()), img=image))
     _cache["meta"] = (0, {})
     return web.json_response({"ok": True, "gigId": gid}, headers=CORS)
 
@@ -182,7 +188,7 @@ async def api_meta_message(req: web.Request) -> web.Response:
     except Exception: return web.json_response({"error": "bad json"}, status=400, headers=CORS)
     gid = int(j.get("gigId", -1)); payload = json.dumps({"gigId": gid, "title": str(j.get("title", ""))[:120].strip(), "description": str(j.get("description", ""))[:3000].strip(),
         "samples": [str(s)[:300] for s in (j.get("samples") or []) if isinstance(s, str) and s.startswith("https://")][:6], "contact": str(j.get("contact", ""))[:120].strip(),
-        "tags": [str(t)[:24] for t in (j.get("tags") or [])][:8], "tg": re.sub(r"[^A-Za-z0-9_]", "", str(j.get("tg", "")))[:64]}, separators=(",", ":"), sort_keys=True)
+        "tags": [str(t)[:24] for t in (j.get("tags") or [])][:8], "tg": re.sub(r"[^A-Za-z0-9_]", "", str(j.get("tg", "")))[:64], "image": str(j.get("image") or "")}, separators=(",", ":"), sort_keys=True)
     return web.json_response({"message": f"arcwork-meta:{gid}:{Web3.keccak(text=payload).hex()}"}, headers=CORS)
 
 async def api_disputed(req: web.Request) -> web.Response:
@@ -198,6 +204,14 @@ async def api_disputed(req: web.Request) -> web.Response:
         ev = await db.fetchall(text("SELECT name, ts, actor, data FROM work_events WHERE order_id = :o ORDER BY block, log_index").bindparams(o=o["id"]))
         o["events"] = [{"name": e["name"], "ts": int(e["ts"]), "actor": e["actor"], "data": e["data"]} for e in ev]
     return web.json_response({"orders": orders}, headers={**CORS, "Cache-Control": "no-store"})
+
+async def api_img(req: web.Request) -> web.Response:
+    gid = int(req.match_info["gid"].removesuffix(".png"))
+    r = await db.fetchone(text("SELECT image FROM work_meta WHERE gig_id = :g").bindparams(g=gid))
+    m = re.match(r"^data:(image/[a-z]+);base64,(.+)$", (r["image"] if r else "") or "")
+    if not m: raise web.HTTPNotFound()
+    import base64
+    return web.Response(body=base64.b64decode(m.group(2)), content_type=m.group(1), headers={"Cache-Control": "public, max-age=86400", "Access-Control-Allow-Origin": "*"})
 
 async def api_stats(req: web.Request) -> web.Response:
     gigs = await all_gigs()
@@ -271,5 +285,6 @@ def register(app: web.Application) -> None:
     app.router.add_post("/api/work/meta-message", api_meta_message)
     app.router.add_get("/api/work/stats", api_stats)
     app.router.add_get("/api/work/disputed", api_disputed)
+    app.router.add_get("/api/work/img/{gid}", api_img)
     async def opts(req): return web.Response(status=204, headers=CORS)
     app.router.add_route("OPTIONS", "/api/work/meta", opts); app.router.add_route("OPTIONS", "/api/work/meta-message", opts)
