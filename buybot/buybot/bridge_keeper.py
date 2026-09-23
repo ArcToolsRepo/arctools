@@ -45,7 +45,7 @@ RECEIVE_SEL = "0x" + keccak(text="bridgeReceive(bytes,bytes)")[:4].hex()
 
 # public RPCs that answer without a key; each entry is tried in order
 SOURCES: dict[int, dict] = {
-    0: {"name": "Ethereum", "rpcs": ["https://eth.merkle.io", "https://ethereum-rpc.publicnode.com"], "span": 600, "block_time": 12.0},
+    0: {"name": "Ethereum", "rpcs": ["https://rpc.mevblocker.io", "https://mainnet.gateway.tenderly.co", "https://eth.merkle.io", "https://ethereum-rpc.publicnode.com"], "span": 600, "block_time": 12.0},
     3: {"name": "Arbitrum", "rpcs": ["https://arbitrum-one.publicnode.com", "https://arb1.arbitrum.io/rpc"], "span": 20000, "block_time": 0.25},
     6: {"name": "Base", "rpcs": ["https://base.publicnode.com", "https://mainnet.base.org"], "span": 4000, "block_time": 2.0},
 }
@@ -97,12 +97,21 @@ async def scan_source(s: aiohttp.ClientSession, domain: int) -> int:
         # first run after the parser fix: the old reading never matched a burn, so walk 14 days back once
         frm = head - int(14 * 86400 / cfg["block_time"])
     found = 0
+    span = cfg["span"]; fails = 0
     while frm <= head:
-        to = min(head, frm + cfg["span"])
+        to = min(head, frm + span)
         logs = await _rpc(s, cfg["rpcs"], "eth_getLogs",
                           [{"address": TOKEN_MESSENGER, "topics": [DEPOSIT_TOPIC], "fromBlock": hex(frm), "toBlock": hex(to)}], 45)
         if logs is None:
-            return found                                        # RPC unhappy: keep the cursor, try next cycle
+            # public RPCs answer 413 / "too many results" for a busy window: shrink and retry, give up for this cycle
+            # only after several shrinks (the cursor keeps the last good block, so nothing is skipped)
+            fails += 1
+            if fails > 6:
+                log.warning("bridge keeper: %s getLogs keeps failing at block %s (span %s)", cfg["name"], frm, span)
+                return found
+            span = max(250, span // 2)
+            await asyncio.sleep(1.5)
+            continue
         for lg in logs:
             w = _words(lg.get("data") or "")
             if len(w) < 7:
