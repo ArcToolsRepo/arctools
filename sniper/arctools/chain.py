@@ -43,6 +43,12 @@ class Chain:
                     hdr["X-Send-Auth"] = send_auth
             return AsyncWeb3(AsyncHTTPProvider(u, request_kwargs={"timeout": 4, "headers": hdr}))
         self.w3s = [_prov(u) for u in rpc_urls]
+        # broadcast-only pool: the US node forwards eth_sendRawTransaction to a rate-limited upstream (429), so a
+        # buy must also race through our relay (fans out to every upstream), the site Worker and the public RPCs.
+        # These are never benched — a 429 on a send says nothing about reads.
+        send_urls = [u.strip() for u in os.getenv("ARC_SEND_URLS", "https://rpc-production-ba7a.up.railway.app,https://arctools.fun/api/rpc,https://rpc.arc-scan.org,https://rpc.mainnet.arc.io").split(",") if u.strip()]
+        self.send_urls = [u for u in send_urls if u not in self.urls]
+        self.send_w3s = [_prov(u) for u in self.send_urls]
         self.chain_id = chain_id
         self._i = 0
         self._down: dict[int, float] = {}  # idx -> unix ts do kiedy w kwarantannie
@@ -186,7 +192,13 @@ class Chain:
             except Exception as e:  # noqa
                 return i, None, e
 
-        tasks = [asyncio.create_task(_tagged(i)) for i in alive]
+        async def _tagged_send(j: int):
+            try:
+                return -1 - j, await asyncio.wait_for(_send(self.send_w3s[j]), timeout=8.0), None
+            except Exception as e:  # noqa
+                return -1 - j, None, e
+
+        tasks = [asyncio.create_task(_tagged(i)) for i in alive] + [asyncio.create_task(_tagged_send(j)) for j in range(len(self.send_w3s))]
         errs: list[str] = []
         for fut in asyncio.as_completed(tasks):
             i, h, e = await fut
@@ -194,11 +206,13 @@ class Chain:
                 for t in tasks:
                     t.cancel()
                 return h
-            errs.append(f"{self.urls[i].split('/')[2]}: {str(e)[:80]}")
+            url = self.urls[i] if i >= 0 else self.send_urls[-1 - i]
+            errs.append(f"{url.split('/')[2]}: {str(e)[:80]}")
             msg = str(e).lower()
             # the node ANSWERED — about the tx or the wallet, not about itself. "already known" / "nonce too low" =
             # another node took it first; "insufficient funds" / reverts = the user's state. None of these bench a node.
-            if not any(k in msg for k in ("already known", "nonce too low", "replacement", "insufficient funds", "revert", "gas required")):
+            # A 429 on a SEND is the node's upstream forwarder, not the node — reads stay on it.
+            if i >= 0 and not any(k in msg for k in ("already known", "nonce too low", "replacement", "insufficient funds", "revert", "gas required", "429", "rate limit")):
                 self._mark_down(i, e)
         raise RuntimeError("broadcast failed on every live RPC: " + " | ".join(errs))
 
