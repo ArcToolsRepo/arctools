@@ -53,6 +53,9 @@ FACTORIES: dict[str, dict] = {
     "hopium":   {"label": "Hopium",      "url": "https://hopium.gg",     "twitter": "hopium_gg",       "factories": ["0x0727fe8a5c7073e5b5882bc5ba8d73a427cbe3aa"], "model": "instant V4 pool quoted in USDC or a stock token, liquidity locked (hook 0xc75076a1…, locker 0xa306b48e…)"},
     # --- 22.09: foci.family — Uniswap v4 launch with its own hook; factory event 0xdcacba5e… (token, pool-ish, creator)
     "foci":     {"label": "foci.family", "url": "https://foci.family", "twitter": "focidotfamily",    "factories": ["0x5c5c202271e1300bd5ce43a4f5c1cea8efd57b63"], "model": "instant V4 pool with hook 0xf847790b…, USDC-quoted", "hooks": ["0xf847790b6fa5da300bb3f56f10d743e71e98e044"]},
+    # --- 24.09: ArcStockpad — coins paired with USDC or a stock token (NVDA/CRCL/GME/SPY…) on a hook-owned V4 curve; bonded at 17k USDC FDV,
+    #     liquidity locked in the hook (no withdraw). Current v2.4 factory/hook + legacy v2.3 and v2.2 (same events). Launch fee 1.5 USDC.
+    "arcstockpad": {"label": "ArcStockpad", "url": "https://arcstockpad.com", "twitter": "ARCSTOCKPAD", "telegram": "arcstockpad", "factories": ['0x79cc46bf4f5c1cc42e81259e957bcf9a9d3b08ea', '0x61de1811f521f7a76a520c843569586f4782bffa', '0x37012298cef699bdf7057c5b22ec9dc075a1f651'], "model": "bonding curve inside a live V4 pool (hook-owned locked position), quoted in USDC or a stock token; bonded at 17,000 USDC FDV; creator-chosen LP fee 0.1-10 % split 80/20 rewards/treasury", "enum": "getLaunch", "hooks": ['0xe92f7b4362eded62ed7a10ac90262b0bf4552840', '0x73faa75815d3239834262aac97f6c5b51efe2840', '0xcfbf5dba3452de0df43cac899ed74393e811a840']},
     # --- 23.09: wonk.fun — Uniswap v4 launch with the "cook" hook; launcherFactory event 0x4bc3e1c7… (token, hook, creator; name/symbol in data)
     "wonk":     {"label": "wonk.fun", "url": "https://wonk.fun", "twitter": "wonk_fun", "telegram": "wonkdotfun", "factories": ["0x34f3da4d04394173ded7b0f430af114a0ff27952"], "model": "bonding curve on V4 hook 0x21bdc377… → graduates to a live V4 pool, USDC-quoted", "hooks": ["0x21bdc377265e2a26ba336f24381e67e768253044"]},
     "ubi":      {"label": "UBI.fun",     "url": "https://ubi.fun",       "twitter": "ubidotfun",       "factories": ["0xee3e862efde6dcd6df5648af0e2731b9d1df4605", "0xe07f7ca66ec795592385018dd998f0b50b8a2834"], "model": "V4 pool, hooks 0x20eead6d… / 0xc780c0f4…"},
@@ -151,6 +154,38 @@ async def scan_factory(s: aiohttp.ClientSession, pad: str, factory: str, full: b
     return found
 
 
+async def scan_enumerated(s: aiohttp.ClientSession, pad: str, factory: str) -> int:
+    """Factories whose launch tx is not a direct call (ArcStockpad launches go through a bootstrap contract, so arc-scan
+    lists nothing under the factory): walk launchCount()/getLaunch(i) instead. Cursor = number of launches already read."""
+    cur = await db.fetchone(text("SELECT last_hash FROM pad_cursor WHERE factory = :f").bindparams(f=factory))
+    done = int(cur["last_hash"]) if cur and str(cur["last_hash"] or "").isdigit() else 0
+    r = await _rpc(s, "eth_call", [{"to": factory, "data": "0x27cca59f"}, "latest"])          # launchCount()
+    if not isinstance(r, str) or len(r) < 66:
+        return 0
+    n = int(r, 16); found = 0
+    for i in range(done, min(n, done + 40)):
+        g = await _rpc(s, "eth_call", [{"to": factory, "data": "0x5930d3ce" + hex(i)[2:].rjust(64, "0")}, "latest"])   # getLaunch(id)
+        if not isinstance(g, str) or len(g) < 130:
+            break
+        tok = "0x" + g[26:66]
+        ts = int(time.time()); txh = f"launch:{i}"
+        try:
+            async with s.get(f"{SCAN}/address/{tok}/txs?limit=1&sort=asc", headers={"User-Agent": "Mozilla/5.0 (compatible; ArcTools/1.0)"}, timeout=aiohttp.ClientTimeout(total=20)) as r2:
+                it = ((await r2.json(content_type=None)).get("items") or [])
+                if it:
+                    ts = int(it[0]["timestamp"]); txh = it[0]["hash"]
+        except Exception:  # noqa
+            pass
+        sym = await _symbol(s, tok)
+        await db.execute(text("INSERT INTO pad_tokens (token, pad, factory, tx, ts, symbol) VALUES (:t, :p, :f, :h, :ts, :s) ON CONFLICT (token) DO NOTHING")
+                         .bindparams(t=tok, p=pad, f=factory, h=txh, ts=ts, s=sym))
+        await db.execute(text("UPDATE social_tokens SET logo_checked = 0 WHERE token = :t AND (logo IS NULL OR logo = '')").bindparams(t=tok))
+        found += 1; done = i + 1
+    await db.execute(text("INSERT INTO pad_cursor (factory, last_hash, ts) VALUES (:f, :h, :ts) ON CONFLICT (factory) DO UPDATE SET last_hash = EXCLUDED.last_hash, ts = EXCLUDED.ts")
+                     .bindparams(f=factory, h=str(done), ts=int(time.time())))
+    return found
+
+
 async def audit_registry() -> int:
     """Drop registry rows that are not tokens at all.
 
@@ -190,7 +225,7 @@ async def registry_loop():
                 for pad, cfg in FACTORIES.items():
                     for f in cfg["factories"]:
                         try:
-                            n = await scan_factory(s, pad, f, full=first)
+                            n = await (scan_enumerated(s, pad, f) if cfg.get("enum") == "getLaunch" else scan_factory(s, pad, f, full=first))
                             if n:
                                 log.info("pads: %s +%s tokens from %s", pad, n, f[:10])
                         except Exception as e:  # noqa

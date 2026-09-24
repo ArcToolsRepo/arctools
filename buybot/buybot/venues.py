@@ -105,7 +105,10 @@ V4_SWAP_TOPIC = "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad71
 V4_HOOKS = {
     "0x173c4bdd5cf95a935d2b5636c573c5f4df062044": "peach.ag",          # peach launchpad hook (graduated curves)
     "0xf847790b6fa5da300bb3f56f10d743e71e98e044": "foci.family",       # foci.family hook (22.09)
-    "0x21bdc377265e2a26ba336f24381e67e768253044": "wonk.fun",          # wonk.fun cook hook (23.09)
+    "0x21bdc377265e2a26ba336f24381e67e768253044": "wonk.fun",
+    "0xe92f7b4362eded62ed7a10ac90262b0bf4552840": "ArcStockpad",          # ArcStockpad curve hook v2.4 / v2.3 / v2.2 (24.09)
+    "0x73faa75815d3239834262aac97f6c5b51efe2840": "ArcStockpad",
+    "0xcfbf5dba3452de0df43cac899ed74393e811a840": "ArcStockpad",          # wonk.fun cook hook (23.09)
     "0x9d1a376de8525a2cd622b5c2ce99984f8432e044": "solonpad.fun",      # solonpad memeHook (22.09, no launches yet)
 
     "0x47e7936ae9891e61c5123db720593c05de7120cc": "faze.fun",          # faze LaunchpadHook — graduated curve coins

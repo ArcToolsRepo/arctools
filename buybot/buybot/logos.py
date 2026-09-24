@@ -40,13 +40,14 @@ IMG_EXT = re.compile(r"\.(png|jpe?g|webp|gif|svg|avif)(\?|$)", re.I)
 URL_RE = re.compile(r"(https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]{8,300})")
 IPFS_RE = re.compile(r"(?:ipfs://|/ipfs/)(Qm[1-9A-HJ-NP-Za-km-z]{44}|ba[a-z2-7]{50,})(/[A-Za-z0-9._%-]+)*")
 CDN_HINT = ("mypinata.cloud", "ipfs.io/ipfs", "/ipfs/", "hopium.gg", "static.minara.ai", "arguspad", "tollylabs", "tolly", "radardex", "klik", "ubi.fun", "lift.fun", "ellipse", "sashimi", "eve.fun",
-            "pinata", "ipfs", "arweave", "cloudfront", "imgur", "pump", "supabase", "storage.googleapis", "vercel", "r2.dev", "cdn")
+            "arcstockpad", "vercel-storage", "pinata", "ipfs", "arweave", "cloudfront", "imgur", "pump", "supabase", "storage.googleapis", "vercel", "r2.dev", "cdn")
 PAD_PAGES = {  # launchpad → token page pattern (og:image)
     "argus": "https://arguspad.io/token/{t}", "arguspad": "https://arguspad.io/token/{t}",
     "klik": "https://klik.finance/token/{t}", "ubi": "https://ubi.fun/token/{t}", "tolly": "https://tolly.fun/token/{t}",
     "minara": "https://minara.fun/token/{t}", "lift": "https://lift.fun/token/{t}", "sashimi": "https://sashimi.fun/token/{t}",
     "eve": "https://www.eve.fun/token/{t}", "dyor": "https://dyorswap.finance/token/{t}", "long": "https://long.supply/token/{t}",
     "wonk": "https://wonk.fun/token/{t}", "wonk.fun": "https://wonk.fun/token/{t}",
+    "arcstockpad": "https://arcstockpad.com/token/{t}",
 }
 # launchpads whose og:image is a composed card (name + symbol + the logo in a light square): we crop the square and serve it ourselves
 OG_CROP_PADS = {"wonk", "wonk.fun"}
