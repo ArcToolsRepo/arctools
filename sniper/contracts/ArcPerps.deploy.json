@@ -1,0 +1,108 @@
+{
+ "address": "0xCB39e1ec980FF6dC5137141EC5858Fe9D7124291",
+ "operator": "0x8C365c6F949E24A8190bf21C7c10A45B13D9160D",
+ "treasury": "0xb35c471b31D636B96f95b84E7A27D69B63235C0D",
+ "block": 22542231,
+ "markets": [
+  {
+   "id": 0,
+   "name": "NVDA-USDC",
+   "token": "0x6505506540dc99f7366316b10e9cf1a584cbd42a",
+   "kind": 1,
+   "levLive": 3,
+   "levOff": 2,
+   "corridorBps": 700,
+   "oiCap": 10000
+  },
+  {
+   "id": 1,
+   "name": "TSLA-USDC",
+   "token": "0x4d1efa7f5629f89fbdd7950b5ef73403a350ad59",
+   "kind": 1,
+   "levLive": 3,
+   "levOff": 2,
+   "corridorBps": 700,
+   "oiCap": 10000
+  },
+  {
+   "id": 2,
+   "name": "CRCL-USDC",
+   "token": "0x2ba0f44bdfc17fba30eda9cdbecb908ca45b043b",
+   "kind": 1,
+   "levLive": 3,
+   "levOff": 2,
+   "corridorBps": 700,
+   "oiCap": 10000
+  },
+  {
+   "id": 3,
+   "name": "GME-USDC",
+   "token": "0x41b386e03928c70d635606c210717c19dcfc984d",
+   "kind": 1,
+   "levLive": 3,
+   "levOff": 2,
+   "corridorBps": 700,
+   "oiCap": 5000
+  },
+  {
+   "id": 4,
+   "name": "HIMS-USDC",
+   "token": "0x3b26421eb41f42119b021eadfbe3ff687ff7ebd8",
+   "kind": 1,
+   "levLive": 3,
+   "levOff": 2,
+   "corridorBps": 700,
+   "oiCap": 5000
+  },
+  {
+   "id": 5,
+   "name": "ARGUS-USDC",
+   "token": "0xece5ca8bf9220718e5727754026757512212cb3c",
+   "kind": 0,
+   "levLive": 3,
+   "levOff": 3,
+   "corridorBps": 0,
+   "oiCap": 40000
+  },
+  {
+   "id": 6,
+   "name": "TOLLY-USDC",
+   "token": "0xbc43ce8dec648ea298c4275559b81d6261c90b67",
+   "kind": 0,
+   "levLive": 3,
+   "levOff": 3,
+   "corridorBps": 0,
+   "oiCap": 10000
+  },
+  {
+   "id": 7,
+   "name": "ARCOON-USDC",
+   "token": "0x4621a0baa0b5d97aae77704cf2a84dabe78a4fed",
+   "kind": 0,
+   "levLive": 2,
+   "levOff": 2,
+   "corridorBps": 0,
+   "oiCap": 5000
+  },
+  {
+   "id": 8,
+   "name": "WONK-USDC",
+   "token": "0x548df4bf91624d8cec46d606211eb13f7492e27e",
+   "kind": 0,
+   "levLive": 2,
+   "levOff": 2,
+   "corridorBps": 0,
+   "oiCap": 5000
+  },
+  {
+   "id": 9,
+   "name": "ARCT-USDC",
+   "token": "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52",
+   "kind": 0,
+   "levLive": 2,
+   "levOff": 2,
+   "corridorBps": 0,
+   "oiCap": 5000
+  }
+ ]
+}

@@ -24,3 +24,7 @@ sniper/.openrouter_key
 
 .x402_relayer_key
 .x402_settle_auth
+.perps_operator_key
+.perps_admin_key
+*.log
+marketing/arc-tokens-pools.*

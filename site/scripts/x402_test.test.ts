@@ -8,7 +8,7 @@ import * as secp from "@noble/secp256k1";
 import { hmac } from "@noble/hashes/hmac.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 
-const key = "2429ccbb8cfbda46786e588e891841ebf95fadbbe689fa9beb63290843e2adfb";
+const key = (process.env.E2E_KEY ?? "").replace(/^0x/, "");   // test wallet key from env, never in git
 const a = { from: "0x731eA5B6a768f8e0c47a977D3aBF484e54ADc620", to: m.TREASURY, value: "5000", validAfter: "0", validBefore: String(Math.floor(Date.now()/1000)+60), nonce: "0x" + "ab".repeat(32) };
 const d = m.digest(a);
 const rs = await secp.signAsync(d, key, { lowS: true }); const compact = rs.toBytes(); const v = 27 + rs.recovery;

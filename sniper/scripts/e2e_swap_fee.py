@@ -1,3 +1,4 @@
+import os
 """E2E for the Swap tab's fee path: a real 0.5 USDC buy through ArcAggregator with feeBps = 50.
 
 Proves three things the UI claims:
@@ -18,7 +19,7 @@ SITE = "https://arctools.fun"
 AGG = "0x43CdbF8edb8fE41ddE4ba519F49499D1ED78E74A"
 TREASURY = "0xb35c471b31D636B96f95b84E7A27D69B63235C0D"
 ARCT = "0x1ea1e4f9a9975f1f6e9c0a9f6e8ada7a66e6de52"
-KEY = "0x2429ccbb8cfbda46786e588e891841ebf95fadbbe689fa9beb63290843e2adfb"
+KEY = os.environ["E2E_KEY"]
 SPEND_USDC = 0.5
 FEE_BPS = 50
 ZERO = "0x" + "0" * 40

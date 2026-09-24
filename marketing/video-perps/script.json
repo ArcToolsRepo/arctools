@@ -1,0 +1,50 @@
+{
+ "title": "ArcPerps",
+ "fps": 30,
+ "size": [
+  1920,
+  1080
+ ],
+ "segments": [
+  {
+   "id": "intro",
+   "kind": "robot",
+   "robot": "intro",
+   "title": "ArcTools Perps",
+   "sub": "24/7 leverage on Arc, settled in USDC",
+   "vo": "ArcTools Perps is live."
+  },
+  {
+   "id": "terminal",
+   "kind": "screen",
+   "url": "https://arctools.fun/perps",
+   "title": "Stocks and Arc tokens",
+   "sub": "NVDA, TSLA, CRCL, GME, HIMS, ARGUS, TOLLY, ARCT and more, up to 3x",
+   "vo": "Long or short tokenised stocks and top Arc tokens. Up to 3x, 24/7, in USDC."
+  },
+  {
+   "id": "history",
+   "kind": "screen",
+   "url": "https://arctools.fun/perps",
+   "title": "One click, live PnL",
+   "sub": "Trading wallet, no popups. Fees 0.1 %, 30 % to the ARCT burn",
+   "vo": "One click from your trading wallet. Live PnL and liquidation. Fees 0.1 %, 30 % burns ARCT."
+  },
+  {
+   "id": "fund",
+   "kind": "screen",
+   "url": "https://arctools.fun/perps",
+   "title": "Be the house",
+   "sub": "Deposit USDC into the fund, earn 70 % of fees",
+   "vo": "Or be the house: fund the pool and earn 70 % of fees."
+  },
+  {
+   "id": "outro",
+   "kind": "robot",
+   "robot": "outro",
+   "title": "arctools.fun/perps",
+   "sub": "Live now. Market orders in v1, limit and TP/SL next.",
+   "vo": "arctools dot fun slash perps."
+  }
+ ]
+}
