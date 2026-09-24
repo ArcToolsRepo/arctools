@@ -1361,3 +1361,9 @@ html.arc-chain-down .arc-site:not(:has(.arc-nav--side)) .arc-section { padding-t
    repeated for every one of 50 rows on every render and diffed again on hydration. One class each. */
 .arc-td { border-top: 1px solid var(--arc-line); font-size: 12.5px; padding: 8px 6px 8px 0; vertical-align: middle; white-space: nowrap; }
 .arc-th { color: var(--arc-muted); font-size: 10px; font-weight: 400; padding: 0 8px 8px 0; text-align: left; text-transform: uppercase; white-space: nowrap; }
+
+/* ArcTools Perps terminal: 3 columns desktop, 2 on laptops, 1 on phones (chart, order form, then OI/trades) */
+.perps-grid{display:grid;gap:8px;grid-template-columns:minmax(0,1fr) 280px 330px}
+@media (max-width:1100px){.perps-grid{grid-template-columns:minmax(0,1fr) 320px}.perps-side{grid-column:1/-1}}
+@media (max-width:760px){.perps-grid{grid-template-columns:minmax(0,1fr)}.perps-side{grid-column:auto;order:3}}
+.perps-grid table{min-width:720px}

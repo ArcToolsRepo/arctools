@@ -253,12 +253,12 @@ export async function hotSignMessage(message: string): Promise<string> {
   return "0x" + r + sv + v;
 }
 
-export async function hotWait(hash: string, timeoutMs = 90_000): Promise<{ status: number }> {
+export async function hotWait(hash: string, timeoutMs = 90_000): Promise<{ status: number; logs: { address: string; topics: string[]; data?: string }[] }> {
   const t0 = Date.now();
   while (Date.now() - t0 < timeoutMs) {
     const r = await rpc("eth_getTransactionReceipt", [hash]).catch(() => null);
-    if (r) return { status: Number(r.status) };
-    await new Promise((res) => setTimeout(res, 1500));
+    if (r) return { status: Number(r.status), logs: (r.logs ?? []) as { address: string; topics: string[]; data?: string }[] };
+    await new Promise((res) => setTimeout(res, 700));
   }
   throw new Error("Timed out waiting for the receipt.");
 }

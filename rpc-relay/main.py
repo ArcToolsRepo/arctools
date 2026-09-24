@@ -135,7 +135,7 @@ async def relay(request: web.Request) -> web.Response:
         # token wait — a user waiting on a quote must not queue behind list recomputes
         if request.headers.get("X-Priority") == "high" and isinstance(body, dict):
             text, status = await _post_raw(payload, tokened=True)
-            if status == 200 and ckey and '"error"' not in text[:200].replace(" ", ""):
+            if status == 200 and ckey and '"error"' not in text[:200].replace(" ", "") and _cacheable_text(body.get("method", ""), text):
                 _rcache[ckey] = (time.time(), text)
                 if fut and not fut.done():
                     fut.set_result(text)
@@ -144,7 +144,7 @@ async def relay(request: web.Request) -> web.Response:
             bf = asyncio.get_event_loop().create_future()
             await _bq.put((body, bf))
             text, status = await bf
-            if status == 200 and ckey and '"error"' not in text[:200].replace(" ", ""):
+            if status == 200 and ckey and '"error"' not in text[:200].replace(" ", "") and _cacheable_text(body.get("method", ""), text):
                 _rcache[ckey] = (time.time(), text)
                 if fut and not fut.done():
                     fut.set_result(text)
@@ -188,6 +188,13 @@ CACHE_TTL = {"eth_blockNumber": 0.8, "eth_gasPrice": 5.0, "eth_chainId": 3600.0,
 _rcache: dict[str, tuple[float, str]] = {}
 _inflight: dict[str, asyncio.Future] = {}
 
+
+def _cacheable_text(method: str, text: str) -> bool:
+    """Never cache a pending receipt / tx (result null): the trading UI polls it right after broadcast and a cached
+    null would freeze 'Opening…' for the whole TTL."""
+    if method in ("eth_getTransactionReceipt", "eth_getTransactionByHash") and '"result":null' in text.replace(" ", "")[:120]:
+        return False
+    return True
 
 def _reid(txt: str, rid):
     """Swap the JSON-RPC id in a cached response (cheap string op; ids are always at the top level)."""
@@ -417,7 +424,7 @@ async def _upstream(payload: str, ckey, fut, rid) -> web.Response:
                         text = await r.text()
                 if r.status == 200 and '"error"' not in text[:200].replace(" ", ""):
                     _stats["ok"] += 1
-                    if ckey:
+                    if ckey and _cacheable_text(ckey.split("[", 1)[0].split("{", 1)[0], text):
                         _rcache[ckey] = (time.time(), text)
                         if fut and not fut.done():
                             fut.set_result(text)

@@ -1,4 +1,4 @@
-/** ArcPerps — Hyperliquid-style terminal on the live ArcPerps contract (0xCB39…4291).
+/** ArcTools Perps — Hyperliquid-style terminal on the live ArcTools Perps contract (0xCB39…4291).
  *  Chart, tape and 24h stats stream from our index (the pool the perp is marked against); mark = operator-signed price
  *  the trader attaches to their own transaction; positions from the bot's event index + on-chain equity. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -19,18 +19,19 @@ const TFS = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
 const SRC_LABEL = (m: PerpMarket, p?: SignedPrice | null) => m.kind === 1 ? (p ? (p.feedLive ? "Live equity feed" : "Own market · ±7 %") : "…") : "Pool TWAP 5m";
 
 export function PerpsContent() {
-  const [st, setSt] = useState<PerpsState | null>(null); const markets = st?.markets ?? [];
-  const [sel, setSel] = useState(5); const m = markets[sel] ?? markets[0];
+  const [st, setSt] = useState<PerpsState | null>(null); const markets = useMemo(() => (st?.markets ?? []).filter((x) => x.active !== false), [st]);
+  const [selId, setSelId] = useState(5); const m = markets.find((x) => x.id === selId) ?? markets[0];
   const [tf, setTf] = useState<(typeof TFS)[number]>("5m"); const [candles, setCandles] = useState<Candle[]>([]); const [stats, setStats] = useState<Stats | null>(null); const [trades, setTrades] = useState<Trade[]>([]); const [live, setLive] = useState(false);
   const [sp, setSp] = useState<SignedPrice | null>(null); const [logos, setLogos] = useState<Record<string, string>>({});
   const [side, setSide] = useState<"long" | "short">("long"); const [margin, setMargin] = useState(10); const [lv, setLv] = useState(2);
   const [addr, setAddr] = useState<string | null>(null); const [useHot, setUseHot] = useState(false); const [bal, setBal] = useState<number | null>(null);
-  const [positions, setPositions] = useState<PerpPosition[]>([]); const [eq, setEq] = useState<Record<number, { equity: bigint; pnl: bigint; funding: bigint }>>({});
+  const [positions, setPositions] = useState<PerpPosition[]>([]); const [local, setLocal] = useState<PerpPosition[]>([]); const [eq, setEq] = useState<Record<number, { equity: bigint; pnl: bigint; funding: bigint }>>({});
   const [busy, setBusy] = useState<string | null>(null); const [msg, setMsg] = useState<{ ok: boolean; t: string } | null>(null);
   const [tab, setTab] = useState<"pos" | "hist" | "fund" | "info">("pos"); const [sideTab, setSideTab] = useState<"oi" | "trades">("trades");
-  const [pick, setPick] = useState(false); const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  const [pick, setPick] = useState(false); const [moreTrades, setMoreTrades] = useState(false); const [narrow, setNarrow] = useState(false);
+  useEffect(() => { const f = () => setNarrow(window.innerWidth < 760); f(); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []); const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
   const [lp, setLp] = useState<{ shares: bigint; totalShares: bigint; fund: bigint; unlockAt: number } | null>(null); const [lpAmt, setLpAmt] = useState(50);
-  const say = (ok: boolean, t: string) => { setMsg({ ok, t }); setTimeout(() => setMsg(null), 9000); };
+  const say = (ok: boolean, t: string) => { setMsg({ ok, t }); setTimeout(() => setMsg(null), 12000); };
 
   // wallet (same convention as Predict: unlocked trading wallet first, else connected browser wallet)
   useEffect(() => {
@@ -60,7 +61,7 @@ export function PerpsContent() {
     if (!m) return; let es: EventSource | null = null; let closed = false;
     const onTrade = (t: Trade) => {
       if (!(t.price1m > 0) || !(t.usdc > 0)) return;
-      setTrades((prev) => (prev.some((p) => p.tx === t.tx && p.ts === t.ts) ? prev : [t, ...prev].slice(0, 60))); setStats((prev) => (prev ? { ...prev, price1m: t.price1m, vol24: prev.vol24 + t.usdc } : prev));
+      setTrades((prev) => (prev.some((p) => p.tx === t.tx && p.ts === t.ts && p.usdc === t.usdc && p.price1m === t.price1m) ? prev : [t, ...prev].slice(0, 40))); setStats((prev) => (prev ? { ...prev, price1m: t.price1m, vol24: prev.vol24 + t.usdc } : prev));
       const p = t.price1m; const b = Math.floor(t.ts / stepRef.current) * stepRef.current;
       setCandles((prev) => { if (!prev.length) return prev; const last = prev[prev.length - 1]; if (last.c > 0 && (p > last.c * 5 || p < last.c / 5)) return prev;
         if (last.t === b) return [...prev.slice(0, -1), { ...last, c: p, h: Math.max(last.h, p), l: Math.min(last.l, p), v: (last.v ?? 0) + t.usdc, vb: (last.vb ?? 0) + (t.side === "buy" ? t.usdc : 0), n: (last.n ?? 0) + 1 }];
@@ -72,15 +73,16 @@ export function PerpsContent() {
   // positions + on-chain equity
   const loadPositions = useCallback(async () => {
     if (!addr) { setPositions([]); return; }
-    const ps = await fetchPositions(addr).catch(() => [] as PerpPosition[]); setPositions(ps);
+    const ps = await fetchPositions(addr).catch(() => [] as PerpPosition[]); setPositions(ps); setLocal((l) => l.filter((x) => !ps.some((p) => p.id === x.id && (x.closed_ts ? !!p.closed_ts : true))));
     const open = ps.filter((p) => !p.closed_ts).slice(0, 20); const out: Record<number, { equity: bigint; pnl: bigint; funding: bigint }> = {};
     await Promise.all(open.map(async (p) => { try { const e = await equityOf(p.id); out[p.id] = e; } catch { /* */ } })); setEq(out);
     if (addr) lpInfo(addr).then(setLp).catch(() => null);
   }, [addr]);
-  useEffect(() => { void loadPositions(); const t = setInterval(loadPositions, 12_000); return () => clearInterval(t); }, [loadPositions]);
+  useEffect(() => { void loadPositions(); const t = setInterval(loadPositions, 6_000); return () => clearInterval(t); }, [loadPositions]);
+  const burst = () => { for (const d of [0, 3000, 8000, 16000]) setTimeout(loadPositions, d); };
 
   const mark = sp?.priceUsd ?? (m?.mark ?? 0); const maxLev = m ? (sp ? (sp.feedLive ? m.levLive : m.levOff) : m.levLive) : 1; const L = Math.min(lv, maxLev);
-  const notional = margin * L; const fee = notional * 0.001; const liq = mark ? liqPriceLocal(mark, margin, notional, side === "long") : 0;
+  const MAX_NOTIONAL = 2000; const notional = margin * L; const fee = notional * 0.001; const liq = mark ? liqPriceLocal(mark, margin, notional, side === "long") : 0;
   const ms = m ? (st?.markets.find((x) => x.id === m.id) ?? m) : null; const longOI = ms?.longOI ?? 0, shortOI = ms?.shortOI ?? 0; const fund = st?.fund ?? 0;
   const capSide = m ? Math.max(0, Math.min((m.oiCap - (side === "long" ? longOI : shortOI)), (side === "long" ? Math.max(0, shortOI - longOI) : Math.max(0, longOI - shortOI)) + fund * 0.5)) : 0;
   const fundingIn = ms?.lastFunding ? Math.max(0, 3600 - (now - ms.lastFunding) % 3600) : 3600 - (now % 3600); const cd = `${String(Math.floor(fundingIn / 60)).padStart(2, "0")}:${String(fundingIn % 60).padStart(2, "0")}`;
@@ -89,19 +91,28 @@ export function PerpsContent() {
   const send = async (data: string, value: bigint) => {
     if (!addr) throw new Error("Connect a wallet or unlock the trading wallet");
     const h = useHot ? await hotSend({ to: ARC_PERPS, data, value }) : await sendTx({ to: ARC_PERPS, data, value, from: addr });
-    const rc = useHot ? await hotWait(h) : await waitReceipt(h); if (rc.status !== 1) throw new Error("transaction reverted"); return h;
+    const rc = useHot ? await hotWait(h) : await waitReceipt(h); if (Number(rc.status) !== 1) throw new Error("transaction reverted"); return { h, logs: (rc as { logs?: { address: string; topics: string[]; data?: string }[] }).logs ?? [] };
+  };
+  const T_OPENED = "0x4843dc5371df3977"; // Opened(uint256 indexed id, address indexed owner, uint256 indexed market, bool, uint128 margin, uint128 notional, uint128 price, uint256 fee)
+  const posFromLogs = (logs: { address: string; topics: string[]; data?: string }[], tx: string): PerpPosition | null => {
+    const l = logs.find((x) => x.address?.toLowerCase() === ARC_PERPS.toLowerCase() && x.topics?.[0]?.startsWith(T_OPENED)); if (!l || !l.data || l.topics.length < 4) return null;
+    const w = (i: number) => BigInt("0x" + l.data!.slice(2 + i * 64, 66 + i * 64)); const mk = Number(BigInt(l.topics[3]));
+    return { id: Number(BigInt(l.topics[1])), owner: "0x" + l.topics[2].slice(26), market: mk, name: markets.find((x) => x.id === mk)?.name ?? null, is_long: w(0) === 1n, margin: w(1).toString(), notional: w(2).toString(), entry_price: w(3).toString(), opened_ts: Math.floor(Date.now() / 1000), open_tx: tx, closed_ts: null, close_tx: null, close_price: null, pnl: null, funding: null, fee: w(4).toString(), payout: null, liquidated: null, mark: null };
   };
   const doOpen = async () => {
     if (!m || !sp) return; if (!(margin >= 1)) { say(false, "Minimum margin 1 USDC"); return; }
+    if (notional > MAX_NOTIONAL) { say(false, `Max position size is ${usd(MAX_NOTIONAL, 0)} notional in v1 (margin × leverage). Lower the margin or leverage.`); return; }
     if (notional > capSide + 1e-9) { say(false, `Not enough counterparty capacity for ${usd(notional, 0)} — max ${usd(capSide, 0)} on this side right now`); return; }
     setBusy("Opening…");
-    try { const fresh = await fetchSignedPrice(m.id); const mw = BigInt(Math.round(margin * 1e6)) * 10n ** 12n; await send(encodeOpen(m.id, side === "long", L, fresh), openValue(mw, L)); say(true, `${side === "long" ? "Long" : "Short"} ${m.name.split("-")[0]} ${L}x opened`); setTimeout(loadPositions, 2500); }
+    try { const fresh = await fetchSignedPrice(m.id); const mw = BigInt(Math.round(margin * 1e6)) * 10n ** 12n; const r = await send(encodeOpen(m.id, side === "long", L, fresh), openValue(mw, L)); const lp_ = posFromLogs(r.logs, r.h);
+      if (lp_) { setLocal((l) => [lp_, ...l.filter((x) => x.id !== lp_.id)]); equityOf(lp_.id).then((e) => setEq((o) => ({ ...o, [lp_.id]: e }))).catch(() => null); }
+      say(true, `Position opened: ${side === "long" ? "LONG" : "SHORT"} ${m.name.split("-")[0]} ${L}x, margin ${margin} USDC, size ${usd(notional, 2)}${lp_ ? `, entry ${px(Number(lp_.entry_price) / 1e8)}, #${lp_.id}` : ""}`); setTab("pos"); burst(); }
     catch (e) { say(false, String((e as Error).message ?? e).slice(0, 120)); }
     setBusy(null);
   };
   const doClose = async (p: PerpPosition) => {
     setBusy(`Closing #${p.id}…`);
-    try { const fresh = await fetchSignedPrice(p.market); await send(encodeClose(p.id, fresh), 0n); say(true, `Position #${p.id} closed`); setTimeout(loadPositions, 2500); } catch (e) { say(false, String((e as Error).message ?? e).slice(0, 120)); }
+    try { const fresh = await fetchSignedPrice(p.market); await send(encodeClose(p.id, fresh), 0n); setLocal((l) => [{ ...p, closed_ts: Math.floor(Date.now() / 1000) }, ...l.filter((x) => x.id !== p.id)]); say(true, `Position #${p.id} closed: ${p.is_long ? "LONG" : "SHORT"} ${(p.name ?? "").split("-")[0]} — payout is in your wallet`); burst(); } catch (e) { say(false, String((e as Error).message ?? e).slice(0, 120)); }
     setBusy(null);
   };
   const doLp = async (dep: boolean) => {
@@ -109,7 +120,7 @@ export function PerpsContent() {
     try {
       if (dep) await send(SEL.lpDeposit, BigInt(Math.round(lpAmt * 1e6)) * 10n ** 12n);
       else { if (!lp) throw new Error("no LP data"); const sh = lp.fund > 0n ? (BigInt(Math.round(lpAmt * 1e6)) * 10n ** 12n * lp.totalShares) / lp.fund : 0n; await send(encodeLpWithdraw(sh > lp.shares ? lp.shares : sh), 0n); }
-      say(true, dep ? `Deposited ${lpAmt} USDC into the fund` : "Withdrawn"); setTimeout(loadPositions, 2500);
+      say(true, dep ? `Deposited ${lpAmt} USDC into the fund` : "Withdrawn"); burst();
     } catch (e) { say(false, String((e as Error).message ?? e).slice(0, 120)); }
     setBusy(null);
   };
@@ -119,12 +130,13 @@ export function PerpsContent() {
   const tabBtn = (on: boolean): React.CSSProperties => ({ background: "transparent", border: 0, borderBottom: on ? "2px solid var(--arc-ink)" : "2px solid transparent", color: on ? "var(--arc-ink)" : C.muted, cursor: "pointer", fontSize: 12, padding: "8px 10px" });
   const seg = (on: boolean, col = "var(--arc-ink)"): React.CSSProperties => ({ background: on ? "rgba(255,255,255,0.06)" : "transparent", border: `1px solid ${on ? col : C.line}`, borderRadius: 4, color: on ? col : C.muted, cursor: "pointer", flex: 1, fontSize: 13, fontWeight: 700, padding: "8px 0" });
   const Logo = ({ t, size = 28 }: { t: PerpMarket; size?: number }) => logos[t.token] ? <img alt="" src={logos[t.token]} style={{ background: "#0e1118", border: `1px solid ${C.line}`, borderRadius: "50%", height: size, objectFit: "cover", width: size }} /> : <span style={{ alignItems: "center", background: "#0e1118", border: `1px solid ${C.line}`, borderRadius: "50%", display: "inline-flex", fontSize: size * 0.45, height: size, justifyContent: "center", width: size }}>{t.name[0]}</span>;
-  const openPos = positions.filter((p) => !p.closed_ts); const hist = positions.filter((p) => p.closed_ts);
-  if (!m) return <div className="arc-mono" style={{ color: C.muted, padding: 40, textAlign: "center" }}>Loading ArcPerps…</div>;
+  const merged = [...local.filter((x) => !positions.some((p) => p.id === x.id && (!!p.closed_ts || !x.closed_ts))), ...positions.filter((p) => !local.some((x) => x.id === p.id && !!x.closed_ts && !p.closed_ts))].sort((a, b) => b.id - a.id);
+  const openPos = merged.filter((p) => !p.closed_ts); const hist = merged.filter((p) => p.closed_ts);
+  if (!m) return <div className="arc-mono" style={{ color: C.muted, padding: 40, textAlign: "center" }}>Loading ArcTools Perps…</div>;
   return (
     <div className="arc-mono" style={{ display: "grid", gap: 8, fontSize: 12 }}>
       {st?.paused && <div style={{ ...cell, background: "rgba(240,83,79,0.12)", borderColor: C.down, padding: "8px 12px" }}><b>Paused.</b> New positions are disabled (fund protection). Closing works.</div>}
-      {msg && <div style={{ ...cell, background: msg.ok ? "rgba(34,197,128,0.12)" : "rgba(240,83,79,0.12)", borderColor: msg.ok ? C.up : C.down, padding: "8px 12px" }}>{msg.t}</div>}
+      {msg && <div role="status" style={{ ...cell, background: msg.ok ? "rgba(34,197,128,0.14)" : "rgba(240,83,79,0.14)", borderColor: msg.ok ? C.up : C.down, borderWidth: 2, fontSize: 14, fontWeight: 700, padding: "12px 14px", position: "sticky", top: 8, zIndex: 20 }}>{msg.ok ? "✓ " : "✕ "}{msg.t}</div>}
       {!addr && <div style={{ ...cell, padding: 12 }}><div style={{ color: C.muted, marginBottom: 6 }}>Trade with the in-browser trading wallet (no popups) or connect MetaMask / Rabby on the right.</div><div style={{ maxWidth: 560 }}><WalletPanel onReady={(a) => setAddr(a)} /></div></div>}
       {/* top bar */}
       <div style={{ ...cell, alignItems: "center", display: "flex", flexWrap: "wrap", gap: 22, padding: "10px 14px", position: "relative" }}>
@@ -135,7 +147,7 @@ export function PerpsContent() {
         {pick && (
           <div style={{ ...cell, background: "#0b0e13", left: 0, padding: 8, position: "absolute", top: 46, width: 620, zIndex: 20 }}>
             <div style={{ color: C.muted, display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr", padding: "4px 8px" }}><span>Market</span><span>Mark</span><span>Long OI</span><span>Short OI</span><span>Source</span></div>
-            {markets.map((x, i) => <button key={x.id} onClick={() => { setSel(i); setPick(false); setLv(Math.min(lv, x.levLive)); }} style={{ background: i === sel ? "rgba(255,255,255,0.05)" : "transparent", border: 0, borderRadius: 4, color: "var(--arc-ink)", cursor: "pointer", display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr", padding: "6px 8px", textAlign: "left", width: "100%" }} type="button">
+            {markets.map((x) => <button key={x.id} onClick={() => { setSelId(x.id); setPick(false); setLv(Math.min(lv, x.levLive)); }} style={{ background: x.id === m.id ? "rgba(255,255,255,0.05)" : "transparent", border: 0, borderRadius: 4, color: "var(--arc-ink)", cursor: "pointer", display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr", padding: "6px 8px", textAlign: "left", width: "100%" }} type="button">
               <span style={{ alignItems: "center", display: "flex", gap: 8 }}><Logo size={20} t={x} /><b>{x.name}</b> <span style={{ color: C.muted }}>{x.feedLive === false ? x.levOff : x.levLive}x</span></span><span>{x.mark ? px(x.mark) : "…"}</span><span style={{ color: C.up }}>{usd(x.longOI ?? 0, 0)}</span><span style={{ color: C.down }}>{usd(x.shortOI ?? 0, 0)}</span><span style={{ color: x.kind === 1 && x.feedLive === false ? "#ffb020" : C.muted }}>{x.kind === 1 ? (x.feedLive === false ? "Own market ±7 %" : "Equity feed") : "Pool TWAP"}</span>
             </button>)}
             <div style={{ color: C.muted, fontSize: 11, padding: "6px 8px" }}>Tokenized stocks (long.supply) and Arc tokens with LP ≥ 100k · leverage by liquidity and feed status · contract {ARC_PERPS.slice(0, 8)}…</div>
@@ -146,15 +158,15 @@ export function PerpsContent() {
         ))}
         <span style={{ color: live ? C.up : C.muted, fontSize: 11, marginLeft: "auto" }}>{live ? "● LIVE" : "○ connecting"}{sp ? ` · price ${now - sp.ts}s` : ""}</span>
       </div>
-      <div style={{ display: "grid", gap: 8, gridTemplateColumns: "minmax(0, 1fr) 280px 330px" }}>
+      <div className="perps-grid">
         <div style={{ ...cell, overflow: "hidden" }}>
           <div style={{ alignItems: "center", borderBottom: `1px solid ${C.line}`, display: "flex", gap: 4, padding: "6px 10px" }}>
             {TFS.map((x) => <button key={x} onClick={() => setTf(x)} style={{ background: tf === x ? "rgba(255,255,255,0.08)" : "transparent", border: 0, borderRadius: 4, color: tf === x ? "var(--arc-ink)" : C.muted, cursor: "pointer", fontSize: 12, padding: "4px 8px" }} type="button">{x}</button>)}
             <span style={{ color: C.muted, marginLeft: "auto" }}>{sp ? sp.source : "…"}</span>
           </div>
-          {candles.length ? <TvChart candles={candles} height={520} interval={tf} mode="price" scale={1e-6} storageKey={`perps:${m.token}`} symbol={`${m.name} PERP`} orderLines={openPos.filter((p) => p.market === m.id).map((p) => ({ price: liqPriceLocal(Number(BigInt(p.entry_price)) / 1e8, Number(BigInt(p.margin)) / 1e18, Number(BigInt(p.notional)) / 1e18, p.is_long), color: "#f0534f", title: `LIQ #${p.id}` }))} /> : <div style={{ alignItems: "center", color: C.muted, display: "flex", height: 520, justifyContent: "center" }}>loading candles…</div>}
+          {candles.length ? <TvChart candles={candles} height={narrow ? 300 : 520} interval={tf} mode="price" scale={1e-6} storageKey={`perps:${m.token}`} symbol={`${m.name} PERP`} orderLines={openPos.filter((p) => p.market === m.id).map((p) => ({ price: liqPriceLocal(Number(BigInt(p.entry_price)) / 1e8, Number(BigInt(p.margin)) / 1e18, Number(BigInt(p.notional)) / 1e18, p.is_long), color: "#f0534f", title: `LIQ #${p.id}` }))} /> : <div style={{ alignItems: "center", color: C.muted, display: "flex", height: 520, justifyContent: "center" }}>loading candles…</div>}
         </div>
-        <div style={{ ...cell, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div className="perps-side" style={{ ...cell, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ borderBottom: `1px solid ${C.line}`, display: "flex" }}><button onClick={() => setSideTab("oi")} style={tabBtn(sideTab === "oi")} type="button">Open Interest</button><button onClick={() => setSideTab("trades")} style={tabBtn(sideTab === "trades")} type="button">Trades</button></div>
           {sideTab === "oi" ? (
             <div style={{ fontSize: 12, padding: 12 }}>
@@ -162,6 +174,7 @@ export function PerpsContent() {
               <div style={{ background: C.line, borderRadius: 4, height: 8, margin: "6px 0", overflow: "hidden" }}><div style={{ background: C.up, height: "100%", width: `${longOI + shortOI ? (longOI / (longOI + shortOI)) * 100 : 50}%` }} /></div>
               <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.down }}>Shorts</span><b>{usd(shortOI, 0)}</b></div>
               <div style={{ borderTop: `1px solid ${C.line}`, color: C.muted, lineHeight: 1.8, marginTop: 10, paddingTop: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}><span>Max per position</span><span style={{ color: "var(--arc-ink)" }}>{usd(MAX_NOTIONAL, 0)}</span></div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}><span>OI cap / side</span><span style={{ color: "var(--arc-ink)" }}>{usd(m.oiCap, 0)}</span></div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}><span>Room for {side}s now</span><span style={{ color: "var(--arc-ink)" }}>{usd(capSide, 0)}</span></div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}><span>Fund (counterparty)</span><span style={{ color: "var(--arc-ink)" }}>{usd(fund, 0)}</span></div>
@@ -172,7 +185,8 @@ export function PerpsContent() {
           ) : (
             <div style={{ fontSize: 11, padding: 8 }}>
               <div style={{ color: C.muted, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "2px 4px" }}><span>Price</span><span style={{ textAlign: "right" }}>Size (USDC)</span><span style={{ textAlign: "right" }}>Time</span></div>
-              {trades.slice(0, 28).map((t) => <div key={t.tx + t.ts} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "2px 4px" }}><span style={{ color: t.side === "buy" ? C.up : C.down }}>{px(t.price1m / 1e6)}</span><span style={{ textAlign: "right" }}>{t.usdc.toFixed(2)}</span><span style={{ color: C.muted, textAlign: "right" }}>{new Date(t.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span></div>)}
+              {trades.slice(0, moreTrades ? 40 : 10).map((t, i) => <div key={t.tx + t.ts + i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "2px 4px" }}><span style={{ color: t.side === "buy" ? C.up : C.down }}>{px(t.price1m / 1e6)}</span><span style={{ textAlign: "right" }}>{t.usdc.toFixed(2)}</span><span style={{ color: C.muted, textAlign: "right" }}>{new Date(t.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span></div>)}
+              {trades.length > 10 && <button onClick={() => setMoreTrades((v) => !v)} style={{ background: "transparent", border: `1px solid ${C.line}`, borderRadius: 4, color: C.muted, cursor: "pointer", fontSize: 11, marginTop: 6, padding: "4px 8px", width: "100%" }} type="button">{moreTrades ? "Show less" : `Show more (${Math.min(40, trades.length)})`}</button>}
               <div style={{ color: C.muted, marginTop: 8 }}>Spot prints from the pool this perp is marked against.</div>
             </div>
           )}

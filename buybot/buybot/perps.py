@@ -1,4 +1,4 @@
-"""ArcPerps operator + keeper.
+"""ArcTools Perps operator + keeper.
 
 Prices (pull oracle, signed, served over HTTP — the UI attaches the signature to its own tx):
   kind 0 (Arc tokens): 5-minute USDC-weighted TWAP of the pool from our swap index; a print that moves the TWAP more
@@ -93,9 +93,16 @@ async def _pool_twap(token: str, minutes: int = 5) -> tuple[float | None, float 
     tw = float(r["twap"]) / 1e6 if r and r["twap"] else None; lp = float(last["price1m"]) / 1e6 if last else None
     return tw, lp, int(r["n"] or 0) if r else 0
 
+_sq_cache: dict = {}
 async def _stock_quote(sym: str) -> dict | None:
-    """{price, ts} from Nasdaq + CNBC when both agree and are fresh; else None."""
+    """{price, ts} from Nasdaq + CNBC when both agree and are fresh; else None. Cached 15 s (the loop runs every 5 s)."""
     now = time.time(); out = []
+    c = _sq_cache.get(sym)
+    if c and now - c[0] < 15: return c[1]
+    res = await _stock_quote_raw(sym, now); _sq_cache[sym] = (now, res); return res
+
+async def _stock_quote_raw(sym: str, now: float) -> dict | None:
+    out = []
     async with aiohttp.ClientSession(headers={**UA, "Accept-Language": "en-US,en;q=0.9"}) as s:
         try:
             async with s.get(f"https://api.nasdaq.com/api/quote/{sym}/info?assetclass=stocks", timeout=aiohttp.ClientTimeout(total=10)) as r:
@@ -126,6 +133,7 @@ async def _stock_quote(sym: str) -> dict | None:
 async def refresh_prices():
     now = int(time.time())
     for m in MARKETS:
+        if _state["markets"].get(m["id"], {}).get("active") is False: _prices.pop(m["id"], None); continue
         try:
             src = ""; live = True; px = None
             twap, last, n = await _pool_twap(m["token"])
@@ -197,7 +205,7 @@ async def keeper_pass():
             continue                                   # "healthy" (or closed meanwhile): nothing to do
         try:
             res = await _send(_acct, "liquidate", *args); log.warning("perps: liquidated #%s on %s → %s", r["id"], p["name"], res.get("tx"))
-            await _tg(f"⚡ ArcPerps: position #{r['id']} ({p['name']}) liquidated at {p['priceUsd']:.6g}. {res.get('tx')}")
+            await _tg(f"⚡ ArcTools Perps: position #{r['id']} ({p['name']}) liquidated at {p['priceUsd']:.6g}. {res.get('tx')}")
         except Exception as e: log.warning("perps liquidate #%s: %s", r["id"], str(e)[:100])
 
 _last_poke: dict[int, float] = {}
@@ -219,11 +227,11 @@ async def circuit_breaker():
     if f is None or SEED_FUND <= 0: return
     if f < SEED_FUND * 0.85 and not _state.get("paused"):
         if _admin:
-            try: await _send(_admin, "setPaused", True); await _tg(f"🛑 ArcPerps PAUSED: fund {f:.2f} USDC < 85 % of seed ({SEED_FUND}). New opens blocked, closes work. Unpause manually.")
-            except Exception as e: await _tg(f"🛑 ArcPerps: fund {f:.2f} USDC < 85 % of seed and auto-pause FAILED: {str(e)[:80]}")
-        else: await _tg(f"🛑 ArcPerps: fund {f:.2f} USDC < 85 % of seed — no PERPS_ADMIN_KEY, pause it manually.")
+            try: await _send(_admin, "setPaused", True); await _tg(f"🛑 ArcTools Perps PAUSED: fund {f:.2f} USDC < 85 % of seed ({SEED_FUND}). New opens blocked, closes work. Unpause manually.")
+            except Exception as e: await _tg(f"🛑 ArcTools Perps: fund {f:.2f} USDC < 85 % of seed and auto-pause FAILED: {str(e)[:80]}")
+        else: await _tg(f"🛑 ArcTools Perps: fund {f:.2f} USDC < 85 % of seed — no PERPS_ADMIN_KEY, pause it manually.")
     elif f < SEED_FUND * 0.90 and time.time() - _breaker_alerted > 3600:
-        _breaker_alerted = time.time(); await _tg(f"⚠️ ArcPerps fund drawdown: {f:.2f} USDC ({(f / SEED_FUND - 1) * 100:.1f} % vs seed).")
+        _breaker_alerted = time.time(); await _tg(f"⚠️ ArcTools Perps fund drawdown: {f:.2f} USDC ({(f / SEED_FUND - 1) * 100:.1f} % vs seed).")
 
 async def operator_loop():
     if not _c or not _acct: log.warning("perps: no deploy json / operator key — idle"); return
@@ -231,11 +239,11 @@ async def operator_loop():
     while True:
         try: await refresh_prices()
         except Exception as e: log.warning("perps prices: %s", str(e)[:100])
-        for name, step in (("state", refresh_state if tick % 2 == 0 else None), ("index", index_events), ("keeper", keeper_pass), ("poke", funding_poke if tick % 6 == 0 else None), ("breaker", circuit_breaker if tick % 6 == 0 else None)):
+        for name, step in (("state", refresh_state if tick % 2 == 0 else None), ("index", index_events), ("keeper", keeper_pass if tick % 3 == 0 else None), ("poke", funding_poke if tick % 18 == 0 else None), ("breaker", circuit_breaker if tick % 18 == 0 else None)):
             if not step: continue
             try: await step()
             except Exception as e: log.warning("perps %s: %s", name, str(e)[:160])
-        tick += 1; await asyncio.sleep(15)
+        tick += 1; await asyncio.sleep(5)
 
 # ───────────────────────── API ─────────────────────────
 async def api_price(req):
