@@ -29,6 +29,7 @@ import { Route as Predict2RouteImport } from './routes/predict2'
 import { Route as PredictRouteImport } from './routes/predict'
 import { Route as Portfolio2RouteImport } from './routes/portfolio2'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
+import { Route as PerpsRouteImport } from './routes/perps'
 import { Route as Pay2RouteImport } from './routes/pay2'
 import { Route as PayRouteImport } from './routes/pay'
 import { Route as Market2RouteImport } from './routes/market2'
@@ -189,6 +190,11 @@ const Portfolio2Route = Portfolio2RouteImport.update({
 const PortfolioRoute = PortfolioRouteImport.update({
   id: '/portfolio',
   path: '/portfolio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PerpsRoute = PerpsRouteImport.update({
+  id: '/perps',
+  path: '/perps',
   getParentRoute: () => rootRouteImport,
 } as any)
 const Pay2Route = Pay2RouteImport.update({
@@ -524,6 +530,7 @@ export interface FileRoutesByFullPath {
   '/market2': typeof Market2Route
   '/pay': typeof PayRoute
   '/pay2': typeof Pay2Route
+  '/perps': typeof PerpsRoute
   '/portfolio': typeof PortfolioRoute
   '/portfolio2': typeof Portfolio2Route
   '/predict': typeof PredictRoute
@@ -607,6 +614,7 @@ export interface FileRoutesByTo {
   '/market2': typeof Market2Route
   '/pay': typeof PayRoute
   '/pay2': typeof Pay2Route
+  '/perps': typeof PerpsRoute
   '/portfolio': typeof PortfolioRoute
   '/portfolio2': typeof Portfolio2Route
   '/predict': typeof PredictRoute
@@ -691,6 +699,7 @@ export interface FileRoutesById {
   '/market2': typeof Market2Route
   '/pay': typeof PayRoute
   '/pay2': typeof Pay2Route
+  '/perps': typeof PerpsRoute
   '/portfolio': typeof PortfolioRoute
   '/portfolio2': typeof Portfolio2Route
   '/predict': typeof PredictRoute
@@ -776,6 +785,7 @@ export interface FileRouteTypes {
     | '/market2'
     | '/pay'
     | '/pay2'
+    | '/perps'
     | '/portfolio'
     | '/portfolio2'
     | '/predict'
@@ -859,6 +869,7 @@ export interface FileRouteTypes {
     | '/market2'
     | '/pay'
     | '/pay2'
+    | '/perps'
     | '/portfolio'
     | '/portfolio2'
     | '/predict'
@@ -942,6 +953,7 @@ export interface FileRouteTypes {
     | '/market2'
     | '/pay'
     | '/pay2'
+    | '/perps'
     | '/portfolio'
     | '/portfolio2'
     | '/predict'
@@ -1026,6 +1038,7 @@ export interface RootRouteChildren {
   Market2Route: typeof Market2Route
   PayRoute: typeof PayRoute
   Pay2Route: typeof Pay2Route
+  PerpsRoute: typeof PerpsRoute
   PortfolioRoute: typeof PortfolioRoute
   Portfolio2Route: typeof Portfolio2Route
   PredictRoute: typeof PredictRoute
@@ -1223,6 +1236,13 @@ declare module '@tanstack/react-router' {
       path: '/portfolio'
       fullPath: '/portfolio'
       preLoaderRoute: typeof PortfolioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/perps': {
+      id: '/perps'
+      path: '/perps'
+      fullPath: '/perps'
+      preLoaderRoute: typeof PerpsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pay2': {
@@ -1682,6 +1702,7 @@ const rootRouteChildren: RootRouteChildren = {
   Market2Route: Market2Route,
   PayRoute: PayRoute,
   Pay2Route: Pay2Route,
+  PerpsRoute: PerpsRoute,
   PortfolioRoute: PortfolioRoute,
   Portfolio2Route: Portfolio2Route,
   PredictRoute: PredictRoute,
